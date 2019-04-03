@@ -1,2 +1,2 @@
 # pic-sure-hpds-python-client
-A Python client library for PIC-SURE-HPDS resources
+A Python PIC-SURE-HPDS Resource Client Library which exposes high level use-case focused operations. 
