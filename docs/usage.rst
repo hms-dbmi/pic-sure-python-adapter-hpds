@@ -2,6 +2,6 @@
 Usage
 =====
 
-To use PIC-SURE HPDS Python Client in a project::
+To use PIC-SURE HPDS Python Library in a project::
 
-    import pic_sure_hpds_python_client
+    import pic-sure-hpds-python-client

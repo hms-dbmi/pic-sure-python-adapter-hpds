@@ -1,16 +1,16 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Tests for `pic_sure_hpds_python_client` package."""
+"""Tests for `PicSureHpdsLib` package."""
 
 
 import unittest
 
-from pic_sure_hpds_python_client import pic_sure_hpds_python_client
+from PicSureHpdsLib import pic_sure_hpds_python_client
 
 
 class TestPic_sure_hpds_python_client(unittest.TestCase):
-    """Tests for `pic_sure_hpds_python_client` package."""
+    """Tests for `PicSureHpdsLib` package."""
 
     def setUp(self):
         """Set up test fixtures, if any."""

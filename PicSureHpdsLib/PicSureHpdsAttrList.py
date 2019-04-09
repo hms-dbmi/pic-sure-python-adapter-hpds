@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
 
 """
-This class is used for the list attributes used by the query object
+Base class used for the query object's  list attributes fields
 """
 
-class PicSureHpdsAttrList:
+from json import JSONEncoder
+
+class AttrList:
     """ base class that powers all the query list operations """
 
-    def __init__(self, init_list={}, help_text=""):
+    def __init__(self, init_list=None, help_text=""):
         self.helpstr = """ [Help] valid commands are:
         |    add(): add a value
         |  delete(): delete a value
@@ -32,6 +34,7 @@ class PicSureHpdsAttrList:
             for loopkey in keys:
                 if loopkey in self.data:
                     print("ERROR: cannot add, key already exists -> ", loopkey)
+                    return
                 else:
                     self.data[loopkey] = {'type': 'exists'}
         else:
@@ -40,6 +43,7 @@ class PicSureHpdsAttrList:
                 for loopkey in keys:
                     if loopkey in self.data:
                         print("ERROR: cannot add, key already exists -> ", loopkey)
+                        return
                     else:
                         self.data[loopkey] = {'type': 'catagorical', 'values': func_args[0]}
             else:
@@ -48,6 +52,7 @@ class PicSureHpdsAttrList:
                     for loopkey in keys:
                         if loopkey in self.data:
                             print("ERROR: cannot add, key already exists -> ", loopkey)
+                            return
                         else:
                             self.data[loopkey] = {'type': 'minmax', 'min': func_args[0], 'max': func_args[1]}
                 else:
@@ -56,8 +61,10 @@ class PicSureHpdsAttrList:
                         for loopkey in keys:
                             if loopkey in self.data:
                                 print("ERROR: cannot add, key already exists -> ", loopkey)
+                                return
                             else:
                                 self.data[loopkey] = {'type': 'value', 'value': func_args[0]}
+        return self
 
     def delete(self, key, *other):
         func_args = list(other)
@@ -75,17 +82,21 @@ class PicSureHpdsAttrList:
                         self.data[key].get('values').remove(func_args[0])
                     else:
                         print("ERROR: value was not found in the key's catagorical value list")
+                        return
                 else:
                     print("ERROR: a value was specified but the key is not catagorical")
+                    return
         else:
             print("ERROR: the specified key does not exist")
+            return
+        return self
 
     def show(self):
-        print("| _restriction_type_ |", "_key_".ljust(60, "_"), "| _restriction_values_")
+        print("| _restriction_type_ |", "_key_".ljust(110, "_"), "| _restriction_values_")
         for key, rec in self.data.items():
-            print("| ", rec['type'].ljust(16), " |", key.ljust(60), "| ", end='', flush=True)
+            print("| ", rec['type'].ljust(16), " |", key.ljust(110), "| ", end='', flush=True)
             if rec.get('type') == 'exists':
-                pass
+                print(rec['values'], end='', flush=True)
             elif rec.get('type') == 'catagorical':
                 print(rec['values'], end='', flush=True)
             elif rec.get('type') == 'minmax':
@@ -97,6 +108,8 @@ class PicSureHpdsAttrList:
     def clear(self):
         print("cleared list")
         self.data.clear()
+        return self
 
     def help(self):
         print(self.helpstr)
+

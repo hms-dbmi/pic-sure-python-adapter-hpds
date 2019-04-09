@@ -1,3 +1,3 @@
 # -*- coding: utf-8 -*-
 
-"""Unit test package for pic_sure_hpds_python_client."""
+"""Unit test package for PicSureHpdsLib."""

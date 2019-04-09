@@ -12,7 +12,7 @@ To install PIC-SURE HPDS Python Client, run this command in your terminal:
 
 .. code-block:: console
 
-    $ pip install pic_sure_hpds_python_client
+    $ pip install pic-sure-hpds-python-client
 
 This is the preferred method to install PIC-SURE HPDS Python Client, as it will always install the most recent stable release.
 
@@ -32,13 +32,13 @@ You can either clone the public repository:
 
 .. code-block:: console
 
-    $ git clone git://github.com/hackerceo/pic_sure_hpds_python_client
+    $ git clone git://github.com/hms-dbmi/pic-sure-hpds-python-client
 
 Or download the `tarball`_:
 
 .. code-block:: console
 
-    $ curl  -OL https://github.com/hackerceo/pic_sure_hpds_python_client/tarball/master
+    $ curl  -OL https://github.com/hms-dbmi/pic-sure-hpds-python-client/tarball/master
 
 Once you have a copy of the source, you can install it with:
 
@@ -47,5 +47,5 @@ Once you have a copy of the source, you can install it with:
     $ python setup.py install
 
 
-.. _Github repo: https://github.com/hackerceo/pic_sure_hpds_python_client
-.. _tarball: https://github.com/hackerceo/pic_sure_hpds_python_client/tarball/master
+.. _Github repo: https://github.com/hms-dbmi/pic-sure-hpds-python-client
+.. _tarball: https://github.com/hms-dbmi/pic-sure-hpds-python-client/tarball/master

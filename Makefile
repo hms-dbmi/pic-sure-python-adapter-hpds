@@ -60,7 +60,7 @@ test-all: ## run tests on every Python version with tox
 	tox
 
 coverage: ## check code coverage quickly with the default Python
-	coverage run --source pic_sure_hpds_python_client setup.py test
+	coverage run --source PicSureHpdsLib setup.py test
 	coverage report -m
 	coverage html
 	$(BROWSER) htmlcov/index.html
