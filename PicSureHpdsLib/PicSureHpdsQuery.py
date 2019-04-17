@@ -39,7 +39,7 @@ class Query:
               clear()                           clears all values from the filters list
             """
         )
-        self._refHpdsResourceConnection = refHpdsResourceConnection
+        self._refResourceConnection = refHpdsResourceConnection
 
     def help(self):
         print("""
