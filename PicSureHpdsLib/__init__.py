@@ -12,6 +12,7 @@ __email__ = 'nick_benik@hms.harvard.edu'
 __version__ = '0.1.0'
 
 from .PicSureHpds import Client
+from .PicSureHpds import BypassClient
 from .PicSureHpdsAttrList import AttrList
 from .PicSureHpdsAttrListKeys import AttrListKeys
 from .PicSureHpdsAttrListKeyValues import AttrListKeyValues
