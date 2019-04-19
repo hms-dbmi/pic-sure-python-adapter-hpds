@@ -42,7 +42,7 @@ class DictionaryResult:
                 if not c in ret:
                     ret[c] = []
         # remove the name column
-        del ret['name']
+        del ret["name"]
 
         # now populate the dataframe columns
         colNames = list(ret)

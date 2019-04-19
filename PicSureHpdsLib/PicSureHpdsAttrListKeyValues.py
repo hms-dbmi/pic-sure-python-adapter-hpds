@@ -10,14 +10,14 @@ from json import JSONEncoder
 class AttrListKeyValues(PicSureHpdsLib.AttrList):
     """ Class that powers the query's FILTER list operations """
 
-    def add(self, key, *other):
+    def add(self, key, *other, **kwargs):
         """ overload the add() operator """
         if len(list(other)) == 0:
             # raise Exception("All Filter.add()'s must specify matching value, values, or range")
             print('ERROR: All Filter.add()\'s must specify matching value, values, or range')
             return
         # process all add operations as a key-only add
-        return super().add(key, *other)
+        return super().add(key, *other, **kwargs)
 
     def getQueryValues(self):
         ret = {"numericFilters":{}, "categoryFilters":{}}
