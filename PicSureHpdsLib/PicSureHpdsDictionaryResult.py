@@ -3,7 +3,8 @@
 class DictionaryResult:
     """ Main class of library """
     def __init__(self, results):
-        self.results = results
+        import json
+        self.results = json.loads(results)
         pass
 
     def help(self):
@@ -20,34 +21,40 @@ class DictionaryResult:
         """)
 
     def count(self):
-        return len(self.results["results"])
+        return len(self.results['results'])
 
     def keys(self):
-        return list(self.results["results"])
+        return list(self.results['results'])
 
     def entries(self):
         ret = []
-        for key in self.results["results"]:
-            ret.append(self.results["results"][key])
+        for key in self.results['results']:
+            ret.append(self.results['results'][key])
         return ret
 
     def DataFrame(self):
         import pandas
         ret = {}
 
-        # build the column list from the attributes found in the first result record
-        key = list(self.results["results"]).pop()
-        colNames = list(self.results["results"][key])
-        for key in colNames:
-            if key != 'name':
-                ret[key] = []
+        # build the column list from the attributes found in ALL result records
+        for i, d in self.results['results'].items():
+            for c in list(d):
+                if not c in ret:
+                    ret[c] = []
+        # remove the name column
+        del ret['name']
 
         # now populate the dataframe columns
-        i = []
-        for key in self.results["results"]:
-            i.append(key.replace('\\','\\\\'))
+        colNames = list(ret)
+        idx = []
+        for key, record in self.results['results'].items():
+#            idx.append(key.replace('\\','\\\\'))
+            idx.append(key)
             for col in colNames:
                 if col != 'name':
-                    ret[col].append(self.results["results"][key][col])
+                    if col in record:
+                        ret[col].append(record[col])
+                    else:
+                        ret[col].append(None)
 
-        return pandas.DataFrame(data=ret, index=i);
+        return pandas.DataFrame(data=ret, index=idx)

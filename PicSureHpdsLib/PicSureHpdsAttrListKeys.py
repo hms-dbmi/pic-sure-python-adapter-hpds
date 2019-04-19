@@ -23,15 +23,15 @@ class AttrListKeys(PicSureHpdsLib.AttrList):
         return super().delete(key)
 
     def show(self):
-        print("| _key_".ljust(128, "_"))
+        print('| _key_'.ljust(128, '_'))
         for key, rec in self.data.items():
-            print("| ", key.ljust(128), end='', flush=True)
-            print(" |")
+            print('| ', key.replace('\\','\\\\').ljust(128), end='', flush=True)
+            print(' |')
 
     def getQueryValues(self):
         ret = list()
         for key, rec in self.data.items():
-            if rec['type'] == "exists":
+            if rec['type'] == 'exists':
                 ret.append(key)
         return ret
 

@@ -11,7 +11,8 @@ __author__ = """Nick Benik"""
 __email__ = 'nick_benik@hms.harvard.edu'
 __version__ = '0.1.0'
 
-from .PicSureHpds import Client
+from .PicSureHpds import Adapter
+from .PicSureHpds import BypassAdapter
 from .PicSureHpdsAttrList import AttrList
 from .PicSureHpdsAttrListKeys import AttrListKeys
 from .PicSureHpdsAttrListKeyValues import AttrListKeyValues

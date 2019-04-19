@@ -14,7 +14,7 @@ class AttrListKeyValues(PicSureHpdsLib.AttrList):
         """ overload the add() operator """
         if len(list(other)) == 0:
             # raise Exception("All Filter.add()'s must specify matching value, values, or range")
-            print("ERROR: All Filter.add()'s must specify matching value, values, or range")
+            print('ERROR: All Filter.add()\'s must specify matching value, values, or range')
             return
         # process all add operations as a key-only add
         return super().add(key, *other)
@@ -22,11 +22,11 @@ class AttrListKeyValues(PicSureHpdsLib.AttrList):
     def getQueryValues(self):
         ret = {"numericFilters":{}, "categoryFilters":{}}
         for key, rec in self.data.items():
-            if rec['type'] == "minmax":
+            if rec['type'] == 'minmax':
                 ret['numericFilters'][key] = {"min":rec['min'], "max":rec['max']}
-            elif rec['type'] == "catagorical":
+            elif rec['type'] == 'categorical':
                 ret['categoryFilters'][key] = rec['values']
-            elif rec['type'] == "value":
+            elif rec['type'] == 'value':
                 if type(rec['value']) == str:
                     ret['categoryFilters'][key] = [rec['value']]
                 else:

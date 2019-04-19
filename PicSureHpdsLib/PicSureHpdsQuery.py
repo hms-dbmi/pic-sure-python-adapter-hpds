@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
 
 import PicSureHpdsLib
-from json import JSONEncoder
+import json
 
 
 class Query:
     """ Main class of library """
     def __init__(self, refHpdsResourceConnection):
+        self._refHpdsResourceConnection = refHpdsResourceConnection
+        self._apiObj = refHpdsResourceConnection.connection_reference._api_obj()
+        self._resourceUUID = refHpdsResourceConnection.resource_uuid
         self._lstSelect = PicSureHpdsLib.AttrListKeys(
             help_text="""
             Select().
@@ -34,6 +37,7 @@ class Query:
               add("key", "value")               filter to records with KEY column that equals VALUE
               add("key", ["value1", "value2"])  filter to records with KEY column equalling one value within the given list
               add("key", start, end)            filter to records with KEY column value between START and END (inclusive)
+                                                    start -or- end may be set to None to filter by a max or min value
               delete("key")                     delete a filter from the list of filters
               show()                            lists all current filters that results records must satisfy
               clear()                           clears all values from the filters list
@@ -49,11 +53,35 @@ class Query:
                   [ Filter keys exert an AND relationship on returned records      ]
                   [ Categorical values have an OR relationship on their key        ]
                   [ Numerical Ranges are inclusive of their start and end points   ]
-                   
-        .getCount()        returns a count indicating the number of matching numbers
-        .getResults()      returns a dataframe containing the matching records
-        .getQueryCommand() returns the JSON-formatted query request
+
+        .getCount()             returns a count indicating the number of matching numbers
+        .getResults()           returns a CSV-like string containing the matching records
+        .getResultsDataFrame()  returns a pandas DataFrame containing the matching records
+        .getRunDetails()        returns details about the last run of the query
+        .getQueryCommand()      returns the JSON-formatted query request
+        .show()                 lists all current query parameters
+        
+            * getCount(), getResults(), and getResultsDataFrame() functions can also 
+              accept options that run queries differently which might help with 
+              connection timeouts. Example: .getResults(async=True, timeout=60)
         """)
+    def show(self):
+        if len(self._lstSelect.getQueryValues()) == 0:
+            print('.__________[ Query.Select()  has NO SELECTIONS ]'.ljust(156, '_'))
+        else:
+            print('.__________[ Query.Select()  Settings ]'.ljust(156, '_'))
+            self._lstSelect.show()
+        if len(self._lstRequire.getQueryValues()) == 0:
+            print('.__________[ Query.Require() has NO SELECTIONS ]'.ljust(156, '_'))
+        else:
+            print('.__________[ Query.Require() Settings ]'.ljust(128, '_'))
+            self._lstRequire.show()
+        temp = self._lstFilter.getQueryValues()
+        if len(temp["numericFilters"]) == 0 and len(temp['categoryFilters']) == 0:
+            print('.__________[ Query.Filter()  has NO SELECTIONS ]'.ljust(156, '_'))
+        else:
+            print('.__________[ Query.Filter()  Settings ]'.ljust(156, '_'))
+            self._lstFilter.show()
 
     def Select(self):
         return self._lstSelect
@@ -64,37 +92,54 @@ class Query:
     def Filter(self):
         return self._lstFilter
 
-    def getCount(self):
-        queryJSON = self.queryCommand("COUNT")
-        httpResults = self._refHpdsResourceConnection.connection_reference.syncQuery(queryJSON)
-        print("TODO: process the returned JSON into results object")
+    def getCount(self, async=False, timeout=30):
+        queryJSON = self.buildQuery('COUNT')
+        httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
+        # make sure we are able to convert to a valid number
+        if bytes(str(int(httpResults)),'utf-8') == httpResults:
+            return int(httpResults)
+        else:
+            print('[ERROR] could not convert results of RequestCount to integer')
+            return httpResults
+
+    def getResults(self, async=False, timeout=30):
+        queryJSON = self.buildQuery('DATAFRAME')
+        httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
         return httpResults
 
-    def getResults(self):
-        queryJSON = self.queryCommand("RESULTS")
-        if hasattr(self._refHpdsResourceConnection, "connection_reference"):
-            if hasattr(self._refHpdsResourceConnection.connection_reference, "syncQuery"):
-                httpResults = self._refHpdsResourceConnection.connection_reference.syncQuery(queryJSON)
-                print("TODO: process the returned JSON into results object")
-                return httpResults
+    def getResultsDataFrame(self, async=False, timeout=30):
+        queryJSON = self.buildQuery('DATAFRAME')
+        httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
+        results = httpResults.decode('utf-8')
+        from io import StringIO
+        import pandas
+        return pandas.read_csv(StringIO(results))
+
+    def getRunDetails(self):
+        print('This function returns None or details about the last run of the query')
+
 
     def getQueryCommand(self, *others):
-        """ queryCommand(self, resource_g"""
-        ret = {
+        """ getQueryCommand() """
+        return json.dumps(self.buildQuery(*others))
+
+
+    def buildQuery(self, *others):
+        """ buildQuery(self, *others) """
+        ret = {"query":{
             "fields": [],
             "requiredFields": [],
             "numericFilters": {},
             "categoryFilters": {},
-        }
-        ret["fields"] = self._lstSelect.getQueryValues()
-        ret["requiredFields"] = self._lstRequire.getQueryValues()
+        }}
+        ret['query']['fields'] = self._lstSelect.getQueryValues()
+        ret['query']['requiredFields'] = self._lstRequire.getQueryValues()
         temp = self._lstFilter.getQueryValues()
-        ret["numericFilters"] = temp["numericFilters"]
-        ret["categoryFilters"] = temp["categoryFilters"]
-        if hasattr(self._refHpdsResourceConnection, "resource_uuid"):
-            ret["resourceUUID"] = self._refHpdsResourceConnection.resource_uuid
+        ret['query']['numericFilters'] = temp['numericFilters']
+        ret['query']['categoryFilters'] = temp['categoryFilters']
+        if hasattr(self._refHpdsResourceConnection, 'resource_uuid'):
+            if self._refHpdsResourceConnection.resource_uuid != None:
+                ret['resourceUUID'] = self._refHpdsResourceConnection.resource_uuid
         if len(list(others)) > 0:
-            ret["outputFormat"] = list(others)[0]
-
-        e = JSONEncoder()
-        return e.encode(ret)
+            ret['query']['expectedResultType'] = list(others)[0]
+        return ret
