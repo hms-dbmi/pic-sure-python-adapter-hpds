@@ -38,7 +38,7 @@ class HpdsResourceConnection:
             
         [ENVIRONMENT]""")
         print("Endpoint URL: ".rjust(28,' ') + self.connection_reference.url)
-        print("Resource UUID: ".rjust(28,' ') + self.resource_uuid)
+        print("Resource UUID: ".rjust(28,' ') + str(self.resource_uuid))
 
     def dictionary(self):
         return PicSureHpdsLib.Dictionary(self)

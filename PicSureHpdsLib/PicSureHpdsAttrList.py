@@ -23,7 +23,7 @@ class AttrList:
         if type(help_text) == str and len(help_text) > 0:
             self.helpstr = help_text
 
-    def add(self, key, *args, **kargs):
+    def add(self, key, *args, **kwargs):
         func_args = list(args)
         keys = key
         if type(key) == str:
@@ -31,7 +31,7 @@ class AttrList:
             keys = [key]
 
         # process just a key add
-        if len(func_args) == 0 and len(kargs) == 0:
+        if len(func_args) == 0 and len(kwargs) == 0:
             for loopkey in keys:
                 if loopkey in self.data:
                     print('ERROR: cannot add, key already exists -> ', loopkey)
@@ -57,18 +57,18 @@ class AttrList:
                         else:
                             self.data[loopkey] = {'type': 'minmax', 'min': func_args[0], 'max': func_args[1]}
                 else:
-                    # process min and/or max add (1/2 named parameters)
-                    if 'min' in kargs or 'max' in kargs:
+                    # process min and/or max add (1 or 2 named parameters)
+                    if 'min' in kwargs or 'max' in kwargs:
                         for loopkey in keys:
                             if loopkey in self.data:
                                 print('ERROR: cannot add, key already exists -> ', loopkey)
                                 return
                             else:
                                 self.data[loopkey] = {'type': 'minmax', 'min': None, 'max': None}
-                                if 'min' in kargs:
-                                    self.data[loopkey]['min'] = kargs['min']
-                                if 'max' in kargs:
-                                    self.data[loopkey]['max'] = kargs['max']
+                                if 'min' in kwargs:
+                                    self.data[loopkey]['min'] = kwargs['min']
+                                if 'max' in kwargs:
+                                    self.data[loopkey]['max'] = kwargs['max']
                     else:
                         # process single value add
                         if type(func_args[0]) == int or type(func_args[0]) == str:

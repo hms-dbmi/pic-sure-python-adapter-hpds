@@ -12,7 +12,7 @@ class Query:
         self._resourceUUID = refHpdsResourceConnection.resource_uuid
         self._lstSelect = PicSureHpdsLib.AttrListKeys(
             help_text="""
-            Select().
+            select().
               add("key")            add a single column to be returned in results
               add(["key1", "key2"]) add several columns to be returned in results
               delete("key")         delete a single column from the list of columns to return
@@ -22,7 +22,7 @@ class Query:
         )
         self._lstRequire = PicSureHpdsLib.AttrListKeys(
             help_text="""
-            Require().
+            require().
               add("key")            add a single column that must exist within each results record
               add(["key1", "key2"]) add several columns that must exist within each results record
               delete("key")         delete a single column from the list of columns to that results records must have
@@ -32,7 +32,7 @@ class Query:
         )
         self._lstFilter = PicSureHpdsLib.AttrListKeyValues(
             help_text="""
-            Filter().
+            filter().
               add("key", value)                  - or -
               add("key", "value")               filter to records with KEY column that equals VALUE
               add("key", ["value1", "value2"])  filter to records with KEY column equalling one value within the given list
@@ -47,9 +47,9 @@ class Query:
 
     def help(self):
         print("""
-        .Select()   list of data fields to return from resource for each record
-        .Require()  list of data fields that must be present in all returned records
-        .Filter()   list of data fields and conditions that returned records satisfy
+        .select()   list of data fields to return from resource for each record
+        .require()  list of data fields that must be present in all returned records
+        .filter()   list of data fields and conditions that returned records satisfy
                   [ Filter keys exert an AND relationship on returned records      ]
                   [ Categorical values have an OR relationship on their key        ]
                   [ Numerical Ranges are inclusive of their start and end points   ]
@@ -83,13 +83,13 @@ class Query:
             print('.__________[ Query.Filter()  Settings ]'.ljust(156, '_'))
             self._lstFilter.show()
 
-    def Select(self):
+    def select(self):
         return self._lstSelect
 
-    def Require(self):
+    def require(self):
         return self._lstRequire
 
-    def Filter(self):
+    def filter(self):
         return self._lstFilter
 
     def getCount(self, async=False, timeout=30):
