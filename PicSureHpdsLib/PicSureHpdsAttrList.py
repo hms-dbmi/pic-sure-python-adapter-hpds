@@ -80,8 +80,8 @@ class AttrList:
                                     self.data[loopkey] = {'type': 'value', 'value': func_args[0]}
         return self
 
-    def delete(self, key, *other):
-        func_args = list(other)
+    def delete(self, key, *args):
+        func_args = list(args)
         # does the key exist?
         if key in self.data:
             # are we deleting the whole key or just some values?

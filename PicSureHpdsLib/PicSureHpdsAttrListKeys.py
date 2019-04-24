@@ -11,12 +11,12 @@ from json import JSONEncoder
 class AttrListKeys(PicSureHpdsLib.AttrList):
     """ Class that powers the query's SELECT/REQUIRE list operations """
 
-    def add(self, key, *other):
+    def add(self, key, *args):
         """ overload the add() operator """
         # process all add operations as a key-only add
         return super().add(key)
 
-    def delete(self, key, *other):
+    def delete(self, key, *args):
         """ overload the delete() operator """
 
         # process all delete() operations as a key-only delete

@@ -83,13 +83,22 @@ class Query:
             print('.__________[ Query.Filter()  Settings ]'.ljust(156, '_'))
             self._lstFilter.show()
 
-    def select(self):
+    def select(self, *args, **kwargs):
+        if len(args) > 0 or len(kwargs) > 0:
+            print("ERROR: did you mean to do something like .select().add(<something here>)")
+            return None
         return self._lstSelect
 
-    def require(self):
+    def require(self, *args, **kwargs):
+        if len(args) > 0 or len(kwargs) > 0:
+            print("ERROR: did you mean to do something like .require().add(<something here>)")
+            return None
         return self._lstRequire
 
-    def filter(self):
+    def filter(self, *args, **kwargs):
+        if len(args) > 0 or len(kwargs) > 0:
+            print("ERROR: did you mean to do something like .filter().add(<something here>)")
+            return None
         return self._lstFilter
 
     def getCount(self, async=False, timeout=30):
@@ -119,13 +128,13 @@ class Query:
         print('This function returns None or details about the last run of the query')
 
 
-    def getQueryCommand(self, *others):
+    def getQueryCommand(self, *args):
         """ getQueryCommand() """
-        return json.dumps(self.buildQuery(*others))
+        return json.dumps(self.buildQuery(*args))
 
 
-    def buildQuery(self, *others):
-        """ buildQuery(self, *others) """
+    def buildQuery(self, *args):
+        """ buildQuery(self, *args) """
         ret = {"query":{
             "fields": [],
             "requiredFields": [],
@@ -140,6 +149,6 @@ class Query:
         if hasattr(self._refHpdsResourceConnection, 'resource_uuid'):
             if self._refHpdsResourceConnection.resource_uuid != None:
                 ret['resourceUUID'] = self._refHpdsResourceConnection.resource_uuid
-        if len(list(others)) > 0:
-            ret['query']['expectedResultType'] = list(others)[0]
+        if len(args) > 0:
+            ret['query']['expectedResultType'] = list(args)[0]
         return ret
