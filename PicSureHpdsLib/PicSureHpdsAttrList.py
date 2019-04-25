@@ -40,7 +40,7 @@ class AttrList:
                     self.data[loopkey] = {'type': 'exists'}
         else:
             # process categorical add
-            if type(func_args[0]) == list:
+            if len(func_args) > 0 and type(func_args[0]) == list:
                 for loopkey in keys:
                     if loopkey in self.data:
                         print('ERROR: cannot add, key already exists -> ', loopkey)
