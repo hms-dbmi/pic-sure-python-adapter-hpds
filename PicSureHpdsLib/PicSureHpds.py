@@ -82,16 +82,18 @@ class BypassConnection:
         # print out info from /info about the endpoint
         # TODO: finish this
         import httplib2
+        import json
         h = httplib2.Http()
         hdrs = {"Content-Type": "application/json"}
         (resp_headers, content) = h.request(uri=self.url + "info/"+resource_uuid, method="POST", headers=hdrs, body="{}")
         if resp_headers["status"] != "200":
             print("ERROR: HTTP response was bad")
             print(resp_headers)
-            print(content)
+            print(content.decode("utf-8"))
             return None
         else:
-            pprint.pprint(json.JSONDecoder.loads(content))
+            import pprint
+            pprint.pprint(json.loads(content.decode("utf-8")))
 
     def list(self):
         listing = self.getResources()
@@ -118,10 +120,10 @@ class BypassConnection:
         if resp_headers["status"] != "200":
             print("ERROR: HTTP response was bad")
             print(resp_headers)
-            print(content)
+            print(content.decode("utf-8"))
             return list()
         else:
-            temp = json.loads(content)
+            temp = json.loads(content.decode("utf-8"))
             ret=[{
                 "uuid": temp["id"],
                 "name": temp["name"],
@@ -155,10 +157,10 @@ class BypassConnectionAPI:
             print("ERROR: HTTP response was bad")
             print(self.url+"info")
             print(resp_headers)
-            print(content)
+            print(content.decode("utf-8"))
             return list()
         else:
-            return json.loads(content)
+            return json.loads(content.decode("utf-8"))
 
     def search(self, resource_uuid, query=None):
         # make sure a Resource UUID is passed via the body of these commands
@@ -176,7 +178,7 @@ class BypassConnectionAPI:
             print("ERROR: HTTP response was bad")
             print(self.url+"search")
             print(resp_headers)
-            print(content)
+            print(content.decode("utf-8"))
             return '{"results":{}, "error":true}'
         else:
             return content.decode("utf-8")
@@ -198,10 +200,10 @@ class BypassConnectionAPI:
             print("ERROR: HTTP response was bad")
             print(self.url+"query/sync")
             print(resp_headers)
-            print(content)
+            print(content.decode("utf-8"))
             return ""
         else:
-            return content
+            return content.decode("utf-8")
 
     def queryStatus(self, resource_uuid, query_uuid):
         # https://github.com/hms-dbmi/pic-sure/blob/master/pic-sure-resources/pic-sure-resource-api/src/main/java/edu/harvard/dbmi/avillach/service/ResourceWebClient.java#L124
