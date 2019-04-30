@@ -105,7 +105,7 @@ class Query:
         queryJSON = self.buildQuery('COUNT')
         httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
         # make sure we are able to convert to a valid number
-        if bytes(str(int(httpResults)),'utf-8') == httpResults:
+        if str(int(httpResults)) == httpResults:
             return int(httpResults)
         else:
             print('[ERROR] could not convert results of RequestCount to integer')
