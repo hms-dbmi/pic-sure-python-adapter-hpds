@@ -101,7 +101,7 @@ class Query:
             return None
         return self._lstFilter
 
-    def getCount(self, async=False, timeout=30):
+    def getCount(self, asAsync=False, timeout=30):
         queryJSON = self.buildQuery('COUNT')
         httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
         # make sure we are able to convert to a valid number
@@ -111,12 +111,12 @@ class Query:
             print('[ERROR] could not convert results of RequestCount to integer')
             return httpResults
 
-    def getResults(self, async=False, timeout=30):
+    def getResults(self, asAsync=False, timeout=30):
         queryJSON = self.buildQuery('DATAFRAME')
         httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
         return httpResults
 
-    def getResultsDataFrame(self, async=False, timeout=30):
+    def getResultsDataFrame(self, asAsync=False, timeout=30):
         queryJSON = self.buildQuery('DATAFRAME')
         httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
         results = httpResults.decode('utf-8')
