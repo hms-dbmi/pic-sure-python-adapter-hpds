@@ -2,11 +2,19 @@
 
 import PicSureHpdsLib
 import json
+import time
 
 
 class Query:
     """ Main class of library """
     def __init__(self, refHpdsResourceConnection):
+        self._performance = {
+            "running": False,
+            "tmr_start": 0,
+            "tmr_query": 0,
+            "tmr_recv": 0,
+            "tmr_proc": 0
+        }
         self._refHpdsResourceConnection = refHpdsResourceConnection
         self._apiObj = refHpdsResourceConnection.connection_reference._api_obj()
         self._resourceUUID = refHpdsResourceConnection.resource_uuid
@@ -102,30 +110,70 @@ class Query:
         return self._lstFilter
 
     def getCount(self, asAsync=False, timeout=30):
+        self._performance['running'] = True
+        self._performance['tmr_start'] = time.time()
         queryJSON = self.buildQuery('COUNT')
+        self._performance['tmr_query'] = time.time()
         httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
+        self._performance['tmr_recv'] = time.time()
+        self._performance['running'] = False
         # make sure we are able to convert to a valid number
-        if str(int(httpResults)) == httpResults:
+        if bytes(str(int(httpResults)),'utf-8') == httpResults:
+            self._performance['tmr_proc'] = time.time()
             return int(httpResults)
         else:
             print('[ERROR] could not convert results of RequestCount to integer')
+            self._performance['tmr_proc'] = time.time()
             return httpResults
 
     def getResults(self, asAsync=False, timeout=30):
+        self._performance['running'] = True
+        self._performance['tmr_start'] = time.time()
         queryJSON = self.buildQuery('DATAFRAME')
+        self._performance['tmr_query'] = time.time()
         httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
+        self._performance['tmr_recv'] = time.time()
+        self._performance['running'] = False
+        self._performance['tmr_proc'] = time.time()
         return httpResults
 
     def getResultsDataFrame(self, asAsync=False, timeout=30):
+        self._performance['running'] = True
+        self._performance['tmr_start'] = time.time()
         queryJSON = self.buildQuery('DATAFRAME')
+        self._performance['tmr_query'] = time.time()
         httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
-        results = httpResults.decode('utf-8')
+        self._performance['tmr_recv'] = time.time()
+        self._performance['running'] = False
         from io import StringIO
         import pandas
-        return pandas.read_csv(StringIO(results))
+        ret = pandas.read_csv(StringIO(httpResults))
+        self._performance['tmr_proc'] = time.time()
+        return ret
 
     def getRunDetails(self):
         print('This function returns None or details about the last run of the query')
+        if self._performance['tmr_start'] > 0:
+            if self._performance['running'] == True:
+                print("Query is RUNNING...")
+            else:
+                print("Query is FINISHED...")
+            if self._performance['tmr_query'] < self._performance['tmr_start']:
+                print("   Query Build: --- ms")
+                print(" Query Execute: --- ms")
+                print("Process Result: --- ms")
+            else:
+                print("   Query Build: " + str((self._performance['tmr_query'] - self._performance['tmr_start'])*1000) + " ms")
+                if self._performance['tmr_recv'] < self._performance['tmr_query']:
+                    print(" Query Execute: --- ms")
+                    print("Process Result: --- ms")
+                else:
+                    print(" Query Execute: " + str((self._performance['tmr_recv'] - self._performance['tmr_query'])*1000) + " ms")
+                    if self._performance['tmr_proc'] < self._performance['tmr_recv']:
+                        print("Process Result: --- ms")
+                    else:
+                        print("Process Result: " + str((self._performance['tmr_proc'] - self._performance['tmr_recv'])*1000) + " ms")
+                        print("____Total Time: " + str((self._performance['tmr_proc'] - self._performance['tmr_start'])*1000) + " ms")
 
 
     def getQueryCommand(self, *args):

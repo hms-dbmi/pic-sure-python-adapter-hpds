@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import PicSureHpdsLib
+import json
 
 class Adapter:
     """ Main class of library used to connect to a HPDS resource via PIC-SURE"""
@@ -82,7 +83,6 @@ class BypassConnection:
         # print out info from /info about the endpoint
         # TODO: finish this
         import httplib2
-        import json
         h = httplib2.Http()
         hdrs = {"Content-Type": "application/json"}
         (resp_headers, content) = h.request(uri=self.url + "info/"+resource_uuid, method="POST", headers=hdrs, body="{}")
@@ -113,7 +113,6 @@ class BypassConnection:
     def getResources(self):
         """PicSureClient.resources() function is used to list all resources on the connected endpoint"""
         import httplib2
-        import json
         httpConn = httplib2.Http()
         httpHeaders = {'Content-Type': 'application/json'}
         (resp_headers, content) = httpConn.request(self.url + "info", "POST", headers=httpHeaders, body="{}")
@@ -149,13 +148,13 @@ class BypassConnectionAPI:
     def info(self, resource_uuid):
         # https://github.com/hms-dbmi/pic-sure/blob/master/pic-sure-resources/pic-sure-resource-api/src/main/java/edu/harvard/dbmi/avillach/service/ResourceWebClient.java#L43
         import httplib2
-        import json
         httpConn = httplib2.Http()
         httpHeaders = {'Content-Type': 'application/json'}
-        (resp_headers, content) = httpConn.request(self.url + "info", "POST", headers=httpHeaders, body="{}")
+        url = self.url + "info"
+        (resp_headers, content) = httpConn.request(url, "POST", headers=httpHeaders, body="{}")
         if resp_headers["status"] != "200":
             print("ERROR: HTTP response was bad")
-            print(self.url+"info")
+            print(url)
             print(resp_headers)
             print(content.decode("utf-8"))
             return list()
@@ -166,22 +165,22 @@ class BypassConnectionAPI:
         # make sure a Resource UUID is passed via the body of these commands
         # https://github.com/hms-dbmi/pic-sure/blob/master/pic-sure-resources/pic-sure-resource-api/src/main/java/edu/harvard/dbmi/avillach/service/ResourceWebClient.java#L69
         import httplib2
-        import json
         httpConn = httplib2.Http()
         httpHeaders = {'Content-Type': 'application/json'}
+        url = self.url + "search"
         if query == None:
             bodystr = json.dumps({"query":""})
         else:
             bodystr = str(query)
-        (resp_headers, content) = httpConn.request(self.url + "search", "POST", headers=httpHeaders, body=bodystr)
+        (resp_headers, content) = httpConn.request(url, "POST", headers=httpHeaders, body=bodystr)
         if resp_headers["status"] != "200":
             print("ERROR: HTTP response was bad")
-            print(self.url+"search")
+            print(url)
             print(resp_headers)
             print(content.decode("utf-8"))
             return '{"results":{}, "error":true}'
         else:
-            return content.decode("utf-8")
+            return content
 
     def asyncQuery(self, resource_uuid, query):
         # make sure a Resource UUID is passed via the body of these commands
@@ -195,15 +194,16 @@ class BypassConnectionAPI:
         import httplib2
         httpConn = httplib2.Http()
         httpHeaders = {'Content-Type': 'application/json'}
-        (resp_headers, content) = httpConn.request(self.url + "query/sync", "POST", headers=httpHeaders, body=query)
+        url = self.url + "query/sync"
+        (resp_headers, content) = httpConn.request(url, "POST", headers=httpHeaders, body=query)
         if resp_headers["status"] != "200":
             print("ERROR: HTTP response was bad")
-            print(self.url+"query/sync")
+            print(url)
             print(resp_headers)
             print(content.decode("utf-8"))
             return ""
         else:
-            return content.decode("utf-8")
+            return content
 
     def queryStatus(self, resource_uuid, query_uuid):
         # https://github.com/hms-dbmi/pic-sure/blob/master/pic-sure-resources/pic-sure-resource-api/src/main/java/edu/harvard/dbmi/avillach/service/ResourceWebClient.java#L124
