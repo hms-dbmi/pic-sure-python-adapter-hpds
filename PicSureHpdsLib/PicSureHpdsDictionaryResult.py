@@ -5,7 +5,14 @@ class DictionaryResult:
     def __init__(self, results):
         import json
         self.results = json.loads(results)
-        pass
+        # remap results if needed
+        newResults = dict()
+        if "phenotypes" in self.results['results']:
+            for resultType in self.results['results']:
+                for idx in self.results['results'][resultType]:
+                    self.results['results'][resultType][idx]['HpdsDataType'] = resultType
+                    newResults[idx] = self.results['results'][resultType][idx]
+            self.results['results'] = newResults
 
     def help(self):
         print("""
