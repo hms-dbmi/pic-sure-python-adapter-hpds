@@ -180,7 +180,7 @@ class BypassConnectionAPI:
             print(content.decode("utf-8"))
             return '{"results":{}, "error":true}'
         else:
-            return content
+            return content.decode("utf-8")
 
     def asyncQuery(self, resource_uuid, query):
         # make sure a Resource UUID is passed via the body of these commands
@@ -201,9 +201,9 @@ class BypassConnectionAPI:
             print(url)
             print(resp_headers)
             print(content.decode("utf-8"))
-            return ""
+            return '{"results":{}, "error":true}'
         else:
-            return content
+            return content.decode("utf-8")
 
     def queryStatus(self, resource_uuid, query_uuid):
         # https://github.com/hms-dbmi/pic-sure/blob/master/pic-sure-resources/pic-sure-resource-api/src/main/java/edu/harvard/dbmi/avillach/service/ResourceWebClient.java#L124
