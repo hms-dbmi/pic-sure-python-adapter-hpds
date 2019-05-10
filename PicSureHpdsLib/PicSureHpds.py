@@ -96,7 +96,7 @@ class BypassConnection:
             pprint.pprint(json.loads(content.decode("utf-8")))
 
     def list(self):
-        listing = self.getResources()
+        listing = json.loads(self.getResources())
         if listing != None:
             print("+".ljust(39, '-') + '+'.ljust(55, '-'))
             print("|  Resource UUID".ljust(39, ' ') + '|  Resource Name'.ljust(50, ' '))
@@ -157,9 +157,9 @@ class BypassConnectionAPI:
             print(url)
             print(resp_headers)
             print(content.decode("utf-8"))
-            return list()
+            return '{"results":{}, "error":"true"}'
         else:
-            return json.loads(content.decode("utf-8"))
+            return content.decode("utf-8")
 
     def search(self, resource_uuid, query=None):
         # make sure a Resource UUID is passed via the body of these commands
@@ -178,7 +178,7 @@ class BypassConnectionAPI:
             print(url)
             print(resp_headers)
             print(content.decode("utf-8"))
-            return '{"results":{}, "error":true}'
+            return '{"results":{}, "error":"true"}'
         else:
             return content.decode("utf-8")
 
@@ -201,7 +201,7 @@ class BypassConnectionAPI:
             print(url)
             print(resp_headers)
             print(content.decode("utf-8"))
-            return '{"results":{}, "error":true}'
+            return '{"results":{}, "error":"true"}'
         else:
             return content.decode("utf-8")
 
