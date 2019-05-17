@@ -21,7 +21,7 @@ setup(
     author="Nick Benik",
     author_email='nick_benik@hms.harvard.edu',
     classifiers=[
-        'Development Status :: 2 - Pre-Alpha',
+        'Development Status :: 3 - Alpha',
         'Intended Audience :: Developers',
         'License :: OSI Approved :: Apache Software License',
         'Natural Language :: English',
@@ -43,6 +43,6 @@ setup(
     test_suite='tests',
     tests_require=test_requirements,
     url='https://github.com/hms-dbmi/pic-sure-hpds-python-client',
-    version='0.1.0',
+    version='0.9.0',
     zip_safe=False,
 )
