@@ -147,7 +147,7 @@ class Query:
         self._performance['running'] = False
         from io import StringIO
         import pandas
-        ret = pandas.read_csv(StringIO(httpResults.decode('utf-8')))
+        ret = pandas.read_csv(StringIO(httpResults))
         self._performance['tmr_proc'] = time.time()
         return ret
 

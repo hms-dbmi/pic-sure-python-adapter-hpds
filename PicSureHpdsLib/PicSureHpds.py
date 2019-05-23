@@ -120,7 +120,7 @@ class BypassConnection:
             print("ERROR: HTTP response was bad")
             print(resp_headers)
             print(content.decode("utf-8"))
-            return list()
+            return "[]"
         else:
             temp = json.loads(content.decode("utf-8"))
             ret=[{
@@ -128,7 +128,7 @@ class BypassConnection:
                 "name": temp["name"],
                 "description":"[Resource accessed directly (bypassing PIC-SURE framework)]"
             }]
-            return ret
+            return json.dumps(ret)
 
     def _api_obj(self):
         """PicSureClient._api_obj() function returns a new, preconfigured PicSureConnectionAPI class instance """
