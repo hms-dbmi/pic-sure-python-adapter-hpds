@@ -49,13 +49,17 @@ class AttrList:
                         self.data[loopkey] = {'type': 'categorical', 'values': func_args[0]}
             else:
                 # process min+max add (2 unnamed parameters)
-                if len(func_args) > 1 and type(func_args[0]) == int and type(func_args[1]) == int:
+                if len(func_args) > 1 and (type(func_args[0]) == int or type(func_args[1]) == int):
                     for loopkey in keys:
                         if loopkey in self.data:
                             print('ERROR: cannot add, key already exists -> ', loopkey)
                             return
                         else:
-                            self.data[loopkey] = {'type': 'minmax', 'min': func_args[0], 'max': func_args[1]}
+                            self.data[loopkey] = {'type': 'minmax'}
+                            if type(func_args[0]) == int:
+                                self.data[loopkey]['min'] = func_args[0]
+                            if type(func_args[0]) == int:
+                                self.data[loopkey]['max'] = func_args[1]
                 else:
                     # process min and/or max add (1 or 2 named parameters)
                     if 'min' in kwargs or 'max' in kwargs:
@@ -64,7 +68,7 @@ class AttrList:
                                 print('ERROR: cannot add, key already exists -> ', loopkey)
                                 return
                             else:
-                                self.data[loopkey] = {'type': 'minmax', 'min': None, 'max': None}
+                                self.data[loopkey] = {'type': 'minmax'}
                                 if 'min' in kwargs:
                                     self.data[loopkey]['min'] = kwargs['min']
                                 if 'max' in kwargs:

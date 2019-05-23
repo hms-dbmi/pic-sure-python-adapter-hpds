@@ -23,7 +23,11 @@ class AttrListKeyValues(PicSureHpdsLib.AttrList):
         ret = {"numericFilters":{}, "categoryFilters":{}}
         for key, rec in self.data.items():
             if rec['type'] == 'minmax':
-                ret['numericFilters'][key] = {"min":rec['min'], "max":rec['max']}
+                ret['numericFilters'][key] = {}
+                if rec['min']:
+                    ret['numericFilters'][key]["min"] = rec['min']
+                if rec['max']:
+                    ret['numericFilters'][key]["min"] = rec['max']
             elif rec['type'] == 'categorical':
                 ret['categoryFilters'][key] = rec['values']
             elif rec['type'] == 'value':
