@@ -43,6 +43,10 @@ class DictionaryResult:
         import pandas
         ret = {}
 
+        # return an empty dataframe if there are no records
+        if len(self.results['results']) == 0:
+            return pandas.DataFrame(data=ret)
+
         # build the column list from the attributes found in ALL result records
         for i, d in self.results['results'].items():
             for c in list(d):
