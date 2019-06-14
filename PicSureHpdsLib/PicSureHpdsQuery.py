@@ -136,7 +136,7 @@ class Query:
         self._performance['running'] = False
         try:
             from json.decoder import JSONDecodeError
-            result = json.loads(httpResults.decode("utf-8"))
+            result = json.loads(httpResults)
             if result.error == True:
                 print("[ERROR]")
                 print(httpResults)
@@ -157,7 +157,7 @@ class Query:
         self._performance['running'] = False
         try:
             from json.decoder import JSONDecodeError
-            result = json.loads(httpResults.decode("utf-8"))
+            result = json.loads(httpResults)
             if result.error == True:
                 print("[ERROR]")
                 print(httpResults)
