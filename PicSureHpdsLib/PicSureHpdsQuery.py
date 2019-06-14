@@ -134,6 +134,16 @@ class Query:
         httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
         self._performance['tmr_recv'] = time.time()
         self._performance['running'] = False
+        try:
+            from json.decoder import JSONDecodeError
+            result = json.loads(httpResults.decode("utf-8"))
+            if result.error == True:
+                print("[ERROR]")
+                print(httpResults)
+                self._performance['tmr_proc'] = time.time()
+                raise Exception('An error has occured with the server')
+        except JSONDecodeError:
+            pass
         self._performance['tmr_proc'] = time.time()
         return httpResults
 
@@ -145,6 +155,17 @@ class Query:
         httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
         self._performance['tmr_recv'] = time.time()
         self._performance['running'] = False
+        try:
+            from json.decoder import JSONDecodeError
+            result = json.loads(httpResults.decode("utf-8"))
+            if result.error == True:
+                print("[ERROR]")
+                print(httpResults)
+                self._performance['tmr_proc'] = time.time()
+                raise Exception('An error has occured with the server')
+        except JSONDecodeError:
+            pass
+        self._performance['tmr_proc'] = time.time()
         from io import StringIO
         import pandas
         ret = pandas.read_csv(StringIO(httpResults))
