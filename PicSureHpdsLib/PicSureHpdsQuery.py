@@ -118,7 +118,7 @@ class Query:
         self._performance['tmr_recv'] = time.time()
         self._performance['running'] = False
         # make sure we are able to convert to a valid number
-        if str(int(httpResults)) == httpResults.decode("utf-8"):
+        if str(int(httpResults)) == httpResults:
             self._performance['tmr_proc'] = time.time()
             return int(httpResults)
         else:
