@@ -52,8 +52,9 @@ class DictionaryResult:
             for c in list(d):
                 if not c in ret:
                     ret[c] = []
-        # remove the name column
-        del ret["name"]
+        # remove the name column if it exists
+        if "name" in ret:
+            del ret["name"]
 
         # now populate the dataframe columns
         colNames = list(ret)
