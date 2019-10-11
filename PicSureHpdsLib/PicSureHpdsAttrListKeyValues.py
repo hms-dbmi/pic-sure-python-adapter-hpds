@@ -20,21 +20,48 @@ class AttrListKeyValues(PicSureHpdsLib.AttrList):
         return super().add(key, *args, **kwargs)
 
     def getQueryValues(self):
-        ret = {"numericFilters":{}, "categoryFilters":{}}
+        ret = {
+            "numericFilters":{},
+            "categoryFilters":{},
+            "variantInfoFilters": []
+        }
+        ret_variant_category = {}
+        ret_variant_numeric = {}
         for key, rec in self.data.items():
             if rec['type'] == 'minmax':
-                ret['numericFilters'][key] = {}
+                save_rec = {}
                 if 'min' in rec:
-                    ret['numericFilters'][key]["min"] = rec["min"]
+                    save_rec["min"] = rec["min"]
                 if 'max' in rec:
-                    ret['numericFilters'][key]["max"] = rec["max"]
+                    save_rec["max"] = rec["max"]
+                if rec['HpdsDataType'] == 'info':
+                    ret_variant_numeric[key] = save_rec
+                else:
+                    ret['numericFilters'][key] = save_rec
             elif rec['type'] == 'categorical':
-                ret['categoryFilters'][key] = rec['values']
+                save_rec = rec['values']
+                if rec['HpdsDataType'] == 'info':
+                    ret_variant_category[key] = save_rec
+                else:
+                    ret['categoryFilters'][key] = save_rec
             elif rec['type'] == 'value':
                 if type(rec['value']) == str:
-                    ret['categoryFilters'][key] = [rec['value']]
+                    save_rec = [rec['value']]
+                    if rec['HpdsDataType'] == 'info':
+                        ret_variant_category[key] = save_rec
+                    else:
+                        ret['categoryFilters'][key] = save_rec
                 else:
-                    ret['numericFilters'][key] = {"min":rec['value'], "max":rec['value']}
+                    save_rec = {"min":rec['value'], "max":rec['value']}
+                    if rec['HpdsDataType'] == 'info':
+                        ret_variant_category[key] = save_rec
+                    else:
+                        ret['numericFilters'][key] = save_rec
+        # add any variant filters if set
+        if len(ret_variant_category) > 0:
+            ret["variantInfoFilters"].append(ret_variant_category)
+        if len(ret_variant_numeric) > 0:
+            ret["variantInfoFilters"].append(ret_variant_numeric)
         return ret
 
     def getJSON(self):
