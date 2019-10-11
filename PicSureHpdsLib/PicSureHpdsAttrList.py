@@ -82,8 +82,14 @@ class AttrList:
             # process categorical add
             if len(func_args) > 0 and type(func_args[0]) == list:
                 for loopkey in keys:
-                    # TODO: Test keys' class criteria (info, phenotype, etc)
-                    self.data[loopkey] = {'type': 'categorical', 'values': func_args[0], 'HpdsDataType': key_class_list[loopkey]}
+                    # Do not add entries with no list entries
+                    if len(func_args[0]) > 0:
+                        # TODO: Test keys' class criteria (info, phenotype, etc)
+                        # TODO: Test that the entries for categorical values match results retreved
+                        #       from data dictionary call (unless entry is a VariantSpec)
+                        self.data[loopkey] = {'type': 'categorical', 'values': func_args[0], 'HpdsDataType': key_class_list[loopkey]}
+                    else:
+                        print("ERROR: cannot add, key does not have any categorical values set -> ", str(loopkey))
             else:
                 # process min+max add (2 unnamed parameters)
                 if len(func_args) > 1 and (type(func_args[0]) == int or type(func_args[1]) == int):
