@@ -192,7 +192,7 @@ class AttrList:
     def _is_variant_spec_str(self, variant_str):
         # is if string contains variant spec format
         is_variant = False
-        if re.match('rs[0 - 9]+', variant_str) is not None:
+        if re.match('rs[0-9]+', variant_str) is not None:
             is_variant = True
         if re.match('[0-9]+,[0-9\\.]+,.*', variant_str) is not None:
             is_variant = True
