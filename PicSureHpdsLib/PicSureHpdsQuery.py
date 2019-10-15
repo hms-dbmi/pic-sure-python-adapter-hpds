@@ -286,6 +286,7 @@ class Query:
             "anyRecordOf": [],
             "numericFilters": {},
             "categoryFilters": {},
+            "variantInfoFilters": []
         }}
         ret['query']['crossCountFields'] = self._lstCrossCntFields.getQueryValues()
         ret['query']['anyRecordOf'] = self._lstAnyOf.getQueryValues()
@@ -293,6 +294,7 @@ class Query:
         temp = self._lstFilter.getQueryValues()
         ret['query']['numericFilters'] = temp['numericFilters']
         ret['query']['categoryFilters'] = temp['categoryFilters']
+        ret['query']['variantInfoFilters'] = temp['variantInfoFilters']
 
         if hasattr(self._refHpdsResourceConnection, 'resource_uuid'):
             if self._refHpdsResourceConnection.resource_uuid != None:
