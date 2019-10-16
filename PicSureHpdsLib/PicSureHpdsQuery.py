@@ -190,17 +190,10 @@ class Query:
         httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
         self._performance['tmr_recv'] = time.time()
         self._performance['running'] = False
-        # make sure we are able to convert to a valid number
-        if str(int(httpResults)) == httpResults:
-            self._performance['tmr_proc'] = time.time()
-            # TODO: Convert this to the correct format!
-            return httpResults
-        else:
-            print('[ERROR] could not convert results of RequestCount to integer')
-            self._performance['tmr_proc'] = time.time()
-            return httpResults
-
-
+        self._performance['tmr_proc'] = time.time()
+        # Return as dict mapping variant spec to count
+        return json.loads(httpResults)
+        
     def getResults(self, asAsync=False, timeout=30):
         self._performance['running'] = True
         self._performance['tmr_start'] = time.time()
