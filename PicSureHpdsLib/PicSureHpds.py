@@ -20,9 +20,6 @@ class Adapter:
         print(PicSureHpdsLib.__package__ + " Library (version " + PicSureHpdsLib.__version__ + ")")
         print("URL: ".ljust(12,' ') + self.connection_reference.url)
 
-    def list(self):
-        self.connection_reference.list()
-
     def useResource(self, resource_guid):
         return HpdsResourceConnection(self.connection_reference, resource_guid)
 
@@ -96,15 +93,13 @@ class BypassConnection:
             pprint.pprint(json.loads(content.decode("utf-8")))
 
     def list(self):
-        listing = json.loads(self.getResources())
+        listing = self.getResources()
         if listing != None:
             print("+".ljust(39, '-') + '+'.ljust(55, '-'))
-            print("|  Resource UUID".ljust(39, ' ') + '|  Resource Name'.ljust(50, ' '))
+            print("|  Resource UUID".ljust(39, ' ') + '|')
             print("+".ljust(39, '-') + '+'.ljust(55, '-'))
             for rec in listing:
-                print('| ' + rec['uuid'].ljust(35, ' ') + ' | ' + rec['name'])
-                print('| Description: ' + rec['description'])
-                print("+".ljust(39, '-') + '+'.ljust(55, '-'))
+                print('| ' + rec.ljust(35, ' '))
 
     def getInfo(self, uuid):
         import httplib2
@@ -115,20 +110,14 @@ class BypassConnection:
         import httplib2
         httpConn = httplib2.Http()
         httpHeaders = {'Content-Type': 'application/json'}
-        (resp_headers, content) = httpConn.request(self.url + "info", "POST", headers=httpHeaders, body="{}")
+        (resp_headers, content) = httpConn.request(uri=self.url + "info", method="POST", headers=httpHeaders, body="{}")
         if resp_headers["status"] != "200":
             print("ERROR: HTTP response was bad")
             print(resp_headers)
             print(content.decode("utf-8"))
             return "[]"
         else:
-            temp = json.loads(content.decode("utf-8"))
-            ret=[{
-                "uuid": temp["id"],
-                "name": temp["name"],
-                "description":"[Resource accessed directly (bypassing PIC-SURE framework)]"
-            }]
-            return json.dumps(ret)
+            return json.loads(content.decode("utf-8"))
 
     def _api_obj(self):
         """PicSureClient._api_obj() function returns a new, preconfigured PicSureConnectionAPI class instance """
