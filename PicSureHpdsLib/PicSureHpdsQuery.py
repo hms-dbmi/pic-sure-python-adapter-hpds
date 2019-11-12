@@ -193,7 +193,7 @@ class Query:
         self._performance['tmr_proc'] = time.time()
         # Return as dict mapping variant spec to count
         return json.loads(httpResults)
-        
+
     def getResults(self, asAsync=False, timeout=30):
         self._performance['running'] = True
         self._performance['tmr_start'] = time.time()
@@ -281,6 +281,7 @@ class Query:
             "categoryFilters": {},
             "variantInfoFilters": []
         }}
+         ret['query']['fields'] = self._lstSelect.getQueryValues()
         ret['query']['crossCountFields'] = self._lstCrossCntFields.getQueryValues()
         ret['query']['anyRecordOf'] = self._lstAnyOf.getQueryValues()
         ret['query']['requiredFields'] = self._lstRequire.getQueryValues()

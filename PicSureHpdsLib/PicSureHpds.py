@@ -140,7 +140,7 @@ class BypassConnectionAPI:
         httpConn = httplib2.Http()
         httpHeaders = {'Content-Type': 'application/json'}
         url = self.url + "info"
-        (resp_headers, content) = httpConn.request(url, "POST", headers=httpHeaders, body="{}")
+        (resp_headers, content) = httpConn.request(uri=url, method="POST", headers=httpHeaders, body="{}")
         if resp_headers["status"] != "200":
             print("ERROR: HTTP response was bad")
             print(url)
@@ -161,7 +161,7 @@ class BypassConnectionAPI:
             bodystr = json.dumps({"query":""})
         else:
             bodystr = str(query)
-        (resp_headers, content) = httpConn.request(url, "POST", headers=httpHeaders, body=bodystr)
+        (resp_headers, content) = httpConn.request(uri=url, method="POST", headers=httpHeaders, body=bodystr)
         if resp_headers["status"] != "200":
             print("ERROR: HTTP response was bad")
             print(url)
