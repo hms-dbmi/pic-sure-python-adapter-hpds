@@ -281,7 +281,7 @@ class Query:
             "categoryFilters": {},
             "variantInfoFilters": []
         }}
-         ret['query']['fields'] = self._lstSelect.getQueryValues()
+        ret['query']['fields'] = self._lstSelect.getQueryValues()
         ret['query']['crossCountFields'] = self._lstCrossCntFields.getQueryValues()
         ret['query']['anyRecordOf'] = self._lstAnyOf.getQueryValues()
         ret['query']['requiredFields'] = self._lstRequire.getQueryValues()
