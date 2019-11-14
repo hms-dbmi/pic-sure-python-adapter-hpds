@@ -184,7 +184,7 @@ class BypassConnectionAPI:
         httpConn = httplib2.Http()
         httpHeaders = {'Content-Type': 'application/json'}
         url = self.url + "query/sync"
-        (resp_headers, content) = httpConn.request(url, "POST", headers=httpHeaders, body=query)
+        (resp_headers, content) = httpConn.request(uri=url, method="POST", headers=httpHeaders, body=query)
         if resp_headers["status"] != "200":
             print("ERROR: HTTP response was bad")
             print(url)

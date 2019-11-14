@@ -169,9 +169,11 @@ class TestAttrList(unittest.TestCase):
         # add 1st term
         my_apiObj.search.return_value = '{"results": {"phenotypes": {"' + my_term1 + '": true}}}'
         myAttrList.add(my_term1)
+        self.assertEqual(my_apiObj.search.call_count, 1)
         # add 2nd term
         my_apiObj.search.return_value = '{"results": {"phenotypes": {"' + my_term2 + '": true}}}'
         myAttrList.add(my_term2)
+        self.assertEqual(my_apiObj.search.call_count, 2)
 
         # make sure both entries were added
         self.assertEqual(len(myAttrList.data), 2)
@@ -181,4 +183,4 @@ class TestAttrList(unittest.TestCase):
         self.assertEqual(len(myAttrList.data), 0)
 
     def test_ZZZZ(self):
-        print("testing needed for adding/deleting of each data type!")
+        print("testing needed for adding/deleting of each data type (categorical, range, etc)")
