@@ -134,12 +134,14 @@ class AttrList:
     def delete(self, key, *args):
         func_args = list(args)
         if type(key) != list:
-            key = [key]
-        for t_key in key:
+            keys = [key]
+        else:
+            keys = key
+        for t_key in keys:
             # does the key exist?
-            if key in self.data:
+            if t_key in self.data:
                 # delete the key
-                self.data.pop(key)
+                self.data.pop(t_key)
             else:
                 print('ERROR: the specified key does not exist')
                 return
