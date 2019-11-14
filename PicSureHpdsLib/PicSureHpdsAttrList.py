@@ -130,30 +130,21 @@ class AttrList:
                                     print('ERROR: cannot add key, HpdsVariantSpec cannot filter on a value (use catagorical by passing single value in array) -> ', loopkey)
         return self
 
+
     def delete(self, key, *args):
         func_args = list(args)
-        # does the key exist?
-        if key in self.data:
-            # are we deleting the whole key or just some values?
-            if len(func_args) == 0:
-                # just deleting the key
+        if type(key) != list:
+            key = [key]
+        for t_key in key:
+            # does the key exist?
+            if key in self.data:
+                # delete the key
                 self.data.pop(key)
             else:
-                # trying to remove a value, confirm categorical type
-                if self.data[key].get('type') == 'categorical':
-                    if func_args[0] in self.data[key].get('values'):
-                        # delete the matching value from the targeted values list
-                        self.data[key].get('values').remove(func_args[0])
-                    else:
-                        print('ERROR: value was not found in the key\'s categorical value list')
-                        return
-                else:
-                    print('ERROR: a value was specified but the key is not categorical')
-                    return
-        else:
-            print('ERROR: the specified key does not exist')
-            return
+                print('ERROR: the specified key does not exist')
+                return
         return self
+
 
     def show(self):
         print('| _restriction_type_ |', '_key_'.ljust(110, '_'), '| _restriction_values_')
