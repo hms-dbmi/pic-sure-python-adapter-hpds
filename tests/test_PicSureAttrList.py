@@ -1,6 +1,8 @@
 import PicSureHpdsLib
 import unittest
 from unittest.mock import patch, MagicMock
+import io
+import sys
 
 class TestAttrList(unittest.TestCase):
 
@@ -27,9 +29,55 @@ class TestAttrList(unittest.TestCase):
         self.assertIs(my_resource_uuid, myAttrList._resource_uuid)
 
 
+    @patch('PicSureClient.PicSureConnectionAPI')
+    def test_func_help(self, mock_api_obj):
+        # our inputs for object creation
+        my_apiObj = mock_api_obj()
+        my_allowVariantSpec = True
+        my_help_text = 'test-help-text'
+        my_resource_uuid = 'test-resource-uuid'
+
+        # create list
+        myAttrList = PicSureHpdsLib.AttrList(
+            help_text = my_help_text,
+            resource_uuid = my_resource_uuid,
+            apiObj = my_apiObj,
+            allowVariantSpec = my_allowVariantSpec
+        )
+        with patch('sys.stdout', new=io.StringIO()) as fake_stdout:
+            myAttrList.help()
+            sys.stdout = sys.__stdout__  # Reset redirect. Needed for it to work!
+            captured = fake_stdout.getvalue()
+            print("Captured:\n" + captured)
+            self.assertTrue(captured == my_help_text)
+
 
     @patch('PicSureClient.PicSureConnectionAPI')
-    def test_add_with_valid_lookup(self, mock_api_obj):
+    def test_func_show(self, mock_api_obj):
+        # our inputs for object creation
+        my_apiObj = mock_api_obj()
+        my_allowVariantSpec = True
+        my_help_text = 'test-help-text'
+        my_resource_uuid = 'test-resource-uuid'
+
+        # create list
+        myAttrList = PicSureHpdsLib.AttrList(
+            help_text=my_help_text,
+            resource_uuid = my_resource_uuid,
+            apiObj = my_apiObj,
+            allowVariantSpec = my_allowVariantSpec
+        )
+        with patch('sys.stdout', new=io.StringIO()) as fake_stdout:
+            myAttrList.show()
+            sys.stdout = sys.__stdout__  # Reset redirect. Needed for it to work!
+            captured = fake_stdout.getvalue()
+            print("Captured:\n" + captured)
+            self.assertTrue(len(captured) > 0)
+
+
+
+    @patch('PicSureClient.PicSureConnectionAPI')
+    def test_func_add_with_valid_lookup(self, mock_api_obj):
         my_term = "testing_term"
 
         # our inputs for object creation
@@ -58,7 +106,7 @@ class TestAttrList(unittest.TestCase):
 
 
     @patch('PicSureClient.PicSureConnectionAPI')
-    def test_add_with_bad_lookup(self, mock_api_obj):
+    def test_func_add_with_bad_lookup(self, mock_api_obj):
         my_term = "testing_term"
 
         # our inputs for object creation
@@ -87,7 +135,7 @@ class TestAttrList(unittest.TestCase):
 
 
     @patch('PicSureClient.PicSureConnectionAPI')
-    def test_delete_with_existing_key(self, mock_api_obj):
+    def test_func_delete_with_existing_key(self, mock_api_obj):
         my_term = "testing_term"
 
         # our inputs for object creation
@@ -116,7 +164,7 @@ class TestAttrList(unittest.TestCase):
 
 
     @patch('PicSureClient.PicSureConnectionAPI')
-    def test_delete_with_missing_key(self, mock_api_obj):
+    def test_func_delete_with_missing_key(self, mock_api_obj):
         my_term = "testing_term"
 
         # our inputs for object creation
@@ -146,7 +194,7 @@ class TestAttrList(unittest.TestCase):
 
 
     @patch('PicSureClient.PicSureConnectionAPI')
-    def test_clear(self, mock_api_obj):
+    def test_func_clear(self, mock_api_obj):
         my_term1 = "testing_term1"
         my_term2 = "testing_term2"
 
@@ -182,5 +230,5 @@ class TestAttrList(unittest.TestCase):
         myAttrList.clear()
         self.assertEqual(len(myAttrList.data), 0)
 
-    def test_ZZZZ(self):
-        print("testing needed for adding/deleting of each data type (categorical, range, etc)")
+    def test__NEEDS_MORE(self):
+        self.fail("testing needed for adding/deleting of each data type (categorical, range, etc)")
