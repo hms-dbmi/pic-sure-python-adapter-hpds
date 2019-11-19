@@ -68,5 +68,6 @@ class DictionaryResult:
                         ret[col].append(record[col])
                     else:
                         ret[col].append(None)
-
-        return pandas.DataFrame(data=ret, index=idx)
+        df = pandas.DataFrame(data=ret, index=idx)
+        df.index.name = 'KEY'
+        return df
