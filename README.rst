@@ -28,6 +28,11 @@ Features
 
 * TODO
 
+Installation
+--------
+
+*TODO
+
 Credits
 -------
 
