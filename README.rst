@@ -31,7 +31,7 @@ Features
 Installation
 --------
 
-*TODO
+* TODO
 
 Credits
 -------
