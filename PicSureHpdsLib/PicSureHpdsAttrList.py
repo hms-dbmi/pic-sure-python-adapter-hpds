@@ -92,15 +92,15 @@ class AttrList:
                         print("ERROR: cannot add, key does not have any categorical values set -> ", str(loopkey))
             else:
                 # process min+max add (2 unnamed parameters)
-                if len(func_args) > 1 and (type(func_args[0]) == int or type(func_args[1]) == int):
+                if len(func_args) > 1 and (type(func_args[0]) == int or type(func_args[0]) == float):
                     for loopkey in keys:
                         # TODO: Test keys' class criteria (info, phenotype, etc)
                         # do not add HpdsVariantSpec type with min/max values
                         if key_class_list[loopkey] != "HpdsVariantSpec":
                             self.data[loopkey] = {'type': 'minmax', 'HpdsDataType': key_class_list[loopkey]}
-                            if type(func_args[0]) == int:
-                                self.data[loopkey]['min'] = func_args[0]
-                            if type(func_args[0]) == int:
+                            # already tested type of min value at this point
+                            self.data[loopkey]['min'] = func_args[0]
+                            if (type(func_args[1]) == int) or (type(func_args[1]) == float):
                                 self.data[loopkey]['max'] = func_args[1]
                         else:
                             print('ERROR: cannot add key, HpdsVariantSpec cannot filter as a range -> ', loopkey)
@@ -120,7 +120,7 @@ class AttrList:
                                 print('ERROR: cannot add key, HpdsVariantSpec cannot filter as a range -> ', loopkey)
                     else:
                         # process single value add
-                        if type(func_args[0]) == int or type(func_args[0]) == str:
+                        if type(func_args[0]) == int or type(func_args[0]) == float or type(func_args[0]) == str:
                             for loopkey in keys:
                                 # TODO: Test keys' class criteria (info, phenotype, etc)
                                 # do not add HpdsVariantSpec type with min/max values
