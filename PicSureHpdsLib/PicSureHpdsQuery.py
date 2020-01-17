@@ -174,13 +174,17 @@ class Query:
         self._performance['tmr_recv'] = time.time()
         self._performance['running'] = False
         # make sure we are able to convert to a valid number
-        if str(int(httpResults)) == httpResults:
-            self._performance['tmr_proc'] = time.time()
-            return int(httpResults)
-        else:
-            print('[ERROR] could not convert results of RequestCount to integer')
-            self._performance['tmr_proc'] = time.time()
-            return httpResults
+        try:
+            if str(int(httpResults)) == httpResults:
+                self._performance['tmr_proc'] = time.time()
+                return int(httpResults)
+            else:
+                pass
+        except:
+            pass
+        print('[ERROR] could not convert results of RequestCount to integer')
+        self._performance['tmr_proc'] = time.time()
+        return httpResults
 
     def getCrossCounts(self, asAsync=False, timeout=30):
         self._performance['running'] = True
