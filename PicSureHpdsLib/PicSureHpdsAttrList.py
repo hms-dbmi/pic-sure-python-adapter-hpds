@@ -45,19 +45,18 @@ class AttrList:
         keys = new_keys
 
         # query the resource and identify what data_class the key belongs to
-        new_keys = []
-        key_class_list = {}
+        new_keys = {}
         for loopkey in keys:
             # do not lookup if key is variant spec
             temp = self._variant_spec_str(loopkey)
             if self._is_variant_spec_str(temp):
                 if self._allow_variant_spec:
-                    new_keys.append(temp)
-                    key_class_list[str(temp)] = "HpdsVariantSpec"
+                    new_keys[loopkey] = {"class": "HpdsVariantSpec", "definition": temp}
                 else:
                     print('ERROR: cannot add key, it is of type HpdsVariantSpec -> ', loopkey)
             else:
-                query = {"query": str(loopkey)}
+                loopkey = str(loopkey)
+                query = {"query": loopkey}
                 results = self._apiObj.search(self._resource_uuid, json.dumps(query))
                 results = json.loads(results)['results']
                 merge_results = {}
@@ -65,69 +64,125 @@ class AttrList:
                 for typename in results:
                     if loopkey in results[typename]:
                         was_found = True
-                        new_keys.append(loopkey)
-                        key_class_list[str(loopkey)] = typename
+                        new_keys[loopkey] = {"class": typename, "definition": results[typename][loopkey]}
                         break
                 if not was_found:
-                    print('ERROR: cannot add, key does not exist in resource -> ', str(loopkey))
+                    print('ERROR: cannot add, key does not exist in resource -> ', loopkey)
                     # we do not append to the new_keys array so futher processing of this key will not occur
         keys = new_keys
 
+
+#===================================================================
         # process just a key add
         if len(func_args) == 0 and len(kwargs) == 0:
             for loopkey in keys:
                 # TODO: Test keys' class criteria (info, phenotype, etc)
-                self.data[loopkey] = {'type': 'exists', 'HpdsDataType': key_class_list[loopkey]}
+                self.data[loopkey] = {'type': 'exists', 'HpdsDataType': keys[loopkey]["class"]}
         else:
-            # process categorical add
-            if len(func_args) > 0 and type(func_args[0]) == list:
-                for loopkey in keys:
+            # process unamed parameters
+            if len(func_args) > 0:
+                # process categorical add
+                if type(func_args[0]) == list:
                     # Do not add entries with no list entries
                     if len(func_args[0]) > 0:
-                        # TODO: Test keys' class criteria (info, phenotype, etc)
-                        # TODO: Test that the entries for categorical values match results retreved
-                        #       from data dictionary call (unless entry is a VariantSpec)
-                        self.data[loopkey] = {'type': 'categorical', 'values': func_args[0], 'HpdsDataType': key_class_list[loopkey]}
-                    else:
-                        print("ERROR: cannot add, key does not have any categorical values set -> ", str(loopkey))
-            else:
-                # process min+max add (2 unnamed parameters)
-                if len(func_args) > 1 and (type(func_args[0]) == int or type(func_args[0]) == float):
-                    for loopkey in keys:
-                        # TODO: Test keys' class criteria (info, phenotype, etc)
-                        # do not add HpdsVariantSpec type with min/max values
-                        if key_class_list[loopkey] != "HpdsVariantSpec":
-                            self.data[loopkey] = {'type': 'minmax', 'HpdsDataType': key_class_list[loopkey]}
-                            # already tested type of min value at this point
-                            self.data[loopkey]['min'] = func_args[0]
-                            if (type(func_args[1]) == int) or (type(func_args[1]) == float):
-                                self.data[loopkey]['max'] = func_args[1]
-                        else:
-                            print('ERROR: cannot add key, HpdsVariantSpec cannot filter as a range -> ', loopkey)
-                else:
-                    # process min and/or max add (1 or 2 named parameters)
-                    if 'min' in kwargs or 'max' in kwargs:
                         for loopkey in keys:
-                            # TODO: Test keys' class criteria (info, phenotype, etc)
-                            # do not add HpdsVariantSpec type with min/max values
-                            if key_class_list[loopkey] != "HpdsVariantSpec":
-                                self.data[loopkey] = {'type': 'minmax', 'HpdsDataType': key_class_list[loopkey]}
+                            # TODO: Test keys' class criteria (info, phenotype, etc) --- follow up to self: why do this?
+                            # TODO: what to do if they are adding a variant spec? (handle this)
+
+                            # Test that the key is categorical
+                            if "values" not in keys[loopkey]["definition"]:
+                                print("ERROR: cannot add value to a key that is not categorical -> ", loopkey)
+                            else:
+                                # Test that user is setting categorical value(s) that are valid for the key
+                                valid = True
+                                for val in func_args[0]:
+                                    if val not in keys[loopkey]["definition"]["values"]:
+                                        valid = False
+                                        print("ERROR: key cannot be added because a undefined category value [ ", val, " ] is not valid for key -> ", loopkey)
+                                if valid:
+                                    self.data[loopkey] = {'type': 'categorical', 'values': func_args[0], 'HpdsDataType': keys[loopkey]["class"]}
+                    else:
+                        print("ERROR: cannot add, no categorical values given for key -> ", loopkey)
+                else:
+                    if len(func_args) == 1:
+                        # process single value add
+                        if type(func_args[0]) == int or type(func_args[0]) == float or type(func_args[0]) == str:
+                            for loopkey in keys:
+                                # do not add HpdsVariantSpec type with min/max values
+                                if keys[loopkey]["class"] != "HpdsVariantSpec":
+                                    if type(func_args[0]) == int or type(func_args[0]) == float:
+                                        self.data[loopkey] = {'type': 'minmax',
+                                                              'min': func_args[0],
+                                                              'max': func_args[0],
+                                                              'HpdsDataType': keys[loopkey]["class"]}
+                                    else:
+                                        self.data[loopkey] = {'type': 'value',
+                                                              'value': func_args[0],
+                                                              'HpdsDataType': keys[loopkey]["class"]}
+                                else:
+                                    print('ERROR: cannot add key, HpdsVariantSpec cannot filter on a value (use catagorical by passing single value in array) -> ', loopkey)
+                    else:
+                        # process min+max add (2 unnamed parameters)
+                        if (type(func_args[0]) == int or type(func_args[0]) == float) and (type(func_args[1]) == int or type(func_args[1]) == float):
+                            for loopkey in keys:
+                                # TODO: Test keys' class criteria (info, phenotype, etc) --- follow up, why?
+                                # do not add HpdsVariantSpec type with min/max values
+                                if keys[loopkey]["class"] != "HpdsVariantSpec":
+                                    # make sure the key is continuous with a min and max value
+                                    if "min" not in keys[loopkey]["definition"] or "max" not in keys[loopkey]["definition"]:
+                                        print('ERROR: cannot add, key is not defined as a continuous variable -> ', loopkey)
+                                        break
+
+                                    # check to see if the min and max values are within the key's range
+                                    valid = True
+                                    for value in [func_args[0], func_args[1]]:
+                                        if value < keys[loopkey]["definition"]["min"] or value > keys[loopkey]["definition"]["max"]:
+                                             valid = False
+                                    if valid:
+                                        self.data[loopkey] = {'type': 'minmax',
+                                                              'HpdsDataType': keys[loopkey]["class"],
+                                                              'min': func_args[0],
+                                                              'max': func_args[1]
+                                                              }
+                                    else:
+                                        print('ERROR: cannot add key, the min or max value is outside the defined range of the key -> ', loopkey, "[" + str(keys[loopkey]["definition"]["min"]) + " to " + str(keys[loopkey]["definition"]["max"]) + "]")
+                                else:
+                                    print('ERROR: cannot add key, HpdsVariantSpec cannot filter as a range -> ', loopkey)
+            else:
+                # process named parameters
+                # process min and/or max add (1 or 2 named parameters)
+                if 'min' in kwargs or 'max' in kwargs:
+                    for loopkey in keys:
+                        # TODO: Test keys' class criteria (info, phenotype, etc) --- follow up, why?
+                        # do not add HpdsVariantSpec type with min/max values
+                        if keys[loopkey]["class"] != "HpdsVariantSpec":
+                            # make sure the key is continuous with a min and max value
+                            if "min" not in keys[loopkey]["definition"] or "max" not in keys[loopkey]["definition"]:
+                                print('ERROR: cannot add, key is not defined as a continuous variable -> ', loopkey)
+                                break
+
+                            # check to see if the min and max values are within the key's range
+                            record = {'type': 'minmax', 'HpdsDataType': keys[loopkey]["class"]}
+                            valid = True
+                            if 'min' in kwargs:
+                                if kwargs['min'] < keys[loopkey]["definition"]["min"] or kwargs['min'] > keys[loopkey]["definition"]["max"]:
+                                    valid = False
+                            if 'max' in kwargs:
+                                if kwargs['max'] < keys[loopkey]["definition"]["min"] or kwargs['max'] > keys[loopkey]["definition"]["max"]:
+                                    valid = False
+
+                            if valid:
+                                self.data[loopkey] = {'type': 'minmax', 'HpdsDataType': keys[loopkey]["class"]}
                                 if 'min' in kwargs:
                                     self.data[loopkey]['min'] = kwargs['min']
                                 if 'max' in kwargs:
                                     self.data[loopkey]['max'] = kwargs['max']
                             else:
-                                print('ERROR: cannot add key, HpdsVariantSpec cannot filter as a range -> ', loopkey)
-                    else:
-                        # process single value add
-                        if type(func_args[0]) == int or type(func_args[0]) == float or type(func_args[0]) == str:
-                            for loopkey in keys:
-                                # TODO: Test keys' class criteria (info, phenotype, etc)
-                                # do not add HpdsVariantSpec type with min/max values
-                                if key_class_list[loopkey] != "HpdsVariantSpec":
-                                    self.data[loopkey] = {'type': 'value', 'value': func_args[0], 'HpdsDataType': key_class_list[loopkey]}
-                                else:
-                                    print('ERROR: cannot add key, HpdsVariantSpec cannot filter on a value (use catagorical by passing single value in array) -> ', loopkey)
+                                print(
+                                    'ERROR: cannot add key, the min or max value is outside the defined range of the key -> ',
+                                    loopkey)
+                        else:
+                            print('ERROR: cannot add key, HpdsVariantSpec cannot filter as a range -> ', loopkey)
         return self
 
 
