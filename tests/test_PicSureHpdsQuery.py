@@ -132,6 +132,16 @@ class TestHpdsQuery(unittest.TestCase):
             print("Message on parameter useage:\n" + captured)
             self.assertTrue(len(captured) > 0)
 
+        # MagicMock the API's search function
+        query._apiObj.search.return_value = '{"results": {"phenotypes": {' \
+                                        '"somekey": {"name": "term1", "categorical": false, "min":0, "max":100}' \
+                                        '}}}'
+
+        my_list.add("somekey")
+        self.assertEqual(1, len(my_list.data))
+        output = query.getQueryCommand()
+        print(output)
+
 
     @patch('PicSureClient.Connection')
     def test_HpdsQuery_list_filter(self, mock_picsure_connection):
@@ -177,8 +187,8 @@ class TestHpdsQuery(unittest.TestCase):
         with patch('sys.stdout', new=io.StringIO()) as fake_stdout:
             query.filter().add([test_key1, test_key2], test_value)
             self.assertEqual(len(query.filter().data), 2)
-            self.assertDictEqual(query.filter().data[test_key1], {'type': 'value', 'value': test_value, 'HpdsDataType': test_class})
-            self.assertDictEqual(query.filter().data[test_key2], {'type': 'value', 'value': test_value, 'HpdsDataType': test_class})
+            self.assertDictEqual(query.filter().data[test_key1], {'type': 'minmax', 'min': test_value, 'max': test_value, 'HpdsDataType': test_class})
+            self.assertDictEqual(query.filter().data[test_key2], {'type': 'minmax', 'min': test_value, 'max': test_value, 'HpdsDataType': test_class})
 
             sys.stdout = sys.__stdout__  # Reset redirect. Needed for it to work!
             captured = fake_stdout.getvalue()
