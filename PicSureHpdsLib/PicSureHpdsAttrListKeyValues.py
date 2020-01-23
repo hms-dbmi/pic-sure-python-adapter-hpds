@@ -58,8 +58,7 @@ class AttrListKeyValues(PicSureHpdsLib.AttrList):
                     else:
                         ret['numericFilters'][key] = save_rec
         # add variant filters
-        ret["variantInfoFilters"].append({"categoryVariantInfoFilters": ret_variant_category})
-        ret["variantInfoFilters"].append({"numericVariantInfoFilters": ret_variant_numeric})
+        ret["variantInfoFilters"].append({"categoryVariantInfoFilters": ret_variant_category, "numericVariantInfoFilters": ret_variant_numeric})
         return ret
 
     def getJSON(self):
