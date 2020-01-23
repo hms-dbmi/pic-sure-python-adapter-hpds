@@ -98,7 +98,9 @@ class Query:
         .getCount()             single count indicating the number of matching records
         .getCrossCount()        array indicating number of matching records per cross-count keys
         .getResults()           CSV-like string containing the matching records
-        .getResultsDataFrame()  pandas DataFrame containing the matching records
+        .getResultsDataFrame()  pandas DataFrame containing the matching records...
+                                  Params "asAsynch" and "timeout" are used by function, any 
+                                  additional named parameters are passed to pandas.read_csv()
         .getRunDetails()        details about the last run of the query
         .getQueryCommand()      the JSON-formatted query request
         .show()                 lists all current query parameters
@@ -219,7 +221,7 @@ class Query:
         self._performance['tmr_proc'] = time.time()
         return httpResults
 
-    def getResultsDataFrame(self, asAsync=False, timeout=30):
+    def getResultsDataFrame(self, asAsync=False, timeout=30, **kwargs):
         self._performance['running'] = True
         self._performance['tmr_start'] = time.time()
         queryJSON = self.buildQuery('DATAFRAME')
@@ -240,7 +242,7 @@ class Query:
         self._performance['tmr_proc'] = time.time()
         from io import StringIO
         import pandas
-        ret = pandas.read_csv(StringIO(httpResults))
+        ret = pandas.read_csv(StringIO(httpResults), **kwargs)
         self._performance['tmr_proc'] = time.time()
         return ret
 
