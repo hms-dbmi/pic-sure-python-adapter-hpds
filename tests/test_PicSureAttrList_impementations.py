@@ -65,8 +65,8 @@ class TestAttrList(unittest.TestCase):
         my_apiObj.search.return_value = '{"results": {"phenotypes": {' \
                                         '"term1": {"name": "term1", "categorical": false, "min":0, "max":100},' \
                                         '"term2": {"name": "term2", "categorical": false, "min":0, "max":100},' \
-                                        '"term3": {"name": "term3", "categorical": true, "values":["cat1"]},' \
-                                        '"term4": {"name": "term4", "categorical": true, "values":["catA","catB","catC"]}' \
+                                        '"term3": {"name": "term3", "categorical": true, "categoryValues":["cat1"]},' \
+                                        '"term4": {"name": "term4", "categorical": true, "categoryValues":["catA","catB","catC"]}' \
                                         '}}}'
 
         # create
@@ -94,8 +94,8 @@ class TestAttrList(unittest.TestCase):
         my_apiObj.search.return_value = '{"results": {"phenotypes": {' \
                                         '"term1": {"name": "term1", "categorical": false, "min":0, "max":100},' \
                                         '"term2": {"name": "term2", "categorical": false, "min":0, "max":100},' \
-                                        '"term3": {"name": "term3", "categorical": true, "values":["cat1"]},' \
-                                        '"term4": {"name": "term4", "categorical": true, "values":["catA","catB","catC"]}' \
+                                        '"term3": {"name": "term3", "categorical": true, "categoryValues":["cat1"]},' \
+                                        '"term4": {"name": "term4", "categorical": true, "categoryValues":["catA","catB","catC"]}' \
                                         '}}}'
         # create
         myAttrList = PicSureHpdsLib.AttrListKeyValues(
@@ -129,8 +129,8 @@ class TestAttrList(unittest.TestCase):
         my_apiObj.search.return_value = '{"results": {"phenotypes": {' \
                                         '"term1": {"name": "term1", "categorical": false, "min":0, "max":100},' \
                                         '"term2": {"name": "term2", "categorical": false, "min":0, "max":100},' \
-                                        '"term3": {"name": "term3", "categorical": true, "values":["cat1"]},' \
-                                        '"term4": {"name": "term4", "categorical": true, "values":["catA","catB","catC"]}' \
+                                        '"term3": {"name": "term3", "categorical": true, "categoryValues":["cat1"]},' \
+                                        '"term4": {"name": "term4", "categorical": true, "categoryValues":["catA","catB","catC"]}' \
                                         '}}}'
 
         # create
@@ -159,8 +159,8 @@ class TestAttrList(unittest.TestCase):
         my_apiObj.search.return_value = '{"results": {"phenotypes": {' \
                                         '"term1": {"name": "term1", "categorical": false, "min":0, "max":100},' \
                                         '"term2": {"name": "term2", "categorical": false, "min":0, "max":100},' \
-                                        '"term3": {"name": "term3", "categorical": true, "values":["cat1"]},' \
-                                        '"term4": {"name": "term4", "categorical": true, "values":["catA","catB","catC"]}' \
+                                        '"term3": {"name": "term3", "categorical": true, "categoryValues":["cat1"]},' \
+                                        '"term4": {"name": "term4", "categorical": true, "categoryValues":["catA","catB","catC"]}' \
                                         '}}}'
         # create
         myAttrList = PicSureHpdsLib.AttrListKeyValues(
@@ -194,8 +194,8 @@ class TestAttrList(unittest.TestCase):
         my_apiObj.search.return_value = '{"results": {"phenotypes": {' \
                                         '"term1": {"name": "term1", "categorical": false, "min":0, "max":100},' \
                                         '"term2": {"name": "term2", "categorical": false, "min":0, "max":100},' \
-                                        '"term3": {"name": "term3", "categorical": true, "values":["cat1"]},' \
-                                        '"term4": {"name": "term4", "categorical": true, "values":["catA","catB","catC"]}' \
+                                        '"term3": {"name": "term3", "categorical": true, "categoryValues":["cat1"]},' \
+                                        '"term4": {"name": "term4", "categorical": true, "categoryValues":["catA","catB","catC"]}' \
                                         '}}}'
         # create
         myAttrList = PicSureHpdsLib.AttrListKeyValues(

@@ -90,13 +90,13 @@ class AttrList:
                             # TODO: what to do if they are adding a variant spec? (handle this)
 
                             # Test that the key is categorical
-                            if "values" not in keys[loopkey]["definition"]:
+                            if "categoryValues" not in keys[loopkey]["definition"]:
                                 print("ERROR: cannot add value to a key that is not categorical -> ", loopkey)
                             else:
                                 # Test that user is setting categorical value(s) that are valid for the key
                                 valid = True
                                 for val in func_args[0]:
-                                    if val not in keys[loopkey]["definition"]["values"]:
+                                    if val not in keys[loopkey]["definition"]["categoryValues"]:
                                         valid = False
                                         print("ERROR: key cannot be added because a undefined category value [ ", val, " ] is not valid for key -> ", loopkey)
                                 if valid:

@@ -65,8 +65,8 @@ class TestAttrList(unittest.TestCase):
         my_apiObj.search.return_value = '{"results": {"phenotypes": {' \
                                         '"term1": {"name": "term1", "categorical": false, "min":0, "max":100},' \
                                         '"term2": {"name": "term2", "categorical": false, "min":0, "max":100},' \
-                                        '"term3": {"name": "term3", "categorical": true, "values":["cat1"]},' \
-                                        '"term4": {"name": "term4", "categorical": true, "values":["catA","catB","catC"]}' \
+                                        '"term3": {"name": "term3", "categorical": true, "categoryValues":["cat1"]},' \
+                                        '"term4": {"name": "term4", "categorical": true, "categoryValues":["catA","catB","catC"]}' \
                                         '}}}'
 
         # create list
@@ -267,7 +267,7 @@ class TestAttrList(unittest.TestCase):
         )
 
         # return only a single non-matching categorical value
-        my_apiObj.search.return_value = '{"results": {"phenotypes": {"' + my_term + '": {"description": "my_description", "values": ["NON-MATCH-VALUE"], "continuous": false}}}}'
+        my_apiObj.search.return_value = '{"results": {"phenotypes": {"' + my_term + '": {"description": "my_description", "categoryValues": ["NON-MATCH-VALUE"], "continuous": false}}}}'
         with patch('sys.stdout', new=io.StringIO()) as fake_stdout:
             # attempt adding categorical term with 2 values
             myAttrList.add(my_term, [my_cat1, my_cat2])
@@ -303,7 +303,7 @@ class TestAttrList(unittest.TestCase):
             allowVariantSpec=my_allowVariantSpec
         )
 
-        my_apiObj.search.return_value = '{"results": {"phenotypes": {"' + my_term + '": {"description": "my_description", "values": ["'+my_cat1+'","'+my_cat2+'"], "continuous": false}}}}'
+        my_apiObj.search.return_value = '{"results": {"phenotypes": {"' + my_term + '": {"description": "my_description", "categoryValues": ["'+my_cat1+'","'+my_cat2+'"], "continuous": false}}}}'
         # attempt adding categorical term with 2 values
         myAttrList.add(my_term, [my_cat1, my_cat2])
 
@@ -517,7 +517,7 @@ class TestAttrList(unittest.TestCase):
             allowVariantSpec=my_allowVariantSpec
         )
 
-        my_apiObj.search.return_value = '{"results": {"phenotypes": {"' + my_term + '": {"description":"my_description", "categorical":"true", "values":["'+my_cat+'"]}}}}'
+        my_apiObj.search.return_value = '{"results": {"phenotypes": {"' + my_term + '": {"description":"my_description", "categorical":"true", "categoryValues":["'+my_cat+'"]}}}}'
         # add a term
         myAttrList.add(my_term)
         # make sure entry was added correctly
