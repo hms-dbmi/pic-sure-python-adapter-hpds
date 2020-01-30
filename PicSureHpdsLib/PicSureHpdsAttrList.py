@@ -96,14 +96,9 @@ class AttrList:
                             #     # Test that user is setting categorical value(s) that are valid for the key
                             #     valid = True
                             #     for val in func_args[0]:
-                            #         if "categoryValues" in keys[loopkey]["definition"]:
-                            #             if val not in keys[loopkey]["definition"]["categoryValues"]:
-                            #                 valid = False
-                            #                 print("ERROR: key cannot be added because a undefined category value [ ", val, " ] is not valid for key -> ", loopkey)
-                            #         if "values" in keys[loopkey]["definition"]:
-                            #             if val not in keys[loopkey]["definition"]["values"]:
-                            #                 valid = False
-                            #                 print("ERROR: key cannot be added because a undefined category value [ ", val, " ] is not valid for key -> ", loopkey)
+                            #         if val not in keys[loopkey]["definition"]["categoryValues"]:
+                            #             valid = False
+                            #             print("ERROR: key cannot be added because a undefined category value [ ", val, " ] is not valid for key -> ", loopkey)
                             #     if valid:
                                     self.data[loopkey] = {'type': 'categorical', 'values': func_args[0], 'HpdsDataType': keys[loopkey]["class"]}
                     else:
