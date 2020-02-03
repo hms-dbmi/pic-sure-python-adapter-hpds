@@ -282,6 +282,34 @@ class TestAttrList(unittest.TestCase):
         self.assertTrue(len(captured) > 0)
 
     @patch('PicSureClient.PicSureConnectionAPI')
+    def test_func_add_variant_spec(self, mock_api_obj):
+        my_term = "1,91272,C,T"
+        my_GT = "0/1"
+
+        # our inputs for object creation
+        my_apiObj = mock_api_obj()
+        my_allowVariantSpec = True
+        my_help_text = 'test-help-text'
+        my_resource_uuid = 'test-resource-uuid'
+        # MagicMock the API's search function
+        my_apiObj.search = MagicMock(name='search')
+
+        # create list
+        myAttrList = PicSureHpdsLib.AttrList(
+            help_text=my_help_text,
+            resource_uuid=my_resource_uuid,
+            apiObj=my_apiObj,
+            allowVariantSpec=my_allowVariantSpec
+        )
+
+        # attempt adding genotype spec with 1 values
+        myAttrList.add(my_term, [my_GT])
+
+        # make sure 1 entries were added
+        self.assertEqual(len(myAttrList.data), 1)
+
+
+    @patch('PicSureClient.PicSureConnectionAPI')
     def test_func_add_categorical_good_values(self, mock_api_obj):
         my_term = "testing_term"
         my_cat1 = "cat_value_1"

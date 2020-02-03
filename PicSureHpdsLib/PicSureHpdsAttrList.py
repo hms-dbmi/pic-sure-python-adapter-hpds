@@ -87,22 +87,28 @@ class AttrList:
                     if len(func_args[0]) > 0:
                         for loopkey in keys:
                             # TODO: Test keys' class criteria (info, phenotype, etc) --- follow up to self: why do this?
-                            # TODO: what to do if they are adding a variant spec? (handle this)
-
-                            # Test that the key is categorical
-                            if "categoryValues" not in keys[loopkey]["definition"]:
-                                print("ERROR: cannot add value to a key that is not categorical -> ", loopkey)
+                            if "class" in keys[loopkey] and keys[loopkey]["class"] is not "HpdsVariantSpec":
+                                # Test that the key is categorical
+                                if "categoryValues" not in keys[loopkey]["definition"] and "values" not in keys[loopkey]["definition"]:
+                                    print("ERROR: cannot add value to a key that is not categorical -> ", loopkey)
+                                else:
+                                    # Test that user is setting categorical value(s) that are valid for the key
+                                    valid = True
+                                    for val in func_args[0]:
+                                        if "categoryValues" in keys[loopkey]["definition"]:
+                                            if val not in keys[loopkey]["definition"]["categoryValues"]:
+                                                valid = False
+                                                print("ERROR: key cannot be added because a undefined category value [ ", val, " ] is not valid for key -> ", loopkey)
+                                        if "values" in keys[loopkey]["definition"]:
+                                            if val not in keys[loopkey]["definition"]["values"]:
+                                                valid = False
+                                                print("ERROR: key cannot be added because a undefined category value [ ", val, " ] is not valid for key -> ", loopkey)
+                                    if valid:
+                                        self.data[loopkey] = {'type': 'categorical', 'values': func_args[0], 'HpdsDataType': keys[loopkey]["class"]}
                             else:
-                                # Test that user is setting categorical value(s) that are valid for the key
-                                valid = True
-                                for val in func_args[0]:
-                                    if val not in keys[loopkey]["definition"]["categoryValues"]:
-                                        valid = False
-                                        print("ERROR: key cannot be added because a undefined category value [ ", val, " ] is not valid for key -> ", loopkey)
-                                if valid:
-                                    self.data[loopkey] = {'type': 'categorical', 'values': func_args[0], 'HpdsDataType': keys[loopkey]["class"]}
-                    else:
-                        print("ERROR: cannot add, no categorical values given for key -> ", loopkey)
+                                self.data[loopkey] = {'type': 'categorical', 'values': func_args[0], 'HpdsDataType': "HpdsVariantSpec"}
+                        else:
+                            print("ERROR: cannot add, no categorical values given for key -> ", loopkey)
                 else:
                     if len(func_args) == 1:
                         # process single value add
