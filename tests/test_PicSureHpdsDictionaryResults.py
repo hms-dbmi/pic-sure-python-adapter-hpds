@@ -18,6 +18,7 @@ class TestHpdsDictionaryResults(unittest.TestCase):
                 "searchQuery": "test_term"
                 }
         mock_picsure_API.search.return_value = json.dumps(test)
+        mock_picsure_API.profile.return_value = '{}'
 
         mock_picsure_resource = Mock()
         mock_picsure_resource.resource_uuid = test_uuid
@@ -35,6 +36,7 @@ class TestHpdsDictionaryResults(unittest.TestCase):
         mock_picsure_API = Mock()
         test = {"results": {"phenotypes": {}, "info": {}}, "searchQuery": "test_term"}
         mock_picsure_API.search.return_value = json.dumps(test)
+        mock_picsure_API.profile.return_value = '{}'
 
         mock_picsure_resource = Mock()
         mock_picsure_resource.resource_uuid = test_uuid
@@ -60,6 +62,7 @@ class TestHpdsDictionaryResults(unittest.TestCase):
                 "searchQuery": "test_term"
                 }
         mock_picsure_API.search.return_value = json.dumps(test)
+        mock_picsure_API.profile.return_value = '{}'
 
         mock_picsure_resource = Mock()
         mock_picsure_resource.resource_uuid = test_uuid
@@ -80,6 +83,7 @@ class TestHpdsDictionaryResults(unittest.TestCase):
                 "searchQuery": "test_term"
                 }
         mock_picsure_API.search.return_value = json.dumps(test)
+        mock_picsure_API.profile.return_value = '{}'
 
         mock_picsure_resource = Mock()
         mock_picsure_resource.resource_uuid = test_uuid
@@ -105,6 +109,7 @@ class TestHpdsDictionaryResults(unittest.TestCase):
                 "searchQuery": "test_term"
                 }
         mock_picsure_API.search.return_value = json.dumps(test)
+        mock_picsure_API.profile.return_value = '{}'
 
         mock_picsure_resource = Mock()
         mock_picsure_resource.resource_uuid = test_uuid
@@ -135,6 +140,7 @@ class TestHpdsDictionaryResults(unittest.TestCase):
                 "searchQuery": "test_term"
                 }
         mock_picsure_API.search.return_value = json.dumps(test)
+        mock_picsure_API.profile.return_value = '{}'
 
         mock_picsure_resource = Mock()
         mock_picsure_resource.resource_uuid = test_uuid
