@@ -339,7 +339,7 @@ class TestAttrList(unittest.TestCase):
 
 
     @patch('PicSureClient.PicSureConnectionAPI')
-    def test_func_add_categorical_carlos_bug2(self, mock_api_obj):
+    def test_func_add_continuous_carlos_bug2(self, mock_api_obj):
         my_term = "AF"
         my_min = 0.001
         my_max = 0.1
