@@ -54,12 +54,40 @@ class AttrListKeyValues(PicSureHpdsLib.AttrList):
                 else:
                     save_rec = {"min":rec['value'], "max":rec['value']}
                     if rec['HpdsDataType'] == 'info':
-                        ret_variant_category[key] = save_rec
+                        ret_variant_numeric[key] = save_rec
                     else:
                         ret['numericFilters'][key] = save_rec
         # add variant filters
-        ret["variantInfoFilters"].append({"categoryVariantInfoFilters": ret_variant_category, "numericVariantInfoFilters": ret_variant_numeric})
+        ret['variantInfoFilters'].append({"categoryVariantInfoFilters": ret_variant_category, "numericVariantInfoFilters": ret_variant_numeric})
         return ret
+
+    def load(self, numeric, catagorical, variants):
+        for key, rec in numeric:
+            to_save = {"type":"minmax", "HpdsDataType": ""}
+            if "min" in rec:
+                to_save['min'] = rec['min']
+            if "max" in rec:
+                to_save['max'] = rec['max']
+            self.data[key] = to_save
+
+        for key, rec in catagorical:
+            to_save = {"type":"categorical", "HpdsDataType": ""}
+            to_save['values'] = rec
+            self.data[key] = to_save
+
+        for key, rec in variants['categoryVariantInfoFilters']:
+            to_save = {"type": "categorical", "HpdsDataType": "info"}
+            to_save['values'] = rec
+            self.data[key] = to_save
+
+        for key, rec in variants["numericVariantInfoFilters"]:
+            to_save = {"type":"minmax", "HpdsDataType": "info"}
+            if "min" in rec:
+                to_save['min'] = rec['min']
+            if "max" in rec:
+                to_save['max'] = rec['max']
+            self.data[key] = to_save
+        return self
 
     def getJSON(self):
         """ include all but the 'exists' entries """

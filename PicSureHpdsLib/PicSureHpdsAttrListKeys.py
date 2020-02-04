@@ -35,6 +35,11 @@ class AttrListKeys(PicSureHpdsLib.AttrList):
                 ret.append(key)
         return ret
 
+    def load(self, keys):
+        for loopkey in keys:
+            self.data[loopkey] = {"type": "exists", "HpdsDataType": "Loaded"}
+
+
     def getJSON(self):
         """ only include 'exists' entries """
         e = JSONEncoder()

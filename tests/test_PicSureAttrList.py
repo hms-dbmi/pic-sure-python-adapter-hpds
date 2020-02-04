@@ -306,6 +306,8 @@ class TestAttrList(unittest.TestCase):
         myAttrList.add(my_term, [my_GT])
 
         # make sure 1 entries were added
+        import json
+        print(json.dumps(myAttrList.data))
         self.assertEqual(len(myAttrList.data), 1)
 
 
