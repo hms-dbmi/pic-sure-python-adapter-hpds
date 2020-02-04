@@ -102,8 +102,9 @@ class Query:
                                   Params "asAsynch" and "timeout" are used by function, any 
                                   additional named parameters are passed to pandas.read_csv()
         .getRunDetails()        details about the last run of the query
-        .getQueryCommand()      the JSON-formatted query request
         .show()                 lists all current query parameters
+        .save()                 returns the JSON-formatted query request as string
+        .load(query)            set query's current criteria to those in given JSON string
         
             * getCount(), getResults(), and getResultsDataFrame() functions can also 
               accept options that run queries differently which might help with 
@@ -271,9 +272,36 @@ class Query:
                         print("____Total Time: " + str((self._performance['tmr_proc'] - self._performance['tmr_start'])*1000) + " ms")
 
 
-    def getQueryCommand(self, *args):
-        """ getQueryCommand() """
+    def save(self, *args):
+        """ save() """
         return json.dumps(self.buildQuery(*args))
+
+    def load(self, query, merge = False):
+        """ load(query=str, merge=bool) """
+        if type(query) == str:
+            query = json.loads(query)
+
+        # clear the current criteria if we are not merging
+        if not merge:
+            self._lstSelect.clear()
+            self._lstCrossCntFields.clear()
+            self._lstRequire.clear()
+            self._lstAnyOf.clear()
+            self._lstFilter.clear()
+
+        # ___ handle key-only fields ____
+        self._lstSelect.load(query["query"]["fields"])
+        self._lstCrossCntFields.load(query["query"]["crossCountFields"])
+        self._lstRequire.load(query["query"]["requiredFields"])
+        self._lstAnyOf.load(query["query"]["anyRecordOf"])
+
+        # ___ handle various filters ___
+        self._lstFilter.load(
+            query["query"]["numericFilters"],
+            query["query"]["categoryFilters"],
+            query["query"]["variantInfoFilters"]
+        )
+        return self
 
 
     def buildQuery(self, *args):

@@ -30,10 +30,14 @@ class Adapter:
             import getpass
             key = getpass.getpass("Key to unlock the HPDS resource: ")
 
+        # ===== TODO: This is the correct way to do this, thru the API object =====
+        # api_obj = self.connection_reference._api_obj()
+        # results = BypassConnectionAPI.asyncQuery(resource_uuid, '{"resourceCredentials": {"key": "'+key+'"}}')
+        # ===== NOT AS FOLLOWS ====================================================
         import httplib2
         httpConn = httplib2.Http()
         httpHeaders = {'Content-Type': 'application/json'}
-        (resp_headers, content) = httpConn.request(uri=self.url + "query", method="POST", headers=httpHeaders, body='{"resourceCredentials":{"key":"'+key+'"}}')
+        (resp_headers, content) = httpConn.request(uri=self.connection_reference.url + "query", method="POST", headers=httpHeaders, body='{"resourceCredentials": {"key": "'+key+'"}}')
         if resp_headers["status"] != "200":
             print("ERROR: HTTP response was bad")
             print(resp_headers)
