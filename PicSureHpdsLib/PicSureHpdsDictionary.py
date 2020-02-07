@@ -26,7 +26,7 @@ class Dictionary:
 
         # get the queryScopes from the user's profile if needed
         if self._profile_queryScopes is None:
-            pass
+            self._profile_queryScopes = []
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             # TODO: Re-enable once issue with short vs. long-term tokens in PSAMA is fixed
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
