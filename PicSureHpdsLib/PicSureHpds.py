@@ -14,14 +14,39 @@ class Adapter:
             .version()                      gives version information for library
             .list()                         lists available resources
             .useResource(resource_uuid)     returns an object for selected resource
+            .unlockResource(resource_uuid, key)     For Administrators Use
         """)
 
     def version(self):
         print(PicSureHpdsLib.__package__ + " Library (version " + PicSureHpdsLib.__version__ + ")")
         print("URL: ".ljust(12,' ') + self.connection_reference.url)
 
-    def useResource(self, resource_guid):
-        return HpdsResourceConnection(self.connection_reference, resource_guid)
+    def useResource(self, resource_uuid):
+        return HpdsResourceConnection(self.connection_reference, resource_uuid)
+
+    def unlockResource(self, resource_uuid, key = False):
+        """ unlockResource(resource_uuid, key=str) Unlocks a newly-started HPDS resource"""
+        if key is False:
+            import getpass
+            key = getpass.getpass("Key to unlock the HPDS resource: ")
+
+        # ===== TODO: This is the correct way to do this, thru the API object =====
+        # api_obj = self.connection_reference._api_obj()
+        # results = BypassConnectionAPI.asyncQuery(resource_uuid, '{"resourceCredentials": {"key": "'+key+'"}}')
+        # ===== NOT AS FOLLOWS ====================================================
+        import httplib2
+        httpConn = httplib2.Http()
+        httpHeaders = {'Content-Type': 'application/json'}
+        (resp_headers, content) = httpConn.request(uri=self.connection_reference.url + "query", method="POST", headers=httpHeaders, body='{"resourceCredentials": {"key": "'+key+'"}}')
+        if resp_headers["status"] != "200":
+            print("ERROR: HTTP response was bad")
+            print(resp_headers)
+            print(content.decode("utf-8"))
+            return False
+        else:
+            print(content.decode("utf-8"))
+            return True
+
 
 class HpdsResourceConnection:
     def __init__(self, connection, resource_uuid):

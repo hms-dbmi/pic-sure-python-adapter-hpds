@@ -107,8 +107,8 @@ class AttrList:
                                         self.data[loopkey] = {'type': 'categorical', 'values': func_args[0], 'HpdsDataType': keys[loopkey]["class"]}
                             else:
                                 self.data[loopkey] = {'type': 'categorical', 'values': func_args[0], 'HpdsDataType': "HpdsVariantSpec"}
-                        else:
-                            print("ERROR: cannot add, no categorical values given for key -> ", loopkey)
+                    else:
+                        print("ERROR: cannot add, no categorical values given for key -> ", loopkey)
                 else:
                     if len(func_args) == 1:
                         # process single value add
@@ -135,15 +135,27 @@ class AttrList:
                                 # do not add HpdsVariantSpec type with min/max values
                                 if keys[loopkey]["class"] != "HpdsVariantSpec":
                                     # make sure the key is continuous with a min and max value
-                                    if "min" not in keys[loopkey]["definition"] or "max" not in keys[loopkey]["definition"]:
+                                    is_continuous = False
+                                    if "min" in keys[loopkey]["definition"] or "max" in keys[loopkey]["definition"]:
+                                        is_continuous = True
+                                    else:
+                                        if "continuous" in keys[loopkey]["definition"] and keys[loopkey]["definition"]["continuous"] is True:
+                                            is_continuous = True
+                                    if not is_continuous:
                                         print('ERROR: cannot add, key is not defined as a continuous variable -> ', loopkey)
                                         break
 
                                     # check to see if the min and max values are within the key's range
                                     valid = True
                                     for value in [func_args[0], func_args[1]]:
-                                        if value < keys[loopkey]["definition"]["min"] or value > keys[loopkey]["definition"]["max"]:
-                                             valid = False
+                                        if "min" in keys[loopkey]["definition"]:
+                                            if value < keys[loopkey]["definition"]["min"]:
+                                                valid = False
+                                                break
+                                        if "max" in keys[loopkey]["definition"]:
+                                            if value > keys[loopkey]["definition"]["max"]:
+                                                valid = False
+                                                break
                                     if valid:
                                         self.data[loopkey] = {'type': 'minmax',
                                                               'HpdsDataType': keys[loopkey]["class"],

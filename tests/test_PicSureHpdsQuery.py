@@ -6,6 +6,7 @@ from unittest.mock import patch, MagicMock
 import types
 import io
 import sys
+import json
 
 class TestHpdsQuery(unittest.TestCase):
 
@@ -139,7 +140,7 @@ class TestHpdsQuery(unittest.TestCase):
 
         my_list.add("somekey")
         self.assertEqual(1, len(my_list.data))
-        output = query.getQueryCommand()
+        output = query.save()
         print(output)
 
 
@@ -214,7 +215,7 @@ class TestHpdsQuery(unittest.TestCase):
 
         resp_headers = {"status": "200"}
         mock_http_request.return_value = (resp_headers, "1000".encode("utf-8"))
-        req_body = query.getQueryCommand("COUNT")
+        req_body = json.dumps(query.buildQuery("COUNT"))
 
         query.getCount()
 
@@ -240,7 +241,7 @@ class TestHpdsQuery(unittest.TestCase):
 
         resp_headers = {"status": "200"}
         mock_http_request.return_value = (resp_headers, test_connection_error.encode("utf-8"))
-        req_body = query.getQueryCommand("COUNT")
+        req_body = json.dumps(query.buildQuery("COUNT"))
 
         # micro test to confirm warning is printed on error
         with patch('sys.stdout', new=io.StringIO()) as fake_stdout:
@@ -272,7 +273,7 @@ class TestHpdsQuery(unittest.TestCase):
 
         resp_headers = {"status": "200"}
         mock_http_request.return_value = (resp_headers, test_return_CSV.encode("utf-8"))
-        req_body = query.getQueryCommand("DATAFRAME")
+        req_body = json.dumps(query.buildQuery("DATAFRAME"))
 
         query.getResults()
 
@@ -298,7 +299,7 @@ class TestHpdsQuery(unittest.TestCase):
 
         resp_headers = {"status": "200"}
         mock_http_request.return_value = (resp_headers, test_return_CSV.encode("utf-8"))
-        req_body = query.getQueryCommand("DATAFRAME")
+        req_body = json.dumps(query.buildQuery("DATAFRAME"))
 
         query.getResultsDataFrame()
 
