@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 import io
 import sys
+import json
 
 class TestAttrList(unittest.TestCase):
 
@@ -369,6 +370,35 @@ class TestAttrList(unittest.TestCase):
         # make sure an entry was added
         self.assertEqual(len(myAttrList.data), 1)
 
+
+    @patch('PicSureClient.PicSureConnectionAPI')
+    def test_func_add_continuous_carlos_bug3(self, mock_api_obj):
+        my_term = "AF"
+        my_min = 0.001
+        my_max = 0.1
+
+        # our inputs for object creation
+        my_apiObj = mock_api_obj()
+        my_allowVariantSpec = True
+        my_help_text = 'test-help-text'
+        my_resource_uuid = 'test-resource-uuid'
+        # MagicMock the API's search function
+        my_apiObj.search = MagicMock(name='search')
+
+        # create list
+        myAttrList = PicSureHpdsLib.AttrList(
+            help_text=my_help_text,
+            resource_uuid=my_resource_uuid,
+            apiObj=my_apiObj,
+            allowVariantSpec=my_allowVariantSpec
+        )
+
+        my_apiObj.search.return_value = '{"results": {"info": {"' + my_term + '": {"description": "Extimated allele frequency in the...", "values": [], "continuous": true}}}}'
+        # attempt adding categorical term with 2 values
+        myAttrList.add(my_term, min=my_min, max=my_max)
+
+        # make sure an entry was added
+        self.assertEqual(len(myAttrList.data), 1)
 
     @patch('PicSureClient.PicSureConnectionAPI')
     def test_func_add_categorical_good_values(self, mock_api_obj):
