@@ -182,6 +182,112 @@ class TestAttrList(unittest.TestCase):
 
 
     @patch('PicSureClient.PicSureConnectionAPI')
+    def test_func_keyvalue_add_key_float_value(self, mock_api_obj):
+        # our inputs for object creation
+        my_apiObj = mock_api_obj()
+        my_allowVariantSpec = True
+        my_help_text = 'test-help-text'
+        my_resource_uuid = 'test-resource-uuid'
+
+        # MagicMock the API's search function
+        my_apiObj.search = MagicMock(name='search')
+        my_apiObj.search.return_value = '{"results": {"phenotypes": {' \
+                                        '"term1": {"name": "term1", "categorical": false, "min":0, "max":100},' \
+                                        '"term2": {"name": "term2", "categorical": false, "min":0, "max":100},' \
+                                        '"term3": {"name": "term3", "categorical": true, "categoryValues":["cat1"]},' \
+                                        '"term4": {"name": "term4", "categorical": true, "categoryValues":["catA","catB","catC"]}' \
+                                        '}}}'
+        # create
+        myAttrList = PicSureHpdsLib.AttrListKeyValues(
+            help_text=my_help_text,
+            resource_uuid = my_resource_uuid,
+            apiObj = my_apiObj,
+            allowVariantSpec = my_allowVariantSpec
+        )
+
+        with patch('sys.stdout', new=io.StringIO()) as fake_stdout:
+            myAttrList.add("term1", 49.1234)
+            sys.stdout = sys.__stdout__  # Reset redirect. Needed for it to work!
+            captured = fake_stdout.getvalue()
+            print("Captured:\n" + captured)
+        # it did not generate an error
+        self.assertTrue(len(captured) == 0)
+        # should have added a record
+        self.assertDictEqual({"HpdsDataType":"phenotypes", "type":"minmax", "min":49.1234, "max":49.1234 }, myAttrList.data["term1"])
+
+
+    @patch('PicSureClient.PicSureConnectionAPI')
+    def test_func_keyvalue_add_key_float_float_range(self, mock_api_obj):
+        # our inputs for object creation
+        my_apiObj = mock_api_obj()
+        my_allowVariantSpec = True
+        my_help_text = 'test-help-text'
+        my_resource_uuid = 'test-resource-uuid'
+
+        # MagicMock the API's search function
+        my_apiObj.search = MagicMock(name='search')
+        my_apiObj.search.return_value = '{"results": {"phenotypes": {' \
+                                        '"term1": {"name": "term1", "categorical": false, "min":0, "max":100},' \
+                                        '"term2": {"name": "term2", "categorical": false, "min":0, "max":100},' \
+                                        '"term3": {"name": "term3", "categorical": true, "categoryValues":["cat1"]},' \
+                                        '"term4": {"name": "term4", "categorical": true, "categoryValues":["catA","catB","catC"]}' \
+                                        '}}}'
+        # create
+        myAttrList = PicSureHpdsLib.AttrListKeyValues(
+            help_text=my_help_text,
+            resource_uuid = my_resource_uuid,
+            apiObj = my_apiObj,
+            allowVariantSpec = my_allowVariantSpec
+        )
+
+        with patch('sys.stdout', new=io.StringIO()) as fake_stdout:
+            myAttrList.add("term1", 40.1234, 50.1234)
+            sys.stdout = sys.__stdout__  # Reset redirect. Needed for it to work!
+            captured = fake_stdout.getvalue()
+            print("Captured:\n" + captured)
+        # it did not generate an error
+        self.assertTrue(len(captured) == 0)
+        # should have added a record
+        self.assertDictEqual({"HpdsDataType":"phenotypes", "type":"minmax", "min":40.1234, "max":50.1234 }, myAttrList.data["term1"])
+
+
+    @patch('PicSureClient.PicSureConnectionAPI')
+    def test_func_keyvalue_add_key_int_int_range(self, mock_api_obj):
+        # our inputs for object creation
+        my_apiObj = mock_api_obj()
+        my_allowVariantSpec = True
+        my_help_text = 'test-help-text'
+        my_resource_uuid = 'test-resource-uuid'
+
+        # MagicMock the API's search function
+        my_apiObj.search = MagicMock(name='search')
+        my_apiObj.search.return_value = '{"results": {"phenotypes": {' \
+                                        '"term1": {"name": "term1", "categorical": false, "min":0, "max":100},' \
+                                        '"term2": {"name": "term2", "categorical": false, "min":0, "max":100},' \
+                                        '"term3": {"name": "term3", "categorical": true, "categoryValues":["cat1"]},' \
+                                        '"term4": {"name": "term4", "categorical": true, "categoryValues":["catA","catB","catC"]}' \
+                                        '}}}'
+        # create
+        myAttrList = PicSureHpdsLib.AttrListKeyValues(
+            help_text=my_help_text,
+            resource_uuid = my_resource_uuid,
+            apiObj = my_apiObj,
+            allowVariantSpec = my_allowVariantSpec
+        )
+
+        with patch('sys.stdout', new=io.StringIO()) as fake_stdout:
+            myAttrList.add("term1", 40, 50)
+            sys.stdout = sys.__stdout__  # Reset redirect. Needed for it to work!
+            captured = fake_stdout.getvalue()
+            print("Captured:\n" + captured)
+        # it did not generate an error
+        self.assertTrue(len(captured) == 0)
+        # should have added a record
+        self.assertDictEqual({"HpdsDataType":"phenotypes", "type":"minmax", "min":40, "max":50 }, myAttrList.data["term1"])
+
+
+
+    @patch('PicSureClient.PicSureConnectionAPI')
     def test_func_keyvalue_add_key_string_value(self, mock_api_obj):
         # our inputs for object creation
         my_apiObj = mock_api_obj()

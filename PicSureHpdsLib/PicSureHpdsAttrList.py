@@ -85,6 +85,7 @@ class AttrList:
                 if type(func_args[0]) == list:
                     # Do not add entries with no list entries
                     if len(func_args[0]) > 0:
+                        loopkey = ""
                         for loopkey in keys:
                             # TODO: Test keys' class criteria (info, phenotype, etc) --- follow up to self: why do this?
                             if "class" in keys[loopkey] and keys[loopkey]["class"] is not "HpdsVariantSpec":
@@ -107,8 +108,8 @@ class AttrList:
                                         self.data[loopkey] = {'type': 'categorical', 'values': func_args[0], 'HpdsDataType': keys[loopkey]["class"]}
                             else:
                                 self.data[loopkey] = {'type': 'categorical', 'values': func_args[0], 'HpdsDataType': "HpdsVariantSpec"}
-                    else:
-                        print("ERROR: cannot add, no categorical values given for key -> ", loopkey)
+                        else:
+                            print("ERROR: cannot add, no categorical values given for key -> ", loopkey)
                 else:
                     if len(func_args) == 1:
                         # process single value add
@@ -189,15 +190,17 @@ class AttrList:
                             # check to see if the min and max values are within the key's range
                             valid = True
                             rec_data = {'type': 'minmax', 'HpdsDataType': keys[loopkey]["class"]}
-                            if "min" in keys[loopkey]["definition"] and "min" in kwargs:
-                                if kwargs["min"] < keys[loopkey]["definition"]["min"]:
-                                    valid = False
-                                else:
+                            if "min" in kwargs:
+                                if "min" in keys[loopkey]["definition"]:
+                                    if kwargs["min"] < keys[loopkey]["definition"]["min"]:
+                                        valid = False
+                                if valid is True:
                                     rec_data["min"] = kwargs["min"]
-                            if "max" in keys[loopkey]["definition"] and "max" in kwargs:
-                                if kwargs["max"] > keys[loopkey]["definition"]["max"]:
-                                    valid = False
-                                else:
+                            if "max" in kwargs:
+                                if "max" in keys[loopkey]["definition"]:
+                                    if kwargs["max"] > keys[loopkey]["definition"]["max"]:
+                                        valid = False
+                                if valid is True:
                                     rec_data["max"] = kwargs["max"]
                             if valid:
                                 self.data[loopkey] = rec_data
