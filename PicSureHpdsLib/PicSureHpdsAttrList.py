@@ -131,7 +131,7 @@ class AttrList:
                         # process min+max add (2 unnamed parameters)
                         if (type(func_args[0]) == int or type(func_args[0]) == float) and (type(func_args[1]) == int or type(func_args[1]) == float):
                             for loopkey in keys:
-                                # TODO: Test keys' class criteria (info, phenotype, etc) --- follow up, why?
+                                # TODO: Test keys' class criteria (info, phenotype, etc) --- --- because available definition variable vary between these two.
                                 # do not add HpdsVariantSpec type with min/max values
                                 if keys[loopkey]["class"] != "HpdsVariantSpec":
                                     # make sure the key is continuous with a min and max value
@@ -142,7 +142,7 @@ class AttrList:
                                         if "continuous" in keys[loopkey]["definition"] and keys[loopkey]["definition"]["continuous"] is True:
                                             is_continuous = True
                                     if not is_continuous:
-                                        print('ERROR: cannot add, key is not defined as a continuous variable -> ', loopkey)
+                                        print('ERROR1: cannot add, key is not defined as a continuous variable -> ', loopkey)
                                         break
 
                                     # check to see if the min and max values are within the key's range
@@ -171,34 +171,41 @@ class AttrList:
                 # process min and/or max add (1 or 2 named parameters)
                 if 'min' in kwargs or 'max' in kwargs:
                     for loopkey in keys:
-                        # TODO: Test keys' class criteria (info, phenotype, etc) --- follow up, why?
+                        # TODO: Test keys' class criteria (info, phenotype, etc) --- because available definition variable vary between these two.
                         # do not add HpdsVariantSpec type with min/max values
                         if keys[loopkey]["class"] != "HpdsVariantSpec":
                             # make sure the key is continuous with a min and max value
-                            if "min" not in keys[loopkey]["definition"] or "max" not in keys[loopkey]["definition"]:
-                                print('ERROR: cannot add, key is not defined as a continuous variable -> ', loopkey)
+                            is_continuous = False
+                            if "min" in keys[loopkey]["definition"] or "max" in keys[loopkey]["definition"]:
+                                is_continuous = True
+                            else:
+                                if "continuous" in keys[loopkey]["definition"] and keys[loopkey]["definition"][
+                                    "continuous"] is True:
+                                    is_continuous = True
+                            if not is_continuous:
+                                print('ERROR2: cannot add, key is not defined as a continuous variable -> ', loopkey)
                                 break
 
                             # check to see if the min and max values are within the key's range
-                            record = {'type': 'minmax', 'HpdsDataType': keys[loopkey]["class"]}
                             valid = True
-                            if 'min' in kwargs:
-                                if kwargs['min'] < keys[loopkey]["definition"]["min"] or kwargs['min'] > keys[loopkey]["definition"]["max"]:
+                            rec_data = {'type': 'minmax', 'HpdsDataType': keys[loopkey]["class"]}
+                            if "min" in keys[loopkey]["definition"] and "min" in kwargs:
+                                if kwargs["min"] < keys[loopkey]["definition"]["min"]:
                                     valid = False
-                            if 'max' in kwargs:
-                                if kwargs['max'] < keys[loopkey]["definition"]["min"] or kwargs['max'] > keys[loopkey]["definition"]["max"]:
+                                else:
+                                    rec_data["min"] = kwargs["min"]
+                            if "max" in keys[loopkey]["definition"] and "max" in kwargs:
+                                if kwargs["max"] > keys[loopkey]["definition"]["max"]:
                                     valid = False
-
+                                else:
+                                    rec_data["max"] = kwargs["max"]
                             if valid:
-                                self.data[loopkey] = {'type': 'minmax', 'HpdsDataType': keys[loopkey]["class"]}
-                                if 'min' in kwargs:
-                                    self.data[loopkey]['min'] = kwargs['min']
-                                if 'max' in kwargs:
-                                    self.data[loopkey]['max'] = kwargs['max']
+                                self.data[loopkey] = rec_data
                             else:
                                 print(
                                     'ERROR: cannot add key, the min or max value is outside the defined range of the key -> ',
-                                    loopkey)
+                                    loopkey, "[" + str(keys[loopkey]["definition"]["min"]) + " to " + str(
+                                        keys[loopkey]["definition"]["max"]) + "]")
                         else:
                             print('ERROR: cannot add key, HpdsVariantSpec cannot filter as a range -> ', loopkey)
         return self
