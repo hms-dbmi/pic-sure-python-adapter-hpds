@@ -197,6 +197,163 @@ class TestHpdsQuery(unittest.TestCase):
             self.assertTrue(len(captured) == 0)
 
 
+
+    @patch('PicSureClient.Connection')
+    def test_HpdsQuery_func_save(self, mock_picsure_connection):
+        test_uuid = "my-test-uuid"
+        test_value = 50
+
+        return_vals = {"results": { "phenotypes": {
+                "\\select\\key": {},
+                "\\require\\key": {},
+                "\\crosscounts\\key1": {},
+                "\\crosscounts\\key2": {},
+                "\\anyof\\key1": {},
+                "\\anyof\\key2": {},
+                "\\filter_numeric\\key1": {"name": "key1", "categorical": False, "min": 0, "max": 100},
+                "\\filter_numeric\\range1": {"name": "term1", "categorical": False, "min": 0, "max": 100},
+                "\\filter_numeric\\value1": {"name": "value1", "categorical": False, "min": 0, "max": 100},
+                "\\filter_categorical\\set1": {"name": "set1", "categorical": True, "categoryValues": ["cat1"]},
+                "\\filter_categorical\\set2": {"name": "set2", "categorical": True, "categoryValues": ["catA", "catB", "catC"]}},
+            "info": {
+                "Variant_severity": {"values": ["HIGH", "LOW"], "continuous": False},
+                "AF": {"values": [], "continuous": True}
+            }}}
+
+        conn = mock_picsure_connection()
+        API = PicSureHpds.BypassConnectionAPI("", "")
+        API.search = MagicMock(return_value=json.dumps(return_vals))
+        def ret_API():
+            return API
+        conn._api_obj = ret_API
+
+        resource = PicSureHpds.HpdsResourceConnection(conn, test_uuid)
+        query = resource.query()
+
+        # micro test to confirm warning is printed if parameters are passed
+        with patch('sys.stdout', new=io.StringIO()) as fake_stdout:
+            query.select().add("\\select\\key")
+            query.crosscounts().add(["\\crosscounts\\key1", "\\crosscounts\\key2"])
+            query.require().add("\\require\\key")
+            query.anyof().add(["\\anyof\\key1","\\anyof\\key2"])
+            query.filter().add("\\filter_numeric\\range1", test_value - 10, test_value + 10)
+            query.filter().add("\\filter_numeric\\value1", test_value)
+            query.filter().add("\\filter_categorical\\set1", "cat1")
+            query.filter().add("\\filter_categorical\\set2", ["catA","catC"])
+            query.filter().add("Variant_severity", ["HIGH"])
+            query.filter().add("AF", min=0.1, max=0.9)
+
+            sys.stdout = sys.__stdout__  # Reset redirect. Needed for it to work!
+            captured = fake_stdout.getvalue()
+            print("Message on parameter useage:\n" + captured)
+
+            query_obj = {"query": {
+            "fields": ["\\select\\key"],
+            "crossCountFields": [
+              "\\crosscounts\\key1",
+              "\\crosscounts\\key2"
+            ],
+            "requiredFields": [
+              "\\require\\key"
+            ],
+            "anyRecordOf": [
+              "\\anyof\\key1",
+              "\\anyof\\key2"
+            ],
+            "numericFilters": {
+              "\\filter_numeric\\range1": {
+                "min": 40,
+                "max": 60
+              },
+              "\\filter_numeric\\value1": {
+                "min": 50,
+                "max": 50
+              }
+            },
+            "categoryFilters": {
+              "\\filter_categorical\\set1": ["cat1"],
+              "\\filter_categorical\\set2": ["catA","catC"]
+            },
+            "variantInfoFilters": [
+              {
+                "categoryVariantInfoFilters": {
+                    "Variant_severity": ["HIGH"]
+                },
+                "numericVariantInfoFilters": {
+                    "AF": {"min": 0.1, "max": 0.9}
+                }
+              }
+            ]}, "resourceUUID": "my-test-uuid"}
+
+            self.assertDictEqual(query_obj, json.loads(query.save()))
+
+
+    @patch('PicSureClient.Connection')
+    def test_HpdsQuery_func_load(self, mock_picsure_connection):
+        test_uuid = "my-test-uuid"
+
+        query_obj = {"query": {
+            "fields": ["\\select\\key"],
+            "crossCountFields": [
+                "\\crosscounts\\key1",
+                "\\crosscounts\\key2"
+            ],
+            "requiredFields": [
+                "\\require\\key"
+            ],
+            "anyRecordOf": [
+                "\\anyof\\key1",
+                "\\anyof\\key2"
+            ],
+            "numericFilters": {
+                "\\filter_numeric\\range1": {
+                    "min": 40,
+                    "max": 60
+                },
+                "\\filter_numeric\\value1": {
+                    "min": 50,
+                    "max": 50
+                }
+            },
+            "categoryFilters": {
+                "\\filter_categorical\\set1": ["cat1"],
+                "\\filter_categorical\\set2": ["catA", "catC"]
+            },
+            "variantInfoFilters": [
+              {
+                "categoryVariantInfoFilters": {
+                    "Variant_severity": ["HIGH"]
+                },
+                "numericVariantInfoFilters": {
+                    "AF": {"min": 0.1, "max": 0.9}
+                }
+              }
+            ]}, "resourceUUID": "my-test-uuid"}
+        query_str = json.dumps(query_obj)
+
+        return_vals = {}
+        conn = mock_picsure_connection()
+        API = PicSureHpds.BypassConnectionAPI("", "")
+        API.search = MagicMock(return_value=json.dumps(return_vals))
+        def ret_API():
+            return API
+        conn._api_obj = ret_API
+
+        resource = PicSureHpds.HpdsResourceConnection(conn, test_uuid)
+        query = resource.query()
+
+        # micro test to confirm warning is printed if parameters are passed
+        with patch('sys.stdout', new=io.StringIO()) as fake_stdout:
+            query.load(query_str)
+
+            sys.stdout = sys.__stdout__  # Reset redirect. Needed for it to work!
+            captured = fake_stdout.getvalue()
+            print("Message on parameter useage:\n" + captured)
+
+            self.assertDictEqual(query_obj, json.loads(query.save()))
+
+
+
     @patch('httplib2.Http.request')
     @patch('PicSureClient.Connection')
     def test_HpdsQuery_func_getCount(self, mock_picsure_connection, mock_http_request):

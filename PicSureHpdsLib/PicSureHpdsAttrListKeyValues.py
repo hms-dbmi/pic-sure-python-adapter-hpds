@@ -62,7 +62,7 @@ class AttrListKeyValues(PicSureHpdsLib.AttrList):
         return ret
 
     def load(self, numeric, catagorical, variants):
-        for key, rec in numeric:
+        for key, rec in numeric.items():
             to_save = {"type":"minmax", "HpdsDataType": ""}
             if "min" in rec:
                 to_save['min'] = rec['min']
@@ -70,17 +70,17 @@ class AttrListKeyValues(PicSureHpdsLib.AttrList):
                 to_save['max'] = rec['max']
             self.data[key] = to_save
 
-        for key, rec in catagorical:
+        for key, rec in catagorical.items():
             to_save = {"type":"categorical", "HpdsDataType": ""}
             to_save['values'] = rec
             self.data[key] = to_save
 
-        for key, rec in variants['categoryVariantInfoFilters']:
+        for key, rec in variants[0]['categoryVariantInfoFilters'].items():
             to_save = {"type": "categorical", "HpdsDataType": "info"}
             to_save['values'] = rec
             self.data[key] = to_save
 
-        for key, rec in variants["numericVariantInfoFilters"]:
+        for key, rec in variants[0]["numericVariantInfoFilters"].items():
             to_save = {"type":"minmax", "HpdsDataType": "info"}
             if "min" in rec:
                 to_save['min'] = rec['min']
