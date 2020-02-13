@@ -108,8 +108,8 @@ class AttrList:
                                         self.data[loopkey] = {'type': 'categorical', 'values': func_args[0], 'HpdsDataType': keys[loopkey]["class"]}
                             else:
                                 self.data[loopkey] = {'type': 'categorical', 'values': func_args[0], 'HpdsDataType': "HpdsVariantSpec"}
-                        else:
-                            print("ERROR: cannot add, no categorical values given for key -> ", loopkey)
+                    else:
+                        print("ERROR: cannot add, no categorical values given for key -> ", loopkey)
                 else:
                     if len(func_args) == 1:
                         # process single value add
@@ -224,6 +224,7 @@ class AttrList:
             # does the key exist?
             if t_key in self.data:
                 # delete the key
+                print('Deleted key: ' + key)
                 self.data.pop(t_key)
             else:
                 print('ERROR: the specified key does not exist')
