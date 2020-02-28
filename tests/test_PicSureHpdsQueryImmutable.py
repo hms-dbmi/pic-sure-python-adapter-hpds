@@ -8,10 +8,10 @@ import io
 import sys
 import json
 
-class TestHpdsQuery(unittest.TestCase):
+class TestHpdsImmutableQuery(unittest.TestCase):
 
     @patch('PicSureClient.Connection')
-    def test_HpdsQuery_create(self, mock_picsure_connection):
+    def test_HpdsImmutableQuery_create(self, mock_picsure_connection):
         conn = mock_picsure_connection()
         test_uuid = "my-test-uuid"
         resource = PicSureHpds.HpdsResourceConnection(conn, test_uuid)

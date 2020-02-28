@@ -66,8 +66,25 @@ class HpdsResourceConnection:
     def dictionary(self):
         return PicSureHpdsLib.Dictionary(self)
 
-    def query(self):
-        return PicSureHpdsLib.Query(self)
+    def query(self, query_id=None):
+        if query_id is None:
+            return PicSureHpdsLib.Query(self)
+        else:
+            return PicSureHpdsLib.ImmutableQuery(self, query_id)
+
+    # def batchOfQueries(self):
+    #     return PicSureHpdsLib.QueryBatch(self)
+
+    def retrieveQueryResults(self, query_uuid):
+        while True:
+            status_json = self.connection_reference.queryStatus(self.resource_uuid, query_uuid)
+            print(status_json)
+            status = json.loads(status_json)
+            if status["status"] == "AVAILABLE":
+                break
+            else:
+                time.sleep(1)
+        return self.connection_reference.queryResult(self.resource_uuid, query_uuid)
 
 
 
