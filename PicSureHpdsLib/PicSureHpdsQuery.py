@@ -196,32 +196,36 @@ class Query:
         return httpResults
 
     def getAsyncResults(self, query_uuid=None):
-        if query_uuid is not None:
-            self._performance['running'] = True
-            self._performance['tmr_start'] = time.time()
-            queryJSON = self.buildQuery('COUNT')
-            self._performance['tmr_query'] = time.time()
-            httpResults = self._apiObj.queryResult(self._resourceUUID, query_uuid)
-            self._performance['tmr_recv'] = time.time()
-            self._performance['running'] = False
-            return httpResults
-        else:
-            print("ERROR-209: No query_uuid was given")
-            return None
+        print("NOTHING DONE: This function is not yet fully implemented!")
+        return False
+        # if query_uuid is not None:
+        #     self._performance['running'] = True
+        #     self._performance['tmr_start'] = time.time()
+        #     queryJSON = self.buildQuery('COUNT')
+        #     self._performance['tmr_query'] = time.time()
+        #     httpResults = self._apiObj.queryResult(self._resourceUUID, query_uuid)
+        #     self._performance['tmr_recv'] = time.time()
+        #     self._performance['running'] = False
+        #     return httpResults
+        # else:
+        #     print("ERROR-209: No query_uuid was given")
+        #     return None
 
     def getAsyncStatus(self, query_uuid=None):
-        if query_uuid is not None:
-            self._performance['running'] = True
-            self._performance['tmr_start'] = time.time()
-            queryJSON = self.buildQuery('COUNT')
-            self._performance['tmr_query'] = time.time()
-            httpResults = self._apiObj.queryStatus(self._resourceUUID, json.dumps(queryJSON))
-            self._performance['tmr_recv'] = time.time()
-            self._performance['running'] = False
-            return httpResults
-        else:
-            print("ERROR-222: No query_uuid was given")
-            return None
+        print("NOTHING DONE: This function is not yet fully implemented!")
+        return False
+        # if query_uuid is not None:
+        #     self._performance['running'] = True
+        #     self._performance['tmr_start'] = time.time()
+        #     queryJSON = self.buildQuery('COUNT')
+        #     self._performance['tmr_query'] = time.time()
+        #     httpResults = self._apiObj.queryStatus(self._resourceUUID, json.dumps(queryJSON))
+        #     self._performance['tmr_recv'] = time.time()
+        #     self._performance['running'] = False
+        #     return httpResults
+        # else:
+        #     print("ERROR-222: No query_uuid was given")
+        #     return None
 
 
     def getCrossCounts(self, asAsync=False):
