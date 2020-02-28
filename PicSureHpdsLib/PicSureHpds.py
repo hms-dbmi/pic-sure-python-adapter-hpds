@@ -2,16 +2,13 @@
 
 import PicSureHpdsLib
 import json
-import time
-
 
 class Adapter:
     """ Main class of library used to connect to a HPDS resource via PIC-SURE"""
     def __init__(self, connection):
         self.connection_reference = connection
 
-    @classmethod
-    def help(cls):
+    def help(self):
         print("""
         [HELP] PicSureHpdsLib.Adapter(picsure_connection)
             .version()                      gives version information for library
@@ -69,23 +66,8 @@ class HpdsResourceConnection:
     def dictionary(self):
         return PicSureHpdsLib.Dictionary(self)
 
-    def query(self, query_id=None):
-        return PicSureHpdsLib.Query(self, query_id=query_id)
-
-    def batchOfQueries(self):
-        return PicSureHpdsLib.QueryBatch(self)
-
-    def retrieveQueryResults(self, query_uuid):
-        while True:
-            status_json = self.connection_reference.queryStatus(self.resource_uuid, query_uuid)
-            print(status_json)
-            status = json.loads(status_json)
-            if status["status"] == "AVAILABLE":
-                break
-            else:
-                time.sleep(1)
-        return self.connection_reference.queryResult(self.resource_uuid, query_uuid)
-
+    def query(self):
+        return PicSureHpdsLib.Query(self)
 
 
 
@@ -110,8 +92,7 @@ class BypassConnection:
         self.url = tempurl
         self._token = token
 
-    @classmethod
-    def help(cls):
+    def help(self):
         print("""
         [HELP] PicSureClient.BypassClient.connect(url, token)
             .list()                 Prints a list of available resources
@@ -133,7 +114,8 @@ class BypassConnection:
             print(content.decode("utf-8"))
             return None
         else:
-            print(json.dumps(json.loads(content.decode("utf-8")), indent=2))
+            import pprint
+            pprint.pprint(json.loads(content.decode("utf-8")))
 
     def list(self):
         listing = self.getResources()

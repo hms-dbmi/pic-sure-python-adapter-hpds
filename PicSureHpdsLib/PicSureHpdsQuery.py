@@ -6,9 +6,8 @@ import time
 
 
 class Query:
-    """ Main class containing query functionality """
-    def __init__(self, refHpdsResourceConnection, query_id = None):
-        self._query_id = query_id
+    """ Main class of library """
+    def __init__(self, refHpdsResourceConnection):
         self._performance = {
             "running": False,
             "tmr_start": 0,
@@ -169,12 +168,7 @@ class Query:
             return None
         return self._lstFilter
 
-    def queryStatus(self, query_id):
-        if self._query_id is None:
-            raise ValueError("The query's ID has not been set!")
-        pass
-
-    def getCount(self, asAsync=False):
+    def getCount(self, asAsync=False, timeout=30):
         self._performance['running'] = True
         self._performance['tmr_start'] = time.time()
         queryJSON = self.buildQuery('COUNT')
@@ -240,7 +234,7 @@ class Query:
         # Return as dict mapping variant spec to count
         return json.loads(httpResults)
 
-    def getResultsCSV(self, asAsync=False):
+    def getResults(self, asAsync=False, timeout=30):
         self._performance['running'] = True
         self._performance['tmr_start'] = time.time()
         queryJSON = self.buildQuery('DATAFRAME')
@@ -261,16 +255,12 @@ class Query:
         self._performance['tmr_proc'] = time.time()
         return httpResults
 
-    def getResultsDataFrame(self, asAsync=False, **kwargs):
-        results = False
+    def getResultsDataFrame(self, asAsync=False, timeout=30, **kwargs):
         self._performance['running'] = True
         self._performance['tmr_start'] = time.time()
         queryJSON = self.buildQuery('DATAFRAME')
         self._performance['tmr_query'] = time.time()
-        if asAsync is False:
-            httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
-        else:
-            httpResults = self._apiObj.asyncQuery(self._resourceUUID, json.dumps(queryJSON))
+        httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
         self._performance['tmr_recv'] = time.time()
         self._performance['running'] = False
         try:
@@ -284,14 +274,10 @@ class Query:
         except JSONDecodeError:
             pass
         self._performance['tmr_proc'] = time.time()
-        if asAsync is False:
-            from io import StringIO
-            import pandas
-            ret = pandas.read_csv(StringIO(httpResults), **kwargs)
-            self._performance['tmr_proc'] = time.time()
-        else:
-            if "picsureResultId" in results:
-                self._query_id = results.picsureResultId
+        from io import StringIO
+        import pandas
+        ret = pandas.read_csv(StringIO(httpResults), **kwargs)
+        self._performance['tmr_proc'] = time.time()
         return ret
 
     def getRunDetails(self):
