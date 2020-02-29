@@ -11,16 +11,16 @@ from json import JSONEncoder
 class AttrListImmutableKeys(PicSureHpdsLib.AttrList):
     """ Class that powers the query's SELECT/REQUIRE list operations """
 
-    def add(self, *args, *kwargs):
+    def add(self, *args, **kwargs):
         print("ERROR: this query is already queued or otherwise ran.  You cannot change it.")
 
-    def delete(self, *args, *kwargs):
+    def delete(self, *args, **kwargs):
         print("ERROR: this query is already queued or otherwise ran.  You cannot change it.")
 
-    def clear(self, *args, *kwargs):
+    def clear(self, *args, **kwargs):
         print("ERROR: this query is already queued or otherwise ran.  You cannot change it.")
 
-    def load(self, *args, *kwargs):
+    def load(self, *args, **kwargs):
         print("ERROR: this query is already queued or otherwise ran.  You cannot change it.")
 
 

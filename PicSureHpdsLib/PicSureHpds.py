@@ -66,9 +66,9 @@ class HpdsResourceConnection:
     def dictionary(self):
         return PicSureHpdsLib.Dictionary(self)
 
-    def query(self, query_id=None):
+    def query(self, query_id=None, load_query=None):
         if query_id is None:
-            return PicSureHpdsLib.Query(self)
+            return PicSureHpdsLib.Query(self, load_query)
         else:
             return PicSureHpdsLib.ImmutableQuery(self, query_id)
 

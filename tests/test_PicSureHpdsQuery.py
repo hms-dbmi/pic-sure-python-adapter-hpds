@@ -21,6 +21,61 @@ class TestHpdsQuery(unittest.TestCase):
         self.assertEqual(query._resourceUUID, test_uuid)
         self.assertIs(query._refHpdsResourceConnection, resource)
 
+
+    @patch('PicSureClient.Connection')
+    def test_HpdsQuery_create_load_query(self, mock_picsure_connection):
+        conn = mock_picsure_connection()
+        test_uuid = "my-test-uuid"
+        query_obj = {"query": {
+            "fields": ["\\select\\key"],
+            "crossCountFields": [
+                "\\crosscounts\\key1",
+                "\\crosscounts\\key2"
+            ],
+            "requiredFields": [
+                "\\require\\key"
+            ],
+            "anyRecordOf": [
+                "\\anyof\\key1",
+                "\\anyof\\key2"
+            ],
+            "numericFilters": {
+                "\\filter_numeric\\range1": {
+                    "min": 40,
+                    "max": 60
+                },
+                "\\filter_numeric\\value1": {
+                    "min": 50,
+                    "max": 50
+                }
+            },
+            "categoryFilters": {
+                "\\filter_categorical\\set1": ["cat1"],
+                "\\filter_categorical\\set2": ["catA", "catC"]
+            },
+            "variantInfoFilters": [
+                {
+                    "categoryVariantInfoFilters": {
+                        "Variant_severity": ["HIGH"]
+                    },
+                    "numericVariantInfoFilters": {
+                        "AF": {"min": 0.1, "max": 0.9}
+                    }
+                }
+            ]}, "resourceUUID": str(test_uuid)}
+        query_json = json.dumps(query_obj)
+
+        resource = PicSureHpds.HpdsResourceConnection(conn, test_uuid)
+        query = resource.query(load_query=query_json)
+
+        query_as_loaded = query.save()
+
+
+        # test that it was created correctly
+        self.assertIsInstance(query, PicSureHpdsQuery.Query)
+        self.assertEqual(query_json, query_as_loaded)
+        self.assertIs(query._refHpdsResourceConnection, resource)
+
     @patch('PicSureClient.Connection')
     def test_HpdsQuery_func_help(self, mock_picsure_connection):
         conn = mock_picsure_connection()
@@ -432,7 +487,7 @@ class TestHpdsQuery(unittest.TestCase):
         mock_http_request.return_value = (resp_headers, test_return_CSV.encode("utf-8"))
         req_body = json.dumps(query.buildQuery("DATAFRAME"))
 
-        query.getResultsDataFrame()
+        query.getResults()
 
         mock_http_request.assert_called_with(uri=test_url+"query/sync", method="POST", body=req_body, headers={'Content-Type': 'application/json'})
 

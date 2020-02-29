@@ -37,19 +37,19 @@ class AttrListImmutableKeyValues(PicSureHpdsLib.AttrList):
             self.data[key] = to_save
         return self
 
-    def add(self, *args, *kwargs):
+    def add(self, *args, **kwargs):
         print("ERROR: this query is already queued or otherwise ran.  You cannot change it.")
         return self
 
-    def delete(self, *args, *kwargs):
+    def delete(self, *args, **kwargs):
         print("ERROR: this query is already queued or otherwise ran.  You cannot change it.")
         return self
 
-    def clear(self, *args, *kwargs):
+    def clear(self, *args, **kwargs):
         print("ERROR: this query is already queued or otherwise ran.  You cannot change it.")
         return self
 
-    def load(self, *args, *kwargs):
+    def load(self, *args, **kwargs):
         print("ERROR: this query is already queued or otherwise ran.  You cannot change it.")
         return self
 

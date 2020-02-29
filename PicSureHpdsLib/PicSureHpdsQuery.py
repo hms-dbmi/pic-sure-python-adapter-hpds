@@ -7,7 +7,7 @@ import time
 
 class Query:
     """ Main class of library """
-    def __init__(self, refHpdsResourceConnection):
+    def __init__(self, refHpdsResourceConnection, load_query=None):
         self._performance = {
             "running": False,
             "tmr_start": 0,
@@ -82,6 +82,10 @@ class Query:
             resource_uuid = self._resourceUUID,
             apiObj = self._apiObj
         )
+        if load_query is not None:
+            if type(load_query) is not str:
+                raise ValueError
+            self.load(load_query, merge=True)
 
 
     def help(self):
