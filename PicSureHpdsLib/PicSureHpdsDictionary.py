@@ -27,14 +27,12 @@ class Dictionary:
         # get the queryScopes from the user's profile if needed
         if self._profile_queryScopes is None:
             self._profile_queryScopes = []
-            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            # TODO: Re-enable once issue with short vs. long-term tokens in PSAMA is fixed
-            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            # profile = json.loads(self._apiObj.profile())
-            # if "queryScopes" in profile:
-            #     self._profile_queryScopes = profile["queryScopes"]
-            # else:
-            #     self._profile_queryScopes = []
+            # Re-enable after issue with short vs. long-term tokens in PSAMA was fixed
+            profile = json.loads(self._apiObj.profile())
+            if "queryScopes" in profile:
+                self._profile_queryScopes = profile["queryScopes"]
+            else:
+                self._profile_queryScopes = []
 
         # Filter the dictionary results based on any queryScopes found in the PSAMA profile of the current user
         newResults = dict()
