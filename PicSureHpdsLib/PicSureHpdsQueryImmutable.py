@@ -134,9 +134,6 @@ class ImmutableQuery:
             return None
         return self._lstFilter
 
-    def queryStatus(self, query_id):
-        pass
-
     def getStatus(self, query_uuid=None):
         print("NOTHING DONE: This function is not yet fully implemented!")
         return False
@@ -166,29 +163,23 @@ class ImmutableQuery:
             print("ERROR: msg=" + str(self._query_error))
             return None
 
-
         httpResults = self._apiObj.queryResult(self._resourceUUID, self._query_id)
-
-
-            syncQuery(self._resourceUUID, json.dumps(queryJSON))
         try:
             from json.decoder import JSONDecodeError
             result = json.loads(httpResults)
             if result.error == True:
                 print("[ERROR]")
                 print(httpResults)
-                self._performance['tmr_proc'] = time.time()
                 raise Exception('An error has occured with the server')
         except JSONDecodeError:
             pass
-        self._performance['tmr_proc'] = time.time()
         return httpResults
 
     def save(self, *args):
         return json.dumps(self.buildQuery(*args))
 
     def clone(self):
-        return PicSureHpdsLib.Query().load(self.save())
+        return PicSureHpdsLib.Query().load(self._refHpdsResourceConnection, loadquery=self.save())
 
     def buildQuery(self, *args):
         """ buildQuery(self, *args) """
