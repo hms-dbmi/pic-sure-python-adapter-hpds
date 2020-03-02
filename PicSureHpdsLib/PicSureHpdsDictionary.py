@@ -41,7 +41,8 @@ class Dictionary:
                 valid = False
                 if len(self._profile_queryScopes) > 0:
                     for filterScope in self._profile_queryScopes:
-                        if idx.startswith(filterScope):
+                        find_idx = idx.find(filterScope)
+                        if find_idx > -1 and find_idx < 5:
                             valid = True
                             break
                 else:
