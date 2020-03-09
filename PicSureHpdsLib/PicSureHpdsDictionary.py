@@ -8,7 +8,11 @@ class Dictionary:
         self._refResourceConnection = refHpdsResourceConnection
         self.resourceUUID = refHpdsResourceConnection.resource_uuid
         self._apiObj = refHpdsResourceConnection.connection_reference._api_obj()
-        self._profile_queryScopes = None
+        # deal with queryScopes from the PSAMA profile function
+        if "queryScopes" in refHpdsResourceConnection._profile_info:
+            self._profile_queryScopes = refHpdsResourceConnection._profile_info.queryScopes
+        else:
+            self._profile_queryScopes = []
 
     def help(self):
         print("""
@@ -24,16 +28,6 @@ class Dictionary:
             query = {"query":str(term)}
         results = json.loads(self._apiObj.search(self.resourceUUID, json.dumps(query)))
 
-        # get the queryScopes from the user's profile if needed
-        if self._profile_queryScopes is None:
-            self._profile_queryScopes = []
-            # Re-enable after issue with short vs. long-term tokens in PSAMA was fixed
-            profile = json.loads(self._apiObj.profile())
-            if "queryScopes" in profile:
-                self._profile_queryScopes = profile["queryScopes"]
-            else:
-                self._profile_queryScopes = []
-
         # Filter the dictionary results based on any queryScopes found in the PSAMA profile of the current user
         newResults = dict()
         for resultType in results['results']:
@@ -42,7 +36,7 @@ class Dictionary:
                 if len(self._profile_queryScopes) > 0:
                     for filterScope in self._profile_queryScopes:
                         find_idx = idx.find(filterScope)
-                        if find_idx > -1 and find_idx < 5:
+                        if find_idx > -1 and find_idx < 2:
                             valid = True
                             break
                 else:

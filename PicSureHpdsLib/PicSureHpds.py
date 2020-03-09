@@ -53,6 +53,11 @@ class HpdsResourceConnection:
         self.connection_reference = connection
         self.resource_uuid = resource_uuid
 
+        # connect to PSAMA and get profile information
+        self._profile_info = None
+        profile_str = self.connection_reference._api_obj().profile()
+        self._profile_info = json.loads(profile_str)
+
     def help(self):
         print("""
         [HELP] PicSureHpdsLib.useResource(resource_uuid)
@@ -63,28 +68,37 @@ class HpdsResourceConnection:
         print("Endpoint URL: ".rjust(28,' ') + self.connection_reference.url)
         print("Resource UUID: ".rjust(28,' ') + str(self.resource_uuid))
 
+
     def dictionary(self):
         return PicSureHpdsLib.Dictionary(self)
 
+
     def query(self, query_id=None, load_query=None):
-        if query_id is None:
-            return PicSureHpdsLib.Query(self, load_query)
-        else:
-            return PicSureHpdsLib.ImmutableQuery(self, query_id)
+        # retrieve PSAMA profile info if not previously done
 
-    # def batchOfQueries(self):
-    #     return PicSureHpdsLib.QueryBatch(self)
+        if "queryTempate" in self._profile_info and load_query is None:
+            if len(str(self._profile_info.queryTempate)) > 0:
+                load_query = self._profile_info.queryTempate
+        return PicSureHpdsLib.Query(self, load_query)
 
-    def retrieveQueryResults(self, query_uuid):
-        while True:
-            status_json = self.connection_reference.queryStatus(self.resource_uuid, query_uuid)
-            print(status_json)
-            status = json.loads(status_json)
-            if status["status"] == "AVAILABLE":
-                break
-            else:
-                time.sleep(1)
-        return self.connection_reference.queryResult(self.resource_uuid, query_uuid)
+        # if query_id is None:
+        #     return PicSureHpdsLib.Query(self, load_query)
+        # else:
+        #     return PicSureHpdsLib.ImmutableQuery(self, query_id)
+
+#     def batchOfQueries(self):
+#         return PicSureHpdsLib.QueryBatch(self)
+#
+#    def retrieveQueryResults(self, query_uuid):
+#        while True:
+#            status_json = self.connection_reference.queryStatus(self.resource_uuid, query_uuid)
+#            print(status_json)
+#            status = json.loads(status_json)
+#            if status["status"] == "AVAILABLE":
+#                break
+#            else:
+#                time.sleep(1)
+#        return self.connection_reference.queryResult(self.resource_uuid, query_uuid)
 
 
 
@@ -175,6 +189,9 @@ class BypassConnectionAPI:
         # save values
         self.url = url
         self._token = token
+
+    def profile(self):
+        return "{}"
 
     def info(self, resource_uuid):
         # https://github.com/hms-dbmi/pic-sure/blob/master/pic-sure-resources/pic-sure-resource-api/src/main/java/edu/harvard/dbmi/avillach/service/ResourceWebClient.java#L43
