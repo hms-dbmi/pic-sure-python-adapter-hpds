@@ -76,9 +76,9 @@ class HpdsResourceConnection:
     def query(self, query_id=None, load_query=None):
         # retrieve PSAMA profile info if not previously done
 
-        if "queryTempate" in self._profile_info and load_query is None:
-            if len(str(self._profile_info.queryTempate)) > 0:
-                load_query = self._profile_info.queryTempate
+        if "queryTemplate" in self._profile_info and load_query is None:
+            if len(str(self._profile_info["queryTemplate"])) > 0:
+                load_query = self._profile_info["queryTemplate"]
         return PicSureHpdsLib.Query(self, load_query)
 
         # if query_id is None:
