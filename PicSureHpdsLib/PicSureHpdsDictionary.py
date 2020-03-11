@@ -10,7 +10,7 @@ class Dictionary:
         self._apiObj = refHpdsResourceConnection.connection_reference._api_obj()
         # deal with queryScopes from the PSAMA profile function
         if "queryScopes" in refHpdsResourceConnection._profile_info:
-            self._profile_queryScopes = refHpdsResourceConnection._profile_info.queryScopes
+            self._profile_queryScopes = refHpdsResourceConnection._profile_info["queryScopes"]
         else:
             self._profile_queryScopes = []
 

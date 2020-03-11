@@ -75,18 +75,19 @@ class AttrListKeyValues(PicSureHpdsLib.AttrList):
             to_save['values'] = rec
             self.data[key] = to_save
 
-        for key, rec in variants[0]['categoryVariantInfoFilters'].items():
-            to_save = {"type": "categorical", "HpdsDataType": "info"}
-            to_save['values'] = rec
-            self.data[key] = to_save
+        if len(variants) > 0:
+            for key, rec in variants[0]['categoryVariantInfoFilters'].items():
+                to_save = {"type": "categorical", "HpdsDataType": "info"}
+                to_save['values'] = rec
+                self.data[key] = to_save
 
-        for key, rec in variants[0]["numericVariantInfoFilters"].items():
-            to_save = {"type":"minmax", "HpdsDataType": "info"}
-            if "min" in rec:
-                to_save['min'] = rec['min']
-            if "max" in rec:
-                to_save['max'] = rec['max']
-            self.data[key] = to_save
+            for key, rec in variants[0]["numericVariantInfoFilters"].items():
+                to_save = {"type":"minmax", "HpdsDataType": "info"}
+                if "min" in rec:
+                    to_save['min'] = rec['min']
+                if "max" in rec:
+                    to_save['max'] = rec['max']
+                self.data[key] = to_save
         return self
 
     def getJSON(self):
