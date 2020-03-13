@@ -63,6 +63,7 @@ class HpdsResourceConnection:
         [HELP] PicSureHpdsLib.useResource(resource_uuid)
             .dictionary()       Used to access data dictionary of the resource
             .query()            Used to query against data in the resource
+            .retrieveQueryResults(query_uuid) returns the results of an asynchronous query that has already been submitted to PICSURE
 
         [ENVIRONMENT]""")
         print("Endpoint URL: ".rjust(28,' ') + self.connection_reference.url)
@@ -73,32 +74,29 @@ class HpdsResourceConnection:
         return PicSureHpdsLib.Dictionary(self)
 
 
-    def query(self, query_id=None, load_query=None):
+    def query(self, load_query=None):
         # retrieve PSAMA profile info if not previously done
-
         if "queryTemplate" in self._profile_info and load_query is None:
             if len(str(self._profile_info["queryTemplate"])) > 0:
                 load_query = self._profile_info["queryTemplate"]
-        #return PicSureHpdsLib.Query(self, load_query)
-
-        if query_id is None:
-            return PicSureHpdsLib.Query(self, load_query)
-        else:
-            return PicSureHpdsLib.ImmutableQuery(self, query_id)
+        return PicSureHpdsLib.Query(self, load_query)
 
 #     def batchOfQueries(self):
 #         return PicSureHpdsLib.QueryBatch(self)
 #
-#    def retrieveQueryResults(self, query_uuid):
-#        while True:
-#            status_json = self.connection_reference.queryStatus(self.resource_uuid, query_uuid)
-#            print(status_json)
-#            status = json.loads(status_json)
-#            if status["status"] == "AVAILABLE":
-#                break
-#            else:
-#                time.sleep(1)
-#        return self.connection_reference.queryResult(self.resource_uuid, query_uuid)
+    def retrieveQueryResults(self, query_uuid):
+        while True:
+            status_json = self.connection_reference._api_obj().queryStatus(self.resource_uuid, query_uuid)
+            print(status_json)
+            status = json.loads(status_json)
+            if status["status"] == "AVAILABLE":
+               break
+            elif status["status"] == "ERROR":
+                print("An error occurred retrieving this query; please check the server logs")
+                return {}
+            else:
+               time.sleep(1)
+        return self.connection_reference._api_obj().queryResult(self.resource_uuid, query_uuid)
 
 
 
