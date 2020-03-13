@@ -34,6 +34,8 @@ class TestHpdsDictionary(unittest.TestCase):
         mock_picsure_resource = Mock()
         mock_picsure_resource.resource_uuid = test_uuid
         mock_picsure_resource.connection_reference._api_obj.return_value = mock_picsure_API
+        # Need to add some JSON so parser does not choke on mock object
+        mock_picsure_resource._profile_info = json.loads('{"testjson":"awesome"}')
 
         dictionary = PicSureHpdsLib.Dictionary(mock_picsure_resource)
 
@@ -62,6 +64,8 @@ class TestHpdsDictionary(unittest.TestCase):
         mock_picsure_resource = Mock()
         mock_picsure_resource.resource_uuid = test_uuid
         mock_picsure_resource.connection_reference._api_obj.return_value = mock_picsure_API
+        # Need to add some JSON so parser does not choke on mock object
+        mock_picsure_resource._profile_info = json.loads('{"testjson":"awesome"}')
 
         dictionary = PicSureHpdsLib.Dictionary(mock_picsure_resource)
         dictionary.find("test_term")
@@ -86,6 +90,8 @@ class TestHpdsDictionary(unittest.TestCase):
         mock_picsure_resource = Mock()
         mock_picsure_resource.resource_uuid = test_uuid
         mock_picsure_resource.connection_reference._api_obj.return_value = mock_picsure_API
+        # Need to add some JSON so parser does not choke on mock object
+        mock_picsure_resource._profile_info = json.loads('{"testjson":"awesome"}')
 
         dictionary = PicSureHpdsLib.Dictionary(mock_picsure_resource)
         dictionary.find()
@@ -110,13 +116,15 @@ class TestHpdsDictionary(unittest.TestCase):
         mock_picsure_resource = Mock()
         mock_picsure_resource.resource_uuid = test_uuid
         mock_picsure_resource.connection_reference._api_obj.return_value = mock_picsure_API
+        # set query scope here!
+        mock_picsure_resource._profile_info = json.loads('{"queryScopes":"\\\\Demographics"}')
 
         dictionary = PicSureHpdsLib.Dictionary(mock_picsure_resource)
         results = dictionary.find("test_term")
 
         mock_picsure_API.search.assert_called_with(test_uuid, '{"query": "test_term"}')
-        mock_picsure_API.profile.assert_called()
 
+        # Only keys starting with the query scope should be present
         for key in results.keys():
             self.assertTrue(key.startswith("\\Demographics"))
 
@@ -136,11 +144,13 @@ class TestHpdsDictionary(unittest.TestCase):
         mock_picsure_resource = Mock()
         mock_picsure_resource.resource_uuid = test_uuid
         mock_picsure_resource.connection_reference._api_obj.return_value = mock_picsure_API
+        # Need to add some JSON so parser does not choke on mock object
+        mock_picsure_resource._profile_info = json.loads('{"testjson":"awesome"}')
 
         dictionary = PicSureHpdsLib.Dictionary(mock_picsure_resource)
         results = dictionary.find("test_term")
 
         mock_picsure_API.search.assert_called_with(test_uuid, '{"query": "test_term"}')
-        mock_picsure_API.profile.assert_called()
 
+        #Both the Demographics result (Gender) and the Variant Result should be present
         self.assertTrue(len(results.keys()) == 2)

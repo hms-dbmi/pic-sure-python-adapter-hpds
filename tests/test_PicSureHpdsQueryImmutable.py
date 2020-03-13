@@ -12,6 +12,9 @@ class TestHpdsImmutableQuery(unittest.TestCase):
 
     @patch('PicSureClient.Connection')
     def test_HpdsImmutableQuery_create(self, mock_picsure_connection):
+        # Just have to put some kind of JSON response so that there is a value to parse
+        mock_picsure_connection.return_value._api_obj.return_value.profile.return_value = '{"testjson":"awesome"}'
+
         conn = mock_picsure_connection()
         test_uuid = "my-test-uuid"
         resource = PicSureHpds.HpdsResourceConnection(conn, test_uuid)
@@ -23,6 +26,9 @@ class TestHpdsImmutableQuery(unittest.TestCase):
 
     @patch('PicSureClient.Connection')
     def test_HpdsQuery_func_help(self, mock_picsure_connection):
+        # Just have to put some kind of JSON response so that there is a value to parse
+        mock_picsure_connection.return_value._api_obj.return_value.profile.return_value = '{"testjson":"awesome"}'
+
         conn = mock_picsure_connection()
         test_uuid = "my-test-uuid"
         resource = PicSureHpds.HpdsResourceConnection(conn, test_uuid)
@@ -37,6 +43,9 @@ class TestHpdsImmutableQuery(unittest.TestCase):
 
     @patch('PicSureClient.Connection')
     def test_HpdsQuery_func_show(self, mock_picsure_connection):
+        # Just have to put some kind of JSON response so that there is a value to parse
+        mock_picsure_connection.return_value._api_obj.return_value.profile.return_value = '{"testjson":"awesome"}'
+
         conn = mock_picsure_connection()
         test_uuid = "my-test-uuid"
         resource = PicSureHpds.HpdsResourceConnection(conn, test_uuid)
@@ -52,6 +61,9 @@ class TestHpdsImmutableQuery(unittest.TestCase):
 
     @patch('PicSureClient.Connection')
     def test_HpdsQuery_list_select(self, mock_picsure_connection):
+        # Just have to put some kind of JSON response so that there is a value to parse
+        mock_picsure_connection.return_value._api_obj.return_value.profile.return_value = '{"testjson":"awesome"}'
+
         conn = mock_picsure_connection()
         test_uuid = "my-test-uuid"
         test_key = "my-test-key"
@@ -73,6 +85,9 @@ class TestHpdsImmutableQuery(unittest.TestCase):
 
     @patch('PicSureClient.Connection')
     def test_HpdsQuery_list_crosscounts(self, mock_picsure_connection):
+        # Just have to put some kind of JSON response so that there is a value to parse
+        mock_picsure_connection.return_value._api_obj.return_value.profile.return_value = '{"testjson":"awesome"}'
+
         conn = mock_picsure_connection()
         test_uuid = "my-test-uuid"
         test_key = "my-test-key"
@@ -94,6 +109,9 @@ class TestHpdsImmutableQuery(unittest.TestCase):
 
     @patch('PicSureClient.Connection')
     def test_HpdsQuery_list_require(self, mock_picsure_connection):
+        # Just have to put some kind of JSON response so that there is a value to parse
+        mock_picsure_connection.return_value._api_obj.return_value.profile.return_value = '{"testjson":"awesome"}'
+
         conn = mock_picsure_connection()
         test_uuid = "my-test-uuid"
         test_key = "my-test-key"
@@ -115,6 +133,9 @@ class TestHpdsImmutableQuery(unittest.TestCase):
 
     @patch('PicSureClient.Connection')
     def test_HpdsQuery_list_anyof(self, mock_picsure_connection):
+        # Just have to put some kind of JSON response so that there is a value to parse
+        mock_picsure_connection.return_value._api_obj.return_value.profile.return_value = '{"testjson":"awesome"}'
+
         conn = mock_picsure_connection()
         test_uuid = "my-test-uuid"
         test_key = "my-test-key"
@@ -146,6 +167,9 @@ class TestHpdsImmutableQuery(unittest.TestCase):
 
     @patch('PicSureClient.Connection')
     def test_HpdsQuery_list_filter(self, mock_picsure_connection):
+        # Just have to put some kind of JSON response so that there is a value to parse
+        mock_picsure_connection.return_value._api_obj.return_value.profile.return_value = '{"testjson":"awesome"}'
+
         conn = mock_picsure_connection()
         test_uuid = "my-test-uuid"
         test_key = "my-test-key"
