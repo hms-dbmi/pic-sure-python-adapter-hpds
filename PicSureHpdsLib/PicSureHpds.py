@@ -63,7 +63,7 @@ class HpdsResourceConnection:
         [HELP] PicSureHpdsLib.useResource(resource_uuid)
             .dictionary()       Used to access data dictionary of the resource
             .query()            Used to query against data in the resource
-            
+
         [ENVIRONMENT]""")
         print("Endpoint URL: ".rjust(28,' ') + self.connection_reference.url)
         print("Resource UUID: ".rjust(28,' ') + str(self.resource_uuid))
@@ -79,12 +79,12 @@ class HpdsResourceConnection:
         if "queryTemplate" in self._profile_info and load_query is None:
             if len(str(self._profile_info["queryTemplate"])) > 0:
                 load_query = self._profile_info["queryTemplate"]
-        return PicSureHpdsLib.Query(self, load_query)
+        #return PicSureHpdsLib.Query(self, load_query)
 
-        # if query_id is None:
-        #     return PicSureHpdsLib.Query(self, load_query)
-        # else:
-        #     return PicSureHpdsLib.ImmutableQuery(self, query_id)
+        if query_id is None:
+            return PicSureHpdsLib.Query(self, load_query)
+        else:
+            return PicSureHpdsLib.ImmutableQuery(self, query_id)
 
 #     def batchOfQueries(self):
 #         return PicSureHpdsLib.QueryBatch(self)
