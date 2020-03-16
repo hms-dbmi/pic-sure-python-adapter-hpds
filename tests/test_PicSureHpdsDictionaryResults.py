@@ -23,6 +23,8 @@ class TestHpdsDictionaryResults(unittest.TestCase):
         mock_picsure_resource = Mock()
         mock_picsure_resource.resource_uuid = test_uuid
         mock_picsure_resource.connection_reference._api_obj.return_value = mock_picsure_API
+        # Need to add some JSON so parser does not choke on mock object
+        mock_picsure_resource._profile_info = json.loads('{"testjson":"awesome"}')
 
         dictionary = PicSureHpdsLib.Dictionary(mock_picsure_resource)
         results = dictionary.find("test_term")
@@ -41,6 +43,8 @@ class TestHpdsDictionaryResults(unittest.TestCase):
         mock_picsure_resource = Mock()
         mock_picsure_resource.resource_uuid = test_uuid
         mock_picsure_resource.connection_reference._api_obj.return_value = mock_picsure_API
+        # Need to add some JSON so parser does not choke on mock object
+        mock_picsure_resource._profile_info = json.loads('{"testjson":"awesome"}')
 
         dictionary = PicSureHpdsLib.Dictionary(mock_picsure_resource)
 
@@ -67,6 +71,8 @@ class TestHpdsDictionaryResults(unittest.TestCase):
         mock_picsure_resource = Mock()
         mock_picsure_resource.resource_uuid = test_uuid
         mock_picsure_resource.connection_reference._api_obj.return_value = mock_picsure_API
+        # Need to add some JSON so parser does not choke on mock object
+        mock_picsure_resource._profile_info = json.loads('{"testjson":"awesome"}')
 
         dictionary = PicSureHpdsLib.Dictionary(mock_picsure_resource)
         results = dictionary.find("test_term")
@@ -88,6 +94,8 @@ class TestHpdsDictionaryResults(unittest.TestCase):
         mock_picsure_resource = Mock()
         mock_picsure_resource.resource_uuid = test_uuid
         mock_picsure_resource.connection_reference._api_obj.return_value = mock_picsure_API
+        # Need to add some JSON so parser does not choke on mock object
+        mock_picsure_resource._profile_info = json.loads('{"testjson":"awesome"}')
 
         dictionary = PicSureHpdsLib.Dictionary(mock_picsure_resource)
         results = dictionary.find("test_term")
@@ -97,7 +105,31 @@ class TestHpdsDictionaryResults(unittest.TestCase):
             ['\\Demographics\\Gender\\', 'AA']
         )
 
+    def test_HpdsDictionaryResults_func_keys_with_scope(self):
+        test_uuid = "my-test-uuid"
 
+        mock_picsure_API = Mock()
+        test = {"results": {"phenotypes": {"\\Demographics\\Gender\\": {"name": "\\Demographics\\Gender\\","patientCount": 0,"categoryValues": ["Do not know",  "Male","Female"], "categorical": True,"observationCount": 10}},
+                            "info": {"AA": {"description": "Ancestral Allele. Format: AA|REF|ALT|IndelType. AA: Ancestral allele, REF:Reference Allele, ALT:Alternate Allele, IndelType:Type of Indel (REF, ALT and IndelType are only defined for indels)", "values": ["AAAA|AAAAA|AAAA|insertion","AAAAAAAA|AAAAAAAA|AAAAAAA|deletion","?|GG|GGG|unsure","-|C|CC|cryptic_indel","AATAAA|AAAAAAA|AAAAAA|complex_insertion","TC|T|TT|complex_deletion","T|||"],"continuous": False}},
+                            },
+                "searchQuery": "test_term"
+                }
+        mock_picsure_API.search.return_value = json.dumps(test)
+        mock_picsure_API.profile.return_value = '{}'
+
+        mock_picsure_resource = Mock()
+        mock_picsure_resource.resource_uuid = test_uuid
+        mock_picsure_resource.connection_reference._api_obj.return_value = mock_picsure_API
+        # Need to add some JSON so parser does not choke on mock object
+        mock_picsure_resource._profile_info = json.loads('{"queryScopes":"\\\\Demographics"}')
+
+        dictionary = PicSureHpdsLib.Dictionary(mock_picsure_resource)
+        results = dictionary.find("test_term")
+
+        self.assertListEqual(
+            results.keys(),
+            ['\\Demographics\\Gender\\']
+        )
 
     def test_HpdsDictionaryResults_func_entries(self):
         test_uuid = "my-test-uuid"
@@ -114,6 +146,8 @@ class TestHpdsDictionaryResults(unittest.TestCase):
         mock_picsure_resource = Mock()
         mock_picsure_resource.resource_uuid = test_uuid
         mock_picsure_resource.connection_reference._api_obj.return_value = mock_picsure_API
+        # Need to add some JSON so parser does not choke on mock object
+        mock_picsure_resource._profile_info = json.loads('{"testjson":"awesome"}')
 
         dictionary = PicSureHpdsLib.Dictionary(mock_picsure_resource)
         results = dictionary.find("test_term")
@@ -128,6 +162,33 @@ class TestHpdsDictionaryResults(unittest.TestCase):
             ]
         )
 
+    def test_HpdsDictionaryResults_func_entries_withScope(self):
+        test_uuid = "my-test-uuid"
+
+        mock_picsure_API = Mock()
+        test = {"results": {"phenotypes": {"\\Demographics\\Gender\\": {"name": "\\Demographics\\Gender\\","patientCount": 0,"categoryValues": ["Do not know",  "Male","Female"], "categorical": True,"observationCount": 10}},
+                            "info": {"AA": {"description": "Ancestral Allele. Format: AA|REF|ALT|IndelType. AA: Ancestral allele, REF:Reference Allele, ALT:Alternate Allele, IndelType:Type of Indel (REF, ALT and IndelType are only defined for indels)", "values": ["AAAA|AAAAA|AAAA|insertion","AAAAAAAA|AAAAAAAA|AAAAAAA|deletion","?|GG|GGG|unsure","-|C|CC|cryptic_indel","AATAAA|AAAAAAA|AAAAAA|complex_insertion","TC|T|TT|complex_deletion","T|||"],"continuous": False}},
+                            },
+                "searchQuery": "test_term"
+                }
+        mock_picsure_API.search.return_value = json.dumps(test)
+        mock_picsure_API.profile.return_value = '{}'
+
+        mock_picsure_resource = Mock()
+        mock_picsure_resource.resource_uuid = test_uuid
+        mock_picsure_resource.connection_reference._api_obj.return_value = mock_picsure_API
+        # Need to add some JSON so parser does not choke on mock object
+        mock_picsure_resource._profile_info = json.loads('{"queryScopes":"\\\\Demographics"}')
+
+        dictionary = PicSureHpdsLib.Dictionary(mock_picsure_resource)
+        results = dictionary.find("test_term")
+
+        self.assertListEqual(
+            results.entries(),
+            [
+                {'name': '\\Demographics\\Gender\\', 'patientCount': 0, 'categoryValues': ['Do not know', 'Male', 'Female'], 'categorical': True, 'observationCount': 10, 'HpdsDataType': 'phenotypes'}
+            ]
+        )
 
 
     def test_HpdsDictionaryResults_func_dataframe(self):
@@ -145,6 +206,8 @@ class TestHpdsDictionaryResults(unittest.TestCase):
         mock_picsure_resource = Mock()
         mock_picsure_resource.resource_uuid = test_uuid
         mock_picsure_resource.connection_reference._api_obj.return_value = mock_picsure_API
+        # Need to add some JSON so parser does not choke on mock object
+        mock_picsure_resource._profile_info = json.loads('{"testjson":"awesome"}')
 
         dictionary = PicSureHpdsLib.Dictionary(mock_picsure_resource)
         results = dictionary.find("test_term")

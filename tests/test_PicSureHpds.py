@@ -29,8 +29,12 @@ class TestHpdsAdapter(unittest.TestCase):
 
     @patch('PicSureClient.Connection')
     def test_Adapter_func_getResource(self, MockPicSureConnection):
+        # Just have to put some kind of JSON response so that there is a value to parse
+        MockPicSureConnection.return_value._api_obj.return_value.profile.return_value = '{"testjson":"awesome"}'
+
         test_uuid = "my-test-uuid"
         conn = MockPicSureConnection()
+
         adapter = PicSureHpds.Adapter(conn)
         resource = adapter.useResource(test_uuid)
 
@@ -38,7 +42,6 @@ class TestHpdsAdapter(unittest.TestCase):
         self.assertIsInstance(resource, PicSureHpds.HpdsResourceConnection)
         # correct uuid?
         self.assertEqual(resource.resource_uuid, test_uuid)
-
 
     @patch('PicSureClient.Connection')
     @patch('httplib2.Http.request')
@@ -63,6 +66,9 @@ class TestHpdsAdapter(unittest.TestCase):
 class TestHpdsResourceConnection(unittest.TestCase):
     @patch('PicSureClient.Connection')
     def test_HpdsResourceConnection_create(self, MockPicSureConnection):
+        # Just have to put some kind of JSON response so that there is a value to parse
+        MockPicSureConnection.return_value._api_obj.return_value.profile.return_value = '{"testjson":"awesome"}'
+
         conn = MockPicSureConnection()
         test_uuid = "my-test-uuid"
         resource = PicSureHpds.HpdsResourceConnection(conn, test_uuid)
@@ -74,6 +80,9 @@ class TestHpdsResourceConnection(unittest.TestCase):
 
     @patch('PicSureClient.Connection')
     def test_HpdsResourceConnection_func_help(self, MockPicSureConnection):
+        # Just have to put some kind of JSON response so that there is a value to parse
+        MockPicSureConnection.return_value._api_obj.return_value.profile.return_value = '{"testjson":"awesome"}'
+
         conn = MockPicSureConnection()
         test_uuid = "my-test-uuid"
         resource = PicSureHpds.HpdsResourceConnection(conn, test_uuid)
@@ -87,6 +96,9 @@ class TestHpdsResourceConnection(unittest.TestCase):
 
     @patch('PicSureClient.Connection')
     def test_HpdsResourceConnection_func_dictionary(self, MockPicSureConnection):
+        # Just have to put some kind of JSON response so that there is a value to parse
+        MockPicSureConnection.return_value._api_obj.return_value.profile.return_value = '{"testjson":"awesome"}'
+
         conn = MockPicSureConnection()
         test_uuid = "my-test-uuid"
         resource = PicSureHpds.HpdsResourceConnection(conn, test_uuid)
@@ -99,12 +111,42 @@ class TestHpdsResourceConnection(unittest.TestCase):
 
     @patch('PicSureClient.Connection')
     def test_HpdsResourceConnection_func_query(self, MockPicSureConnection):
+        # Just have to put some kind of JSON response so that there is a value to parse
+        MockPicSureConnection.return_value._api_obj.return_value.profile.return_value = '{"testjson":"awesome"}'
+
         conn = MockPicSureConnection()
         test_uuid = "my-test-uuid"
         resource = PicSureHpds.HpdsResourceConnection(conn, test_uuid)
 
         query = resource.query()
         self.assertIsInstance(query, PicSureHpdsQuery.Query)
+
+    @patch('PicSureClient.Connection')
+    def test_HpdsResourceConnection_func_query_withTemplate(self, MockPicSureConnection):
+        test_uuid = "my-test-uuid"
+        query_obj = {"queryTemplate":
+                     ''' { "fields": ["\\\\select\\\\key"],
+                     "categoryFilters": { "\\\\filter_categorical\\\\set1": ["cat1"],
+                     "\\\\filter_categorical\\\\set2": ["catA", "catC"]}}''',
+                     "resourceUUID": str(test_uuid)}
+
+        # Just have to put some kind of JSON response so that there is a value to parse
+        MockPicSureConnection.return_value._api_obj.return_value.profile.return_value = json.dumps(query_obj)
+
+        conn = MockPicSureConnection()
+
+        resource = PicSureHpds.HpdsResourceConnection(conn, test_uuid)
+
+        query = resource.query()
+        self.assertIsInstance(query, PicSureHpdsQuery.Query)
+
+        query_as_loaded = json.loads(query.save())
+
+        # test that it was created correctly
+        #self.assertEqual(json.dumps(query_obj), query_as_loaded)
+        self.assertIs(query._refHpdsResourceConnection, resource)
+        self.assertTrue("\\select\\key" in query_as_loaded["query"]["fields"])
+        self.assertTrue("\\filter_categorical\\set1" in query_as_loaded["query"]["categoryFilters"])
 
 
 class TestHpdsBypass(unittest.TestCase):

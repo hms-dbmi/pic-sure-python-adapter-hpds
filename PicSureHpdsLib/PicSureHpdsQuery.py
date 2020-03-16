@@ -327,16 +327,35 @@ class Query:
             self._lstFilter.clear()
 
         # ___ handle key-only fields ____
-        self._lstSelect.load(query["query"]["fields"])
-        self._lstCrossCntFields.load(query["query"]["crossCountFields"])
-        self._lstRequire.load(query["query"]["requiredFields"])
-        self._lstAnyOf.load(query["query"]["anyRecordOf"])
+        if "query" in query:
+            query_root = query["query"]
+        else:
+            query_root = query
+
+        if "fields" in query_root:
+            self._lstSelect.load(query_root["fields"])
+        if "crossCountFields" in query_root:
+            self._lstCrossCntFields.load(query_root["crossCountFields"])
+        if "requiredFields" in query_root:
+            self._lstRequire.load(query_root["requiredFields"])
+        if "anyRecordOf" in query_root:
+            self._lstAnyOf.load(query_root["anyRecordOf"])
 
         # ___ handle various filters ___
+        filter_num = {}
+        filter_cat = {}
+        filter_info = []
+        if "numericFilters" in query_root:
+            filter_num = query_root["numericFilters"]
+        if "categoryFilters" in query_root:
+            filter_cat = query_root["categoryFilters"]
+        if "variantInfoFilters" in query_root:
+            filter_info = query_root["variantInfoFilters"]
+
         self._lstFilter.load(
-            query["query"]["numericFilters"],
-            query["query"]["categoryFilters"],
-            query["query"]["variantInfoFilters"]
+            filter_num,
+            filter_cat,
+            filter_info
         )
         return self
 
