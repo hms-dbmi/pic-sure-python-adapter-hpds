@@ -47,7 +47,8 @@ class AttrList:
         keys = new_keys
 
         if  self.all_keys == None:
-            query = {"query": "\\"}
+            #Initial query is blank to get all phenotype and INFO filters
+            query = {"query": ""}
             results = self._apiObj.search(self._resource_uuid, json.dumps(query))
             self.all_keys = json.loads(results)['results']
 
