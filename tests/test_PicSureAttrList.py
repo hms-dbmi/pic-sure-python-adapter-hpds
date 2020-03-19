@@ -229,13 +229,13 @@ class TestAttrList(unittest.TestCase):
         )
 
         # add 1st term
-        my_apiObj.search.return_value = '{"results": {"phenotypes": {"' + my_term1 + '": true}}}'
+        my_apiObj.search.return_value = '{"results": {"phenotypes": {"' + my_term1 + '": true, "' + my_term2 + '": true}}}'
         myAttrList.add(my_term1)
         self.assertEqual(my_apiObj.search.call_count, 1)
         # add 2nd term
-        my_apiObj.search.return_value = '{"results": {"phenotypes": {"' + my_term2 + '": true}}}'
         myAttrList.add(my_term2)
-        self.assertEqual(my_apiObj.search.call_count, 2)
+        #Search should only be called ONE time now!
+        self.assertEqual(my_apiObj.search.call_count, 1)
 
         # make sure both entries were added
         self.assertEqual(len(myAttrList.data), 2)
@@ -302,6 +302,9 @@ class TestAttrList(unittest.TestCase):
             apiObj=my_apiObj,
             allowVariantSpec=my_allowVariantSpec
         )
+
+        # need to set something to return
+        my_apiObj.search.return_value = '{"results": {}}'
 
         # attempt adding genotype spec with 1 values
         myAttrList.add(my_term, [my_GT])

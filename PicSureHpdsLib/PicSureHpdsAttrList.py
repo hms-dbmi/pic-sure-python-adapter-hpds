@@ -19,6 +19,8 @@ class AttrList:
         |  clear(): clears all values from list
         |   help(): this command...
         """
+        # Start with an empty structure to track all keys
+        self.all_keys = None
         self.data = {}
         if type(init_list) == dict:
             self.data = init_list
@@ -44,6 +46,12 @@ class AttrList:
                 new_keys.append(loopkey)
         keys = new_keys
 
+        if  self.all_keys == None:
+            #Initial query is blank to get all phenotype and INFO filters
+            query = {"query": ""}
+            results = self._apiObj.search(self._resource_uuid, json.dumps(query))
+            self.all_keys = json.loads(results)['results']
+
         # query the resource and identify what data_class the key belongs to
         new_keys = {}
         for loopkey in keys:
@@ -55,16 +63,11 @@ class AttrList:
                 else:
                     print('ERROR: cannot add key, it is of type HpdsVariantSpec -> ', loopkey)
             else:
-                loopkey = str(loopkey)
-                query = {"query": loopkey}
-                results = self._apiObj.search(self._resource_uuid, json.dumps(query))
-                results = json.loads(results)['results']
-                merge_results = {}
                 was_found = False
-                for typename in results:
-                    if loopkey in results[typename]:
+                for typename in self.all_keys:
+                    if loopkey in self.all_keys[typename]:
                         was_found = True
-                        new_keys[loopkey] = {"class": typename, "definition": results[typename][loopkey]}
+                        new_keys[loopkey] = {"class": typename, "definition": self.all_keys[typename][loopkey]}
                         break
                 if not was_found:
                     print('ERROR: cannot add, key does not exist in resource -> ', loopkey)
