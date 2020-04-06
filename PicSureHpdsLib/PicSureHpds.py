@@ -65,7 +65,6 @@ class HpdsResourceConnection:
         self.resource_uuid = resource_uuid
 
         # connect to PSAMA and get profile information
-        self._profile_info = None
         profile_str = self.connection_reference._api_obj().profile()
         self._profile_info = json.loads(profile_str)
 
@@ -92,12 +91,16 @@ class HpdsResourceConnection:
                 load_query = self._profile_info["queryTemplate"]
         return PicSureHpdsLib.Query(self, load_query)
 
-#     def batchOfQueries(self):
-#         return PicSureHpdsLib.QueryBatch(self)
-#
     def retrieveQueryResults(self, query_uuid):
+        load_query = False
+        if "queryTemplate" in self._profile_info:
+            if len(str(self._profile_info["queryTemplate"])) > 0:
+                load_query = self._profile_info["queryTemplate"]
+        if load_query is False:
+            load_query = "{}"
+
         while True:
-            status_json = self.connection_reference._api_obj().queryStatus(self.resource_uuid, query_uuid)
+            status_json = self.connection_reference._api_obj().queryStatus(self.resource_uuid, query_uuid, load_query)
             print(status_json)
             status = json.loads(status_json)
             if status["status"] == "AVAILABLE":
