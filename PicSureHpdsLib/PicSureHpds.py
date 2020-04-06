@@ -21,8 +21,19 @@ class Adapter:
         print(PicSureHpdsLib.__package__ + " Library (version " + PicSureHpdsLib.__version__ + ")")
         print("URL: ".ljust(12,' ') + self.connection_reference.url)
 
-    def useResource(self, resource_uuid):
-        return HpdsResourceConnection(self.connection_reference, resource_uuid)
+    def useResource(self, resource_uuid = None):
+        uuid = resource_uuid
+        if uuid is None and len(self.connection_reference.resource_uuids) == 1:
+            uuid = self.connection_reference.resource_uuids[0]
+        else:
+            if uuid is None:
+                # throw exception if a resource uuid wass not provided and more than 1 resource exists
+                raise KeyError('Please specify a UUID, there is more than 1 resource.')
+
+        if uuid in self.connection_reference.resource_uuids:
+            return HpdsResourceConnection(self.connection_reference, uuid)
+        else:
+            raise KeyError('Resource UUID "'+uuid+'" was not found!')
 
     def unlockResource(self, resource_uuid, key = False):
         """ unlockResource(resource_uuid, key=str) Unlocks a newly-started HPDS resource"""
