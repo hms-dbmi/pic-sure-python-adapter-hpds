@@ -1,10 +1,12 @@
 from PicSureHpdsLib import PicSureHpdsDictionary, PicSureHpds, PicSureHpdsQuery
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, PropertyMock
 import httplib2
 import json
 import io
 import sys
+
+
 
 class TestHpdsAdapter(unittest.TestCase):
     @patch('PicSureClient.Connection')
@@ -15,6 +17,7 @@ class TestHpdsAdapter(unittest.TestCase):
         self.assertIsInstance(adapter, PicSureHpds.Adapter)
         # correct reference to connection
         self.assertIs(adapter.connection_reference, conn)
+
 
     @patch('PicSureClient.Connection')
     def test_Adapter_func_help(self, MockPicSureConnection):
@@ -27,13 +30,15 @@ class TestHpdsAdapter(unittest.TestCase):
             print("Captured:\n" + captured)
             self.assertTrue(len(captured) > 0)
 
+
     @patch('PicSureClient.Connection')
-    def test_Adapter_func_getResource(self, MockPicSureConnection):
-        # Just have to put some kind of JSON response so that there is a value to parse
+    def test_Adapter_func_getResource_uuid_valid(self, MockPicSureConnection):
+        # Just have to put some kind of JSON response so that there is a value to parse when PSAMA Profile is called
         MockPicSureConnection.return_value._api_obj.return_value.profile.return_value = '{"testjson":"awesome"}'
 
         test_uuid = "my-test-uuid"
         conn = MockPicSureConnection()
+        conn.resource_uuids = [test_uuid]
 
         adapter = PicSureHpds.Adapter(conn)
         resource = adapter.useResource(test_uuid)
@@ -42,6 +47,65 @@ class TestHpdsAdapter(unittest.TestCase):
         self.assertIsInstance(resource, PicSureHpds.HpdsResourceConnection)
         # correct uuid?
         self.assertEqual(resource.resource_uuid, test_uuid)
+
+
+    @patch('httplib2.Http.request')
+    @patch('PicSureClient.Connection')
+    def test_Adapter_func_getResource_uuid_invalid(self, MockHttp, MockPicSureConnection):
+        # Just have to put some kind of JSON response so that there is a value to parse when PSAMA Profile is called
+        MockPicSureConnection.return_value._api_obj.return_value.profile.return_value = '{"testjson":"awesome"}'
+
+        test_uuid = "my-test-uuid"
+        test_uuid_BAD = "my-test-uuid_BAD"
+        conn = MockPicSureConnection()
+        conn.resource_uuids = [test_uuid]
+
+        adapter = PicSureHpds.Adapter(conn)
+        with self.assertRaises(KeyError) as cm:
+            resource = adapter.useResource(test_uuid_BAD)
+
+        # should have thrown an exception
+        self.assertIsInstance(cm.exception, KeyError)
+
+
+    @patch('httplib2.Http.request')
+    @patch('PicSureClient.Connection')
+    def test_Adapter_func_getResource_default_success(self, MockHttp, MockPicSureConnection):
+        # Just have to put some kind of JSON response so that there is a value to parse when PSAMA Profile is called
+        MockPicSureConnection.return_value._api_obj.return_value.profile.return_value = '{"testjson":"awesome"}'
+
+        test_uuid = "my-test-uuid"
+        conn = MockPicSureConnection()
+        conn.resource_uuids = [test_uuid]
+
+        adapter = PicSureHpds.Adapter(conn)
+        resource = adapter.useResource()
+
+        # correct type?
+        self.assertIsInstance(resource, PicSureHpds.HpdsResourceConnection)
+
+        # the resource should be configured for the only uuid provided
+        self.assertEqual(resource.resource_uuid, test_uuid, "the resource UUID was not populated correctly")
+
+
+    @patch('httplib2.Http.request')
+    @patch('PicSureClient.Connection')
+    def test_Adapter_func_getResource_default_failure(self, MockHttp, MockPicSureConnection):
+        # Just have to put some kind of JSON response so that there is a value to parse when PSAMA Profile is called
+        MockPicSureConnection.return_value._api_obj.return_value.profile.return_value = '{"testjson":"awesome"}'
+
+        test_uuid1 = "my-test-uuid-1"
+        test_uuid2 = "my-test-uuid-2"
+        conn = MockPicSureConnection()
+        conn.resource_uuids = [test_uuid1, test_uuid2]
+
+        adapter = PicSureHpds.Adapter(conn)
+        with self.assertRaises(KeyError) as cm:
+            resource = adapter.useResource()
+
+        # should have thrown an exception
+        self.assertIsInstance(cm.exception, KeyError)
+
 
     @patch('PicSureClient.Connection')
     @patch('httplib2.Http.request')
@@ -61,6 +125,7 @@ class TestHpdsAdapter(unittest.TestCase):
         adapter.unlockResource(test_uuid, test_key)
 
         MockHttp.assert_called_with(body=json_content, headers={'Content-Type': 'application/json'}, method="POST", uri=test_url + "query")
+
 
 
 class TestHpdsResourceConnection(unittest.TestCase):
@@ -109,6 +174,7 @@ class TestHpdsResourceConnection(unittest.TestCase):
         dictionary = resource.dictionary()
         self.assertIsInstance(dictionary, PicSureHpdsDictionary.Dictionary)
 
+
     @patch('PicSureClient.Connection')
     def test_HpdsResourceConnection_func_query(self, MockPicSureConnection):
         # Just have to put some kind of JSON response so that there is a value to parse
@@ -120,6 +186,7 @@ class TestHpdsResourceConnection(unittest.TestCase):
 
         query = resource.query()
         self.assertIsInstance(query, PicSureHpdsQuery.Query)
+
 
     @patch('PicSureClient.Connection')
     def test_HpdsResourceConnection_func_query_withTemplate(self, MockPicSureConnection):
@@ -149,6 +216,7 @@ class TestHpdsResourceConnection(unittest.TestCase):
         self.assertTrue("\\filter_categorical\\set1" in query_as_loaded["query"]["categoryFilters"])
 
 
+
 class TestHpdsBypass(unittest.TestCase):
     def test_HpdsBypass_Adapter_create(self):
         test_url = "http://endpoint.url/pic-sure/"
@@ -174,6 +242,7 @@ class TestHpdsBypass(unittest.TestCase):
         adapter = PicSureHpds.BypassAdapter(test_bad_url, test_token)
         self.assertEqual(test_expected_url, adapter.connection_reference.url, "incorrect url should add trailing backslash to endpoint url")
 
+
     def test_HpdsBypass_Adapter_func_useResource(self):
         test_url = "http://endpoint.url/pic-sure/"
         test_token = "my-JWT-token"
@@ -181,6 +250,7 @@ class TestHpdsBypass(unittest.TestCase):
         adapter = PicSureHpds.BypassAdapter(test_url, test_token)
         resource = adapter.useResource()
         self.assertIsInstance(resource, PicSureHpds.HpdsResourceConnection)
+
 
     @patch('PicSureClient.Connection')
     @patch('httplib2.Http.request')
@@ -265,6 +335,7 @@ class TestHpdsBypass(unittest.TestCase):
         MockHttp.assert_called_with(uri=test_url+"info", method="POST", body="{}", headers={'Content-Type': 'application/json'})
 
 
+
 class TestHpdsBypassAPI(unittest.TestCase):
     def test_HpdsBypassAPI_create(self):
         test_url = "http://endpoint.url/pic-sure/"
@@ -276,6 +347,7 @@ class TestHpdsBypassAPI(unittest.TestCase):
         self.assertEqual(test_url, api_obj.url, "correct url should be passed into BypassConnection")
         self.assertEqual(test_token, api_obj._token, "correct JWT token should be passed into BypassConnection")
 
+
     def test_HpdsBypassAPI_endpoint_trailing_slash(self):
         test_bad_url = "http://endpoint.url/pic-sure"
         test_expected_url = "http://endpoint.url/pic-sure/"
@@ -286,6 +358,7 @@ class TestHpdsBypassAPI(unittest.TestCase):
 
         api_obj = PicSureHpds.BypassConnectionAPI(test_bad_url, test_token)
         self.assertEqual(test_expected_url, api_obj.url, "incorrect url should add trailing backslash to endpoint url")
+
 
     @patch('httplib2.Http.request')
     def test_HpdsBypassAPI_func_info(self, MockHttp):
@@ -304,6 +377,7 @@ class TestHpdsBypassAPI(unittest.TestCase):
 
         MockHttp.assert_called_with(uri=test_url+"info", method="POST", body="{}", headers={'Content-Type': 'application/json'})
 
+
     # @patch('httplib2.Http.request')
     # def test_HpdsBypassAPI_func_search_no_term(self, MockHttp):
     #     resp_headers = {"status": "200"}
@@ -319,6 +393,7 @@ class TestHpdsBypassAPI(unittest.TestCase):
     #     api_obj.search(test_uuid)
     #
     #     MockHttp.assert_called_with(uri=test_url+"info", method="POST", body="{}", headers={'Content-Type': 'application/json'})
+
 
     @patch('httplib2.Http.request')
     def test_HpdsBypassAPI_func_search_no_term(self, MockHttp):
@@ -337,6 +412,7 @@ class TestHpdsBypassAPI(unittest.TestCase):
 
         MockHttp.assert_called_with(uri=test_url+"search", method="POST", body=search_term, headers={'Content-Type': 'application/json'})
 
+
     def test_HpdsBypassAPI_func_asyncQuery(self):
         test_url = "http://endpoint.url/pic-sure/"
         test_token = "my-JWT-token"
@@ -345,12 +421,14 @@ class TestHpdsBypassAPI(unittest.TestCase):
         api_obj.asyncQuery(test_uuid, "{}")
         self.fail("This is not yet implemented by HPDS")
 
+
     @patch('httplib2.Http.request')
     def test_HpdsBypassAPI_func_syncQuery(self, MockHttp):
         resp_headers = {"status": "200"}
         content = ["test-uuid-1", "test-uuid-2", "test-uuid-3"]
         json_content = json.dumps(content)
         MockHttp.return_value = (resp_headers, json_content.encode("utf-8"))
+
 
     def test_HpdsBypassAPI_func_queryStatus(self):
         test_url = "http://endpoint.url/pic-sure/"
@@ -359,6 +437,7 @@ class TestHpdsBypassAPI(unittest.TestCase):
         api_obj = PicSureHpds.BypassConnectionAPI(test_url, test_token)
         api_obj.queryStatus(test_uuid, test_uuid)
         self.fail("This is not yet implemented by HPDS")
+
 
     def test_HpdsBypassAPI_func_queryResult(self):
         test_url = "http://endpoint.url/pic-sure/"
