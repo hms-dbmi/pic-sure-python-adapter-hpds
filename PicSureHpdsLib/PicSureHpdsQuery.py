@@ -61,7 +61,7 @@ class Query:
                   add("key")            add a single column to ...
                   add(["key1", "key2"]) add several columns to ...
                   delete("key")         delete a single column ... from the list of results
-                  show()                lists all current columns ... 
+                  show()                lists all current columns ...
                   clear()               clears all values from the "any-of" list
                 """,
             resource_uuid=self._resourceUUID,
@@ -103,15 +103,15 @@ class Query:
         .getCrossCount()        array indicating number of matching records per cross-count keys
         .getResults()           CSV-like string containing the matching records
         .getResultsDataFrame()  pandas DataFrame containing the matching records...
-                                  Params "asAsynch" and "timeout" are used by function, any 
+                                  Params "asAsynch" and "timeout" are used by function, any
                                   additional named parameters are passed to pandas.read_csv()
         .getRunDetails()        details about the last run of the query
         .show()                 lists all current query parameters
         .save()                 returns the JSON-formatted query request as string
         .load(query)            set query's current criteria to those in given JSON string
-        
-            * getCount(), getResults(), and getResultsDataFrame() functions can also 
-              accept options that run queries differently which might help with 
+
+            * getCount(), getResults(), and getResultsDataFrame() functions can also
+              accept options that run queries differently which might help with
               connection timeouts. Example: .getResults(async=True, timeout=60)
         """)
     def show(self):
@@ -270,7 +270,7 @@ class Query:
         try:
             from json.decoder import JSONDecodeError
             result = json.loads(httpResults)
-            if result.error == True:
+            if result.error:
                 print("[ERROR]")
                 print(httpResults)
                 self._performance['tmr_proc'] = time.time()
