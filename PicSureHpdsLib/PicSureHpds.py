@@ -83,6 +83,22 @@ class HpdsResourceConnection:
     def dictionary(self):
         return PicSureHpdsLib.Dictionary(self)
 
+    def showConsents(self):
+        template = json.loads(self._profile_info["queryTemplate"])
+        consent_filters = template["categoryFilters"]["\\_Consents\\Short Study Accession with Consent Code\\"]
+
+        # "categoryFilters":{      "\\_Consents\\Short Study Accession with Consent Code\\":[
+
+        print("\"", '\",\n\"'.join(consent_filters), "\"", sep='')
+
+    def setConsents(self, *argv):
+        consents = [];
+        for consent_val in argv:
+            consents.append(consent_val)
+        template = {}
+        template["categoryFilters"] = {};
+        template["categoryFilters"]["\\_Consents\\Short Study Accession with Consent Code\\"] = consents;
+        self._profile_info["queryTemplate"] = json.dumps(template);
 
     def query(self, load_query=None):
         # retrieve PSAMA profile info if not previously done
