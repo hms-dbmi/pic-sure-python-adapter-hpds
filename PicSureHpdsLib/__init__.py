@@ -16,6 +16,7 @@ from .PicSureHpds import BypassAdapter
 from .PicSureHpdsAttrList import AttrList
 from .PicSureHpdsAttrListKeys import AttrListKeys
 from .PicSureHpdsAttrListKeyValues import AttrListKeyValues
+from .PicSureHpdsAttrListStudies import AttrListStudies
 from .PicSureHpdsDictionary import Dictionary
 from .PicSureHpdsDictionaryResult import DictionaryResult
 from .PicSureHpdsQuery import Query

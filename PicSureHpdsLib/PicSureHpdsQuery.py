@@ -18,6 +18,19 @@ class Query:
         self._refHpdsResourceConnection = refHpdsResourceConnection
         self._apiObj = refHpdsResourceConnection.connection_reference._api_obj()
         self._resourceUUID = refHpdsResourceConnection.resource_uuid
+        self._lstStudies = PicSureHpdsLib.AttrListStudies(
+            help_text="""
+            studies().
+              add("key")            add a study to be included in the results
+              add(["key1", "key2"]) add several studies to be returned in results
+              delete("key")         delete a single study from the list studies to query
+              show()                lists all current studies that will be queried
+              clear()               clears all studies from the select list
+            """,
+            resource_uuid = self._resourceUUID,
+            apiObj = self._apiObj,
+            allowVariantSpec = False
+        )
         self._lstSelect = PicSureHpdsLib.AttrListKeys(
             help_text="""
             select().
@@ -94,6 +107,7 @@ class Query:
         .crosscounts()  list of data fields that cross counts will be calculated for
         .require()      list of data fields that must be present in all returned records
         .anyof()        list of data fields that records must be a member of at least one entry
+        .studies()      list of studies that are selected that the query will run against
         .filter()       list of data fields and conditions that returned records satisfy
                   [ Filter keys exert an AND relationship on returned records      ]
                   [ Categorical values have an OR relationship on their key        ]
@@ -142,6 +156,12 @@ class Query:
             print('.__________[ Query.filter()  Settings ]'.ljust(156, '_'))
             self._lstFilter.show()
 
+        if len(self._lstStudies.getQueryValues()) == 0:
+            print('.__________[ Query.studies() is running against ALL studies ]'.ljust(156, '_'))
+        else:
+            print('.__________[ Query.studies()  Settings ]'.ljust(156, '_'))
+            self._lstStudies.show()
+
     def select(self, *args, **kwargs):
         if len(args) > 0 or len(kwargs) > 0:
             print("ERROR: did you mean to do something like .select().add(<something here>)")
@@ -165,6 +185,12 @@ class Query:
             print("ERROR: did you mean to do something like .anyof().add(<something here>)")
             return None
         return self._lstAnyOf
+
+    def studies(self, *args, **kwargs):
+        if len(args) > 0 or len(kwargs) > 0:
+            print("ERROR: did you mean to do something like .studies().add(<something here>)")
+            return None
+        return self._lstStudies
 
     def filter(self, *args, **kwargs):
         if len(args) > 0 or len(kwargs) > 0:
@@ -379,6 +405,10 @@ class Query:
         ret['query']['numericFilters'] = temp['numericFilters']
         ret['query']['categoryFilters'] = temp['categoryFilters']
         ret['query']['variantInfoFilters'] = temp['variantInfoFilters']
+
+        # append the studies list to the existing categoryFilters
+        for key, item in self._lstStudies.getQueryValues().items():
+            ret['query']['categoryFilters'][key] = item
 
         if hasattr(self._refHpdsResourceConnection, 'resource_uuid'):
             if self._refHpdsResourceConnection.resource_uuid != None:
