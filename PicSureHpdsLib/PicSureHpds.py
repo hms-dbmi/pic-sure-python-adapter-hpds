@@ -102,8 +102,11 @@ class HpdsResourceConnection:
     def retrieveQueryResults(self, query_uuid):
         load_query = False
         if "queryTemplate" in self._profile_info:
-            
+            if(self._profile_info["queryTemplate"] is None):
+                # Set to empty query if template from profile is null
+                load_query = '{}'
             if len(str(self._profile_info["queryTemplate"])) > 0:
+                # Set to queryTemplate if it exists in the psama profile
                 load_query = self._profile_info["queryTemplate"]
         if load_query is False:
             load_query = "{}"
