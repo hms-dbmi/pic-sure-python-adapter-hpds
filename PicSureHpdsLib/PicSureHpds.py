@@ -70,8 +70,12 @@ class HpdsResourceConnection:
         
         # validate query template
         # if user has null or missing query template create a blank template
-        if("queryTemplate" in  self._profile_info):
+        if("queryTemplate" in self._profile_info):
+            print(self._profile_info["queryTemplate"])
             if(self._profile_info["queryTemplate"] == None or self._profile_info["queryTemplate"].lower() == 'null'):
+                print('2')
+                print(self._profile_info["queryTemplate"])
+
                 self._profile_info["queryTemplate"] == '{}'
         else:
             self._profile_info["queryTemplate"] == '{}'    
