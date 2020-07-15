@@ -87,6 +87,9 @@ class HpdsResourceConnection:
     def query(self, load_query=None):     
         # retrieve PSAMA profile info if not previously done        
         if "queryTemplate" in self._profile_info and load_query is None:
+            if(self._profile_info["queryTemplate"].lower() == 'null'):
+                # if queryTemplate is literal string null than set to None.
+                self._profile_info["queryTemplate"] == None
             if(self._profile_info["queryTemplate"] is None):
                 # Set to empty query if template from profile is null
                 load_query = '{}'
@@ -102,6 +105,9 @@ class HpdsResourceConnection:
     def retrieveQueryResults(self, query_uuid):
         load_query = False
         if "queryTemplate" in self._profile_info:
+            if(self._profile_info["queryTemplate"].lower() == 'null'): 
+                
+                self._profile_info["queryTemplate"] == None
             if(self._profile_info["queryTemplate"] is None):
                 # Set to empty query if template from profile is null
                 load_query = '{}'
