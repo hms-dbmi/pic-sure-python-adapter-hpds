@@ -67,15 +67,15 @@ class HpdsResourceConnection:
         # connect to PSAMA and get profile information
         profile_str = self.connection_reference._api_obj().profile()
         self._profile_info = json.loads(profile_str)
-        
+
         # validate query template
         # if user has null or missing query template create a blank template
         if("queryTemplate" in self._profile_info):
             if(self._profile_info["queryTemplate"] == None or self._profile_info["queryTemplate"].lower() == 'null'):
                 self._profile_info["queryTemplate"] = '{}'
         else:
-            self._profile_info["queryTemplate"] = '{}'    
-        
+            self._profile_info["queryTemplate"] = '{}'
+
     def help(self):
         print("""
         [HELP] PicSureHpdsLib.useResource(resource_uuid)
@@ -91,9 +91,18 @@ class HpdsResourceConnection:
     def dictionary(self):
         return PicSureHpdsLib.Dictionary(self)
 
+    def getQueryByUUID(self, query_uuid):
+        metadataStr = self.connection_reference._api_obj().queryMetadata(query_uuid)
+        print("STR ", metadataStr)
+        metadata = json.loads( metadataStr )
+        print("JSON ", metadata)
+        query = PicSureHpdsLib.Query(self)
+        # use 'load' here instead of passing in as a param to avoid parsing to a string and back
+        query.load(metadata["resultMetadata"]["queryJson"])
+        return query;
 
-    def query(self, load_query=None):     
-        # retrieve PSAMA profile info if not previously done        
+    def query(self, load_query=None):
+        # retrieve PSAMA profile info if not previously done
         if "queryTemplate" in self._profile_info and load_query is None:
             if(self._profile_info["queryTemplate"] is None):
                 # Set to empty query if template from profile is null
@@ -103,7 +112,7 @@ class HpdsResourceConnection:
                 load_query = self._profile_info["queryTemplate"]
         else:
             # If query template does not exist in profile then make an empty load query
-            # Do this to to avoid null exceptions 
+            # Do this to to avoid null exceptions
             load_query = '{}'
         return PicSureHpdsLib.Query(self, load_query)
 
