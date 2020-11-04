@@ -56,6 +56,10 @@ class Dictionary:
                 if valid:
                     results['results'][resultType][idx]['HpdsDataType'] = resultType
                     newResults[idx] = results['results'][resultType][idx]
+                    # normalize "continuous" and "categorical" data fields
+                    if 'continuous' in results['results'][resultType][idx]:
+                        results['results'][resultType][idx]['categorical'] = results['results'][resultType][idx]['continuous'] == False
+                        del results['results'][resultType][idx]['continuous']
         results['results'] = newResults
 
         return PicSureHpdsLib.DictionaryResult(results)
