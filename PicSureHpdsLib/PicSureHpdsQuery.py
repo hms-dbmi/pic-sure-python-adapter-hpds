@@ -310,6 +310,40 @@ class Query:
         self._performance['tmr_proc'] = time.time()
         return ret
 
+    def getVariantsCount(self, asAsync=False, timeout=30, **kwargs):
+        self._performance['running'] = True
+        self._performance['tmr_start'] = time.time()
+        queryJSON = self.buildQuery('VARIANT_COUNT_FOR_QUERY')
+        self._performance['tmr_query'] = time.time()
+        httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
+        self._performance['tmr_recv'] = time.time()
+        self._performance['running'] = False
+        try:
+            from json.decoder import JSONDecodeError
+            result = json.loads(httpResults)
+            print(result)
+            if result.__contains__('error'):
+                print("[ERROR]")
+                print(httpResults)
+                self._performance['tmr_proc'] = time.time()
+                raise Exception('An error has occured with the server')
+        except JSONDecodeError:
+            pass
+        return result['count']
+
+    def getVariantsDataFrame(self, asAsync=False, timeout=30, **kwargs):
+        self._performance['running'] = True
+        self._performance['tmr_start'] = time.time()
+        queryJSON = self.buildQuery('VCF_EXCERPT')
+        self._performance['tmr_query'] = time.time()
+        httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
+        self._performance['tmr_recv'] = time.time()
+        from io import StringIO
+        import pandas
+        ret = pandas.read_csv(StringIO(httpResults), sep='\t', **kwargs)
+        self._performance['tmr_proc'] = time.time()
+        return ret
+
     def getRunDetails(self):
         print('This function returns None or details about the last run of the query')
         if self._performance['tmr_start'] > 0:
