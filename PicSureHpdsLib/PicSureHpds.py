@@ -110,7 +110,7 @@ class HpdsResourceConnection:
             if len(str(self._profile_info["queryTemplate"])) > 0:
                 # Set to queryTemplate if it exists in the psama profile
                 load_query = self._profile_info["queryTemplate"]
-        else:
+        elif load_query is None:
             # If query template does not exist in profile then make an empty load query
             # Do this to to avoid null exceptions
             load_query = '{}'
