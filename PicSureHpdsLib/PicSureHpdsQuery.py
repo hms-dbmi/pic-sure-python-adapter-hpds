@@ -114,7 +114,7 @@ class Query:
                   [ Numerical Ranges are inclusive of their start and end points   ]
 
         .getCount()             single count indicating the number of matching records
-        .getCrossCount()        array indicating number of matching records per cross-count keys
+        .getCrossCounts()        array indicating number of matching records per cross-count keys
         .getResults()           CSV-like string containing the matching records
         .getResultsDataFrame()  pandas DataFrame containing the matching records...
                                   Params "asAsynch" and "timeout" are used by function, any
