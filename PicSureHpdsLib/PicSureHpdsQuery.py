@@ -114,7 +114,7 @@ class Query:
                   [ Numerical Ranges are inclusive of their start and end points   ]
 
         .getCount()             single count indicating the number of matching records
-        .getCrossCount()        array indicating number of matching records per cross-count keys
+        .getCrossCounts()        array indicating number of matching records per cross-count keys
         .getResults()           CSV-like string containing the matching records
         .getResultsDataFrame()  pandas DataFrame containing the matching records...
                                   Params "asAsynch" and "timeout" are used by function, any
@@ -272,16 +272,6 @@ class Query:
         httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
         self._performance['tmr_recv'] = time.time()
         self._performance['running'] = False
-        try:
-            from json.decoder import JSONDecodeError
-            result = json.loads(httpResults)
-            if result.error == True:
-                print("[ERROR]")
-                print(httpResults)
-                self._performance['tmr_proc'] = time.time()
-                raise Exception('An error has occured with the server')
-        except JSONDecodeError:
-            pass
         self._performance['tmr_proc'] = time.time()
         return httpResults
 
@@ -293,20 +283,35 @@ class Query:
         httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
         self._performance['tmr_recv'] = time.time()
         self._performance['running'] = False
-        try:
-            from json.decoder import JSONDecodeError
-            result = json.loads(httpResults)
-            if result.error:
-                print("[ERROR]")
-                print(httpResults)
-                self._performance['tmr_proc'] = time.time()
-                raise Exception('An error has occured with the server')
-        except JSONDecodeError:
-            pass
         self._performance['tmr_proc'] = time.time()
         from io import StringIO
         import pandas
         ret = pandas.read_csv(StringIO(httpResults), **kwargs)
+        self._performance['tmr_proc'] = time.time()
+        return ret
+
+    def getVariantsCount(self, asAsync=False, timeout=30, **kwargs):
+        self._performance['running'] = True
+        self._performance['tmr_start'] = time.time()
+        queryJSON = self.buildQuery('VARIANT_COUNT_FOR_QUERY')
+        self._performance['tmr_query'] = time.time()
+        httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
+        self._performance['tmr_recv'] = time.time()
+        self._performance['running'] = False
+        result = json.loads(httpResults)
+        self._performance['tmr_proc'] = time.time()
+        return result['count']
+
+    def getVariantsDataFrame(self, asAsync=False, timeout=30, **kwargs):
+        self._performance['running'] = True
+        self._performance['tmr_start'] = time.time()
+        queryJSON = self.buildQuery('VCF_EXCERPT')
+        self._performance['tmr_query'] = time.time()
+        httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
+        self._performance['tmr_recv'] = time.time()
+        from io import StringIO
+        import pandas
+        ret = pandas.read_csv(StringIO(httpResults), sep='\t', **kwargs)
         self._performance['tmr_proc'] = time.time()
         return ret
 
