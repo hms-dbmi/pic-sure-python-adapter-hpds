@@ -298,9 +298,12 @@ class Query:
         httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
         self._performance['tmr_recv'] = time.time()
         self._performance['running'] = False
-        result = json.loads(httpResults)
+        if httpResults.isnumeric():
+            result = int(httpResults)
+        else:
+            result = json.loads(httpResults)['count']
         self._performance['tmr_proc'] = time.time()
-        return result['count']
+        return result
 
     def getVariantsDataFrame(self, asAsync=False, timeout=30, **kwargs):
         self._performance['running'] = True
