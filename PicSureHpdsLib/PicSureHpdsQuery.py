@@ -114,11 +114,13 @@ class Query:
                   [ Numerical Ranges are inclusive of their start and end points   ]
 
         .getCount()             single count indicating the number of matching records
-        .getCrossCounts()        array indicating number of matching records per cross-count keys
+        .getCrossCounts()       array indicating number of matching records per cross-count keys
         .getResults()           CSV-like string containing the matching records
         .getResultsDataFrame()  pandas DataFrame containing the matching records...
                                   Params "asAsynch" and "timeout" are used by function, any
                                   additional named parameters are passed to pandas.read_csv()
+        .getApproximateVariantCount()  gets an approximate count of how many variants match
+        .getVariantsDataFrame() returns a DataFrame of the matching variants
         .getRunDetails()        details about the last run of the query
         .show()                 lists all current query parameters
         .save()                 returns the JSON-formatted query request as string
@@ -290,7 +292,7 @@ class Query:
         self._performance['tmr_proc'] = time.time()
         return ret
 
-    def getVariantsCount(self, asAsync=False, timeout=30, **kwargs):
+    def getApproximateVariantCount(self, asAsync=False, timeout=30, **kwargs):
         self._performance['running'] = True
         self._performance['tmr_start'] = time.time()
         queryJSON = self.buildQuery('VARIANT_COUNT_FOR_QUERY')
