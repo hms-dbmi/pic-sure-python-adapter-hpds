@@ -290,7 +290,7 @@ class Query:
         self._performance['tmr_proc'] = time.time()
         return ret
 
-    def getVariantsCount(self, asAsync=False, timeout=30, **kwargs):
+    def getApproximateVariantCount(self, asAsync=False, timeout=30, **kwargs):
         self._performance['running'] = True
         self._performance['tmr_start'] = time.time()
         queryJSON = self.buildQuery('VARIANT_COUNT_FOR_QUERY')
