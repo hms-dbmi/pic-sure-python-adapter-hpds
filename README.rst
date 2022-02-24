@@ -20,8 +20,6 @@ Client library to run queries against a PIC-SURE High Performance Data Store (HP
 
 
 * Free software: Apache Software License 2.0
-* Documentation: https://pic-sure-hpds-python-client.readthedocs.io.
-
 
 Features
 --------
