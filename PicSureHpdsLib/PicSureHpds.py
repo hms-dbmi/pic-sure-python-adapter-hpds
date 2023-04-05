@@ -93,13 +93,10 @@ class HpdsResourceConnection:
 
     def getQueryByUUID(self, query_uuid):
         metadataStr = self.connection_reference._api_obj().queryMetadata(query_uuid)
-        print("STR ", metadataStr)
-        metadata = json.loads( metadataStr )
-        print("JSON ", metadata)
+        metadata = json.loads(metadataStr)
         query = PicSureHpdsLib.Query(self)
-        # use 'load' here instead of passing in as a param to avoid parsing to a string and back
         query.load(metadata["resultMetadata"]["queryJson"])
-        return query;
+        return query
 
     def query(self, load_query=None):
         # retrieve PSAMA profile info if not previously done
