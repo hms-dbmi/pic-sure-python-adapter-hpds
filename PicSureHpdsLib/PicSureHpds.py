@@ -92,7 +92,7 @@ class HpdsResourceConnection:
         return PicSureHpdsLib.Dictionary(self)
 
     def getQueryByUUID(self, query_uuid):
-        metadataStr = self.connection_reference._api_obj().queryMetadata(query_uuid, self.resource_uuid)
+        metadataStr = self.connection_reference._api_obj().queryMetadata(query_uuid)
         metadata = json.loads(metadataStr)
         query = PicSureHpdsLib.Query(self)
         query.load(metadata["resultMetadata"]["queryJson"])
