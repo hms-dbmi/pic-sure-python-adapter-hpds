@@ -307,10 +307,14 @@ class Query:
         self._performance['tmr_proc'] = time.time()
         return result
 
+    def getAggregateVariantsDataFrame(self, asAsync=False, timeout=30, **kwargs):
+        self.getVariantsDataFrame(asAsync, timeout, result_type = 'AGGREGATE_VCF_EXCERPT')
+
+
     def getVariantsDataFrame(self, asAsync=False, timeout=30, **kwargs):
         self._performance['running'] = True
         self._performance['tmr_start'] = time.time()
-        queryJSON = self.buildQuery('VCF_EXCERPT')
+        queryJSON = self.buildQuery(kwargs['result_type'] or 'VCF_EXCERPT')
         self._performance['tmr_query'] = time.time()
         httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
         self._performance['tmr_recv'] = time.time()
