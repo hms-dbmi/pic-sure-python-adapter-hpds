@@ -310,7 +310,7 @@ class Query:
     def getVariantsDataFrame(self, asAsync=False, timeout=30, **kwargs):
         self._performance['running'] = True
         self._performance['tmr_start'] = time.time()
-        queryJSON = self.buildQuery('VCF_EXCERPT')
+        queryJSON = self.buildQuery(kwargs['result_type'] or 'VCF_EXCERPT')
         self._performance['tmr_query'] = time.time()
         httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
         self._performance['tmr_recv'] = time.time()
@@ -321,17 +321,7 @@ class Query:
         return ret
 
     def getAggregateVariantDataFrame(self, asAsync=False, timeout=30, **kwargs):
-        self._performance['running'] = True
-        self._performance['tmr_start'] = time.time()
-        queryJSON = self.buildQuery('AGGREGATE_VCF_EXCERPT')
-        self._performance['tmr_query'] = time.time()
-        httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
-        self._performance['tmr_recv'] = time.time()
-        from io import StringIO
-        import pandas
-        ret = pandas.read_csv(StringIO(httpResults), sep='\t', **kwargs)
-        self._performance['tmr_proc'] = time.time()
-        return ret
+        return self.getVariantsDataFrame(asAsync, timeout, result_type='AGGREGATE_VCF_EXCERPT')
 
     def getRunDetails(self):
         print('This function returns None or details about the last run of the query')
