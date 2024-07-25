@@ -339,6 +339,11 @@ class Query:
         result = json.loads(httpResults)
         return result
 
+    def genotype_annotation_values(self, genomicConceptPath, query):
+        httpResults = self._apiObj.searchGenomicConceptValues(genomicConceptPath, query)
+        result = json.loads(httpResults)
+        return result
+
     def getRunDetails(self):
         print('This function returns None or details about the last run of the query')
         if self._performance['tmr_start'] > 0:
