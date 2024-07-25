@@ -340,7 +340,7 @@ class Query:
         return result
 
     def genotype_annotation_values(self, genomicConceptPath, query):
-        result = self._apiObj.searchGenomicConceptValues(genomicConceptPath, query)
+        result = self._apiObj.searchGenomicConceptValues(self._resourceUUID, genomicConceptPath, query)
         return result
 
     def getRunDetails(self):
