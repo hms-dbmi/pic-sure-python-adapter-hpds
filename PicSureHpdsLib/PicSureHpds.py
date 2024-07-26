@@ -138,6 +138,10 @@ class HpdsResourceConnection:
                time.sleep(1)
         return self.connection_reference._api_obj().queryResult(self.resource_uuid, query_uuid)
 
+    def genotype_annotation_values(self, genomicConceptPath, query):
+        result = self._apiObj.searchGenomicConceptValues(self._resourceUUID, genomicConceptPath, query)
+        return json.loads(result)
+
 
 
 class BypassAdapter(Adapter):
