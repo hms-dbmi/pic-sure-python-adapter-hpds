@@ -138,6 +138,12 @@ class HpdsResourceConnection:
                time.sleep(1)
         return self.connection_reference._api_obj().queryResult(self.resource_uuid, query_uuid)
 
+    def genotype_annotations(self):
+        queryJSON = {"query":{"expectedResultType": 'INFO_COLUMN_LISTING'}}
+        httpResults = self._api_obj()(self.resource_uuid, json.dumps(queryJSON))
+        result = json.loads(httpResults)
+        return result
+
     def genotype_annotation_values(self, genomicConceptPath, query):
         result = self.connection_reference._api_obj().searchGenomicConceptValues(self.resource_uuid, genomicConceptPath, query)
         return json.loads(result)
