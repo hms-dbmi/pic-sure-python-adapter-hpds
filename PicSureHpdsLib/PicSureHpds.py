@@ -140,7 +140,7 @@ class HpdsResourceConnection:
 
     def genotype_annotations(self):
         queryJSON = {"query":{"expectedResultType": 'INFO_COLUMN_LISTING'}}
-        httpResults = self._api_obj().picsureHttpConnect.syncQuery(self.resource_uuid, json.dumps(queryJSON))
+        httpResults = self.connection_reference.syncQuery(self.resource_uuid, json.dumps(queryJSON))
         result = json.loads(httpResults)
         return result
 
