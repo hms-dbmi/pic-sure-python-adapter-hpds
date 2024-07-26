@@ -139,7 +139,7 @@ class HpdsResourceConnection:
         return self.connection_reference._api_obj().queryResult(self.resource_uuid, query_uuid)
 
     def genotype_annotations(self):
-        queryJSON = {"query":{"expectedResultType": 'INFO_COLUMN_LISTING'}}
+        queryJSON = {"query":{"expectedResultType": 'INFO_COLUMN_LISTING'}, "resourceUUID": self.resource_uuid}
         httpResults = self.connection_reference._api_obj().syncQuery(self.resource_uuid, json.dumps(queryJSON))
         result = json.loads(httpResults)
         return result
