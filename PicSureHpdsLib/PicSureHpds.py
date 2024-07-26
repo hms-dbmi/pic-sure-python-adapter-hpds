@@ -145,8 +145,7 @@ class HpdsResourceConnection:
         return result
 
     def genotype_annotation_values(self, genomicConceptPath, query):
-        result = self.connection_reference._api_obj().searchGenomicConceptValues(self.resource_uuid, genomicConceptPath, query)
-        return json.loads(result)
+        return self.connection_reference._api_obj().searchGenomicConceptValues(self.resource_uuid, genomicConceptPath, query)
 
 
 
