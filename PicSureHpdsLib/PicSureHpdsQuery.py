@@ -333,12 +333,6 @@ class Query:
         self._performance['tmr_proc'] = time.time()
         return ret
 
-    def genotype_annotations(self):
-        queryJSON = self.buildQuery('INFO_COLUMN_LISTING')
-        httpResults = self._apiObj.syncQuery(self._resourceUUID, json.dumps(queryJSON))
-        result = json.loads(httpResults)
-        return result
-
     def getRunDetails(self):
         print('This function returns None or details about the last run of the query')
         if self._performance['tmr_start'] > 0:
