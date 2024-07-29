@@ -69,6 +69,14 @@ class AttrList:
                         was_found = True
                         new_keys[loopkey] = {"class": typename, "definition": self.all_keys[typename][loopkey]}
                         break
+                    else:
+                         try:
+                            keyValues = self_apiObj.searchGenomicConceptValues(self._resource_uuid, loopkey, "")
+                            if (len(keyValues) > 0)
+                                was_found = True
+                         except:
+                            break
+
                 if not was_found:
                     print('ERROR: cannot add, key does not exist in resource -> ', loopkey)
                     # we do not append to the new_keys array so futher processing of this key will not occur
