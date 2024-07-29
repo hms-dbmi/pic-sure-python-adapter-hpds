@@ -76,8 +76,8 @@ class AttrList:
                                 was_found = True
                             else:
                                 print("Key not found")
-                         except:
-                            print("Exception looking up concept value")
+                         except Exception as e:
+                            print(e)
                             break
 
                 if not was_found:
