@@ -72,7 +72,7 @@ class AttrList:
                     else:
                          try:
                             keyValues = self_apiObj.searchGenomicConceptValues(self._resource_uuid, loopkey, "")
-                            if (len(keyValues) > 0)
+                            if len(keyValues) > 0:
                                 was_found = True
                             else:
                                 print("Key not found")
