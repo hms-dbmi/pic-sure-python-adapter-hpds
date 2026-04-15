@@ -1,0 +1,497 @@
+﻿Overview
+API Adapter Updates Project 2026
+Project Overview
+This project aims to bring the PIC-SURE API adapters up to date with the existing PIC-SURE user interface and data dictionary. Specifically, the project scope includes:
+* Deduplicating data dictionary output fields[a]
+* Using the updated data dictionary
+* Using the new version of the query object (v3 for advanced filtering)
+* Enable user to combine AND and OR filtering with grouping[b][c][d]
+* Removing consents from the adapter, as these will be handled by the backend (as part of the advanced filtering project)
+
+
+Overview of User Actions
+There are two main paths of user interactions with the PIC-SURE API. The first is the user that starts in the user interface and then moves to the API. The second is the user that does all of their work in the API. [e]
+
+
+UI to API
+1. User starts in PIC-SURE UI 
+2. User creates their cohort and saves dataset ID
+3. User then starts up an analysis workspace and desires to bring their data in using a dataset ID
+
+
+Based on this, the key functionality that is needed is the:
+* Ability to connect to the API
+* Ability to bring in participant-level data via a dataset ID
+* Ability to print previous dataset IDs
+
+
+API Only
+1. User starts in analysis workspace with PIC-SURE API
+2. User searches the data dictionary
+3. User creates their cohort
+4. User bring data into analysis workspace
+
+
+Based on this, the key functionality that is needed is the:
+* Ability to connect to the API
+* Ability to search the data dictionary
+   * Facets
+   * Metadata[f]
+* Ability to initialize a query
+* Ability to add filters to a query
+   * Filter
+   * Select
+   * Any record[g]
+   * Require
+* Ability to see their query[h]
+* Ability to export data from a query 
+* Ability to save and access dataset IDs similar to the UI
+
+
+Defining Functions
+To define functions for developers, we will use the following fields to provide context, descriptions, and requirements. 
+1. User goals and workflows
+Describe what scientists are trying to do, in plain language:
+* Primary workflows (step‑by‑step):
+   * “Search variables in the data dictionary, inspect them, then choose a subset.”
+   * “Build a cohort with filters, then export participant‑level data to a DataFrame.”
+2. Function list and behavior
+For each function you want, provide:
+Name and purpose in 1–2 sentences
+* e.g. “XYZ_function lets a scientist do … and returns ...”
+* Inputs (arguments):
+   * Name
+   * Type in simple terms: “string”, “list of strings”, “True/False flag”
+   * Whether it’s required or optional
+   * What it means in user terms
+(e.g. “text – words to search for in variable name, label, or description.”)
+   * Outputs / return value:
+   * What kind of object: “list of variable objects”, “Pandas DataFrame”
+   * What a “variable object” contains, in simple fields: id, name, label, units, etc.
+   * Examples:
+   * Minimal working examples in Python, exactly how you expect users to use it.
+3. Help / docstrings for each function
+For each function, write a short help text the engineers can turn into a docstring:
+   * One‑line summary
+   * Description of key parameters, especially anything that might confuse users
+   * Example usage
+For example (you can give it in plain text; engineers can convert to proper docstring):
+   * Function: function_name
+   * Description: Overview of what the function does
+   * Parameters:
+   * param1 (string, optional): words to search for in variable name, label, or description
+   * Returns:
+   * What it returns, including type and expected fields
+4. Expectations about errors and edge cases
+Tell the team how you want the API to behave when things go wrong or are empty:
+   * What should happen when:
+   * Search finds no variables (e.g. “return empty list / empty DataFrame, not an error”).
+   * A query has invalid filters (e.g. “raise a clear, user‑friendly error message”).
+   * A user passes a wrong type (string instead of list): “Error should explain what they did wrong and how to fix it.”
+   * Any guardrails, for example:
+   * Max number of participants or variables for one export.
+   * Timeouts
+   * Size limits
+5. Performance and usability expectations
+Non‑technical but important guidance[i]:
+   * “Search should feel responsive for up to X variables.”[j]
+   * “Exporting participant‑level data may take longer; show progress or at least be documented as potentially slow.”
+   * “Default limits should be safe for use in notebooks (won’t overload memory).”
+6. Backwards compatibility and versioning
+Since you’re changing the API:
+   * List the old functions and how they worked (at a high level).
+   * Note which ones are:
+   * Staying the same
+   * Being renamed
+   * Being removed or changed
+   * Specify:
+   * Whether you need backwards compatibility (e.g. old code should still run with warnings).
+   * How you want deprecation communicated (warnings, docs, changelog).
+7. Testing and examples
+Clarify what you expect for validation and education:
+   * Types of examples you want in docs, e.g.:
+   * “Search then select variables, then build a query and export a DataFrame.”
+   * “Small end‑to‑end example with fake data.”
+   * Any acceptance criteria:
+   * “A new user can copy‑paste a search example and get results in a DataFrame within 5 minutes.” 
+   * Included in Gitbooks / R in-line documentation
+
+
+Connecting to PIC-SURE
+Connecting to the PIC-SURE API
+Considerations
+Printing resource IDs is confusing. As a researcher, it is confusing to see a table outputted with several long strings of resource IDs. I am unsure of how to use these resource IDs, and it is also unclear whether the connection to the PIC-SURE API was successful. See the linked idea board ticket and the closed Jira ticket. 
+
+
+Upcoming development includes the Open API. In the future, it should be straightforward for a researcher to decide whether they wish to use the authorized or open version of the PIC-SURE API. See the linked idea board ticket.
+
+
+Product Fields
+   1. User goals and workflows
+As a user, I would like to run a function to connect to the PIC-SURE API. 
+   * Provide the code with the PIC-SURE token (currently as a string in the environment)
+   * Execute the function
+   * Specify the resource to connect to (AUTH, OPEN)
+   * See a message that the connection was successful
+
+
+   2. Function list and behavior
+PICSURE.connect(platform, token)
+   * Creates an object that connects a user to the PIC-SURE API based on the specified PIC-SURE instance (platform) and user’s token (token)
+   * Inputs:
+   * platform: String. Environment and resource to which the user wants to connect. Options could include: BDC Authorized, BDC Open, Demo, and AIM-AHEAD. This can also accept a URL string for local installations/other instances of PIC-SURE, including dev and predev URLs for testing.
+   * token_string: String. Users token. Note: not changing how this is done currently to encourage safe token use. 
+   * Outputs:
+   * Returns a new object that the user can use to run other functions.
+   * Prints a message about successful connection: “You’re successfully connected to platform X as user Y!”
+   * Prints a message about when the token[k] expires: “Your token expires on XX/YY/ZZZZ.”
+   * Examples
+   * bdc_auth = picsure.connect(platform = “BDC Authorized”, token = my_token)
+
+
+picsure_object.getResourceID(platform)
+   * After connecting to PIC-SURE via the connect function,  the user can then retrieve the affiliated resource IDs using this function. 
+   * Inputs:
+   * None
+   * Outputs:
+   * Returns a dataframe object that is a table of the affiliated resource IDs and resource information. 
+   * Note: this will be primarily for internal use, as end users do not use this information.
+   * Examples
+   * resources = bdc_auth.getResourceID()[l]
+
+
+   3. Help / docstrings for each function
+
+
+   * Function: function_name
+   * Description: Overview of what the function does
+   * Parameters:
+   * param1 (string, optional): words to search for in variable name, label, or description
+   * Returns:
+   * What it returns, including type and expected fields
+
+
+   4. Expectations about error messages and edge cases
+Expired token.[m] When a user attempts to connect to PIC-SURE with an expired token, please display a message with information about refreshing the token. 
+
+
+Incorrect token. 
+
+
+Missing/incorrect parameters. 
+
+
+   5. Performance and usability expectations
+   6. Backwards compatibility and versioning
+   7. Testing and examples
+Search
+Searching the PIC-SURE Data Dictionary
+Considerations
+Deduplicate output fields. Currently, several fields appear duplicated in the API search results. This is confusing to the researcher. See the linked idea ticket. 
+Note: This should be automatically addressed when the API adapters are moved to use the updated data dictionary structure. This was included to keep the feature from the product backlog top of mind. 
+
+
+Including facet functionality in the API. As part of the new UI update, we have incorporated facets to allow users to narrow their search results. It would be nice (but not required) to have facet functionality in the API as well. See the linked idea ticket. 
+Product
+   1. User goals and workflows
+As a user, I want to be able to search for a term of interest and refine my results with the existing facet functionality. For example, I am interested in “sex” variables from FHS (phs000007) only. 
+
+
+
+
+
+
+   2. Function list and behavior
+
+
+picsure_object.showAllFacets()
+   * Shows the user all of the possible facet categories and facet options for the platform that they are connected to. 
+   * Inputs:
+   * None
+   * Outputs:
+   * Shows the facets as a dictionary, dataframe, or other
+   * Examples:
+picsure_object.facets()
+   * Creates a facet_object that can be used in the search function. This contains the facet categories specific to the platform that the user is connected to. 
+   * Inputs:
+   * None
+   * Outputs:
+   *    * Examples:
+
+
+facet_object.view()
+   * Shows the user-friendly view of the current facet object. 
+   * Inputs:
+   * none
+   * Outputs:
+   * Returns a user-friendly view (table,json,dictionary,etc) of the current facets saved in each category. When instantiated, each category will be empty
+   * Examples:
+facet_object[n].addFacet()
+   * Adds facet to facet object, only if the facet_object has access to that facet (inherited from the picsure_object
+   * Inputs:
+   * Category [string]
+   * Facet [list of strings or string]
+   * Outputs:
+   * Prints an error message if invalid facet
+   * Examples:
+
+
+picsure_object.search()
+   * Inputs:
+   * term [string] - defaults to empty, not required
+   * Facet [facet_object] - can be empty, if empty, no facets added
+   * Include_values - boolean, default true. False means that values are not returned in the dataframe. 
+   * Outputs:
+   * Prints an error message if invalid facet
+   * Returns a Dataframe of data dictionary search results based on term and/or facets
+   * Note: Deduplicate the output[o]
+   * Examples:
+
+
+
+
+
+
+   3. Help / docstrings for each function
+
+
+   * Function: function_name
+   * Description: Overview of what the function does
+   * Parameters:
+   * param1 (string, optional): words to search for in variable name, label, or description
+   * Returns:
+   * What it returns, including type and expected fields
+
+
+   4. Expectations about error messages and edge cases
+   5. Performance and usability expectations
+   6. Backwards compatibility and versioning
+   7. Testing and examples
+Querying
+Building Queries in PIC-SURE
+
+
+Considerations
+Update API adapters to use the new query object. As part of the effort to support boolean filtering, there is a new query object. The API adapters should use the new query object to construct queries. See the linked idea ticket. 
+
+
+Building advanced queries (AND/OR/grouping) in the API. Similarly, with the new query object, users can now build nested queries with groups of AND and OR filters. See the linked idea ticket. 
+
+
+Tree filtering. Using the hierarchy filtering aka anyrecordof.
+
+
+Product
+   1. User goals and workflows
+As a user, I would like to create filters of various types (anyrecordof, filter, select, or require) and use these filters to create groups combined with AND or OR. I would like to review my query. 
+   2. Function list and behavior
+PICSURE.createClause()
+   * Enables a user to create a filter
+   * Inputs[p]:
+   * keys: required, string or list of concept paths to use in the filter
+   * type: required, type of filter (anyrecord, filter, select, or require)[q]
+   * categories: string or list of values to filter on
+   * min / max: minimum or maximum to filter on continuous variables, float
+   * Outputs:
+   * Returns a query object with one clause[r]
+   * Examples:
+   * heartClause = PICSURE.createClause(‘heart disease’, ‘anyrecord’, ‘XXXX’, ‘min’)
+
+
+PICSURE.buildClauseGroup()
+   * Enables a user to create a group of filters and specify root node to combine filters 
+   * Inputs[s]:
+   * filters: required, list of clauses created
+   * root: required, string, either AND or OR based on the desired root node - default AND
+   * Outputs:
+   * Returns a query object with a group of clauses
+   * Examples:
+   * heartAgeWeightGroup = PICSURE.buildClauseGroup([heartClause, ageClause, weightClause], “AND”)
+   * adverseEventGroup = PICSURE.buildClauseGroup([deathClause, hospitalClause], “or”) [t]
+
+
+We should have a public pruning function here,
+tell the user somehow that it was pruned
+Or do not tell them/change their query because they probably have a mental or physical image of their query already
+We can suggest they do this themselves, and provide a notebook example!
+
+
+Sidecar json metadata object to include with the data when returned
+        Gives users more info
+   3. Help / docstrings for each function
+
+
+   * Function: function_name
+   * Description: Overview of what the function does
+   * Parameters:
+   * param1 (string, optional): words to search for in variable name, label, or description
+   * Returns:
+   * What it returns, including type and expected fields
+
+
+   4. Expectations about error messages and edge cases
+   5. Performance and usability expectations
+   6. Backwards compatibility and versioning
+   7. Testing and examples
+As a user, I want to select study participants who are:
+   * Male - sex_filter
+   * Over 40 years old - age_filter
+   * Have: 
+   * COPD - copd_filter - OR Asthma- asthma_filter
+   * Trouble sleeping OR insomnia
+
+
+sex_filter = picsure.addClause(“\phs1\pht1\phv1\sex\”, type = “FILTER”, categories = “male”)
+age_filter = picsure.addClause(“\phs1\pht1\phv5\age\”, type = “FILTER”, min = 40)
+copd_filter = picsure.addClause(“\phs1\pht2\phv2\copd\”, type = “FILTER”, categories = “Yes”)
+asthma_filter = picsure.addClause(“\phs1\pht2\phv3\asthma\”, type = “FILTER”, categories = [“Yes, recent”, “Yes, since childhood”])
+sleep_filter = picsure.addClause(“\pht1\pht3\phv8\trouble_sleeping\”, type = “ANYRECORD”)[u][v]
+insomnia_filter = picsure.addClause(“\phs1\pht3\phv9\insomnia\”, type = “ANYRECORD”)
+
+
+copd_or_asthma = picsure.buildClauseGroup([copd_filter, asthma_filter], root = “OR”)
+sleep_or_insomnia = picsure.buildClauseGroup([sleep_filter, insomnia_filter], root = “OR”)
+
+
+full_query = picsure.buildClauseGroup([sex_filter, age_filter, copd_or_asthma, sleep_or_insomnia], root = “AND”)
+
+
+Results_df = picsure.runQuery(sex_filter) # a simple query for all males
+
+
+results_df = picsure.runQuery(full_query) # a complicated nested query
+
+
+
+
+
+
+George constant example:
+sex_filter = picsure.addClause(“\phs1\pht1\phv1\sex\”, type = ClauseType.ANY_RECORD)
+sex_filter = picsure.addClause(“\phs1\pht1\phv1\sex\”, type = ClauseType.FILTER, categories = “male”)
+Exporting
+Exporting Data in PIC-SURE
+Considerations
+Export PFB functionality. To bring UI functionality to the API, it would be nice (not required) to include PFB export functionality from the API adapters.
+
+
+Export Time Series functionality. Now that there is time series data in BDC, the time series data export option is available in the UI. It would be nice to include time series data export functionality from the API adapters as well.
+
+
+Product
+   1. User goals and workflows
+        As a user, I want to be able to run the query I have created with the API adapters, and save it. I should be able to get the results of my query as Counts (int), Participant-level (dataframe), or Timestamp[w] (dataframe). If returned as a dataframe[x], I should be able to save these results as csv, tsv, or PFB.
+   2. Function list and behavior
+picsure_object.runQuery()
+   * Returns an int or dataframe with the query results
+   * Inputs:
+   * Type = required, specifies the type of query (count, participant, or timestamp)
+   * Query =  a PICSURE query object
+   * Outputs:
+   * None
+   * Example: 
+   * bdc_auth.runQuery(adverseEventGroup, ‘Participant’)
+
+
+_____.exportPFB()
+   * Writes the results of a query into a PFB file saved in the specified location
+   * Inputs:
+   * Query = a PICSURE query object
+   * File = Save location
+   * Outputs:
+   * None
+   * Example:
+   * picsure_object.exportPFB(adverseEventGroup, ‘~/myfile.PFB’)
+
+
+Should we provide a way for users to also read in PFB data?
+ - UoChicago built a “janky” Python package for this, R has none (probably)
+How involved do we want to be in the handling of PFB?
+   3. Help / docstrings for each function
+
+
+   * Function: function_name
+   * Description: Overview of what the function does
+   * Parameters:
+   * param1 (string, optional): words to search for in variable name, label, or description
+   * Returns:
+   * What it returns, including type and expected fields
+
+
+   4. Expectations about error messages and edge cases
+   5. Performance and usability expectations
+   6. Backwards compatibility and versioning
+   7. Testing and examples
+As a user, I have successfully built my dataset, and would like to save it for future reference.
+
+
+ ____.exportData({DATA?},”my_export.csv”, “csv”) 
+
+
+
+
+
+
+Documentation
+Documentation
+   1. HAVE IT
+   2. I think Pandas and R documentation are my gold standard for documentation for programmers ex: https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html#pandas.DataFrame  [R screenshot] 
+   1. However these might be too technical for BDC users?
+   2. I think we should have full documentation for transparency, but is there a way to do a less technical documentation as well?
+   3. Ensure R help methods are fully supported and written out https://rstudio.github.io/r-manuals/r-exts/Writing-R-documentation-files.html 
+Extra unformatted thoughts
+Structure
+
+
+1. What language/installation is required to hit the dictionary?
+A. Can both R and Python use the same backend? (ie. bash/perl/java called by R/Python)
+2. Does this project scope include the PicSure Client? What is actually needed from the user? Do we have to install everything? https://github.com/hms-dbmi/pic-sure-python-client/tree/master
+
+
+Requirements
+
+
+1. Query full dataset with search terms
+A. Build query of multiple terms
+2. Specify specific studies
+B. Is multiple studies a use case?
+3. Access previous queries from UI
+4. Save queries to account
+
+
+Developer Documentation
+Initial Investigation
+R Version in Seven Bridges & Terra
+Python Version in Seven Bridges & Terra
+Determine Limitations for Combining Python and R
+We will be combining the R and Python adapters by writing a small wrapper around the Python implementation. We will use this library 
+Interface to Python. This library is well supported by Rstudio and looks to support all of the data types we are likely to use.
+
+
+There will be some situations where we won’t be able to just wrap the function itself. We will need to implement custom object mappers to ensure we map the Python objects to their R equivalent. However, this is still preferable to re-implementing all logic a second time in R.
+[a]Is there a list of pain points we are trying to overcome?  Not quite sure what's duplicated?  Dataframe fields?
+[b]Not sure about the grouping in the API adapters.
+[c]Not?
+[d]Some day, yes, but not for now
+[e]Third example would be someone that goes back and forth, is that a user we expect?
+[f]Might need to include this as part of bringing up to speed with the UI
+[g]This is OR and data tree filtering
+[h]I think this will be important as we have ANDs and ORs and nesting
+[i]Helpful to have a status update for functions that are taking a long time.
+[j]We can ensure that the adapters have good performance, but until we solve the dictionary api performance problems it won't matter much.
+1 total reaction
+Emily Hughes reacted with ‼️ at 2026-03-23 17:10 PM
+[k]Could we include a refresh token function for users that see that their token is about to expire?
+[l]is this necessary? do we have a use case for this to be needed within the api adapter?
+[m]Open question: Can we determine when it's an expired token and when they are bad security credentials?
+[n]Think about how to handle counts. And also - do we want to show updated facet counts based on a search? This is how the UI works at the moment.
+[o]Make sure pagination is not an issue here and all matching vars are returned
+[p]Do we need an additional clause for tree filtering? Like, subset or tree?
+[q]We can and should provide a list of constants. I will provide a small example at the bottom to demonstrate.
+[r]Probably just return a clause, not a query object
+[s]Do we need an additional clause for tree filtering? Like, subset or tree?
+[t]"this is exactly how the UI works" - james
+[u]If a user can't pass an "ANYRECORD" and "categories" should we provide error messaging if they do?
+[v]Ohhhh this is a great point. Keeping this comment open so we can remember this.
+[w]Emily to determine what this is called in the UI
+[x]already returned as a csv/tsv, then converted to a dataframe, should we open this to the user?
