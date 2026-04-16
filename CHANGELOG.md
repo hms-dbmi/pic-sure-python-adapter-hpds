@@ -25,3 +25,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `ClauseType` and `GroupOperator` enums for type-safe clause and group construction.
 - `Clause`, `ClauseGroup`, and `Query` types with `to_query_json()` serialization.
 - Input validation with actionable error messages for invalid clause configurations.
+- `Session.runQuery()` to execute queries and return count (int) or data (DataFrame).
+- `Session.exportPFB()` to export query results as PFB files.
+- `Session.exportCSV()` and `Session.exportTSV()` to save DataFrames to disk.
+- `PicSureClient.post_raw()` for non-JSON response handling.
+- Query type validation with actionable error messages ("count", "participant", "timestamp").
