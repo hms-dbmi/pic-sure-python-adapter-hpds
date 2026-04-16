@@ -1,6 +1,8 @@
 from unittest.mock import MagicMock
 
+import httpx
 import pandas as pd
+import respx
 
 from picsure._models.resource import Resource
 from picsure._models.session import Session
@@ -125,3 +127,125 @@ class TestSession:
         session = _make_session()
         with pytest.raises(PicSureValidationError, match="Resource A"):
             session.setResourceIDByName("nope")
+
+
+class TestSessionDefaultResourceUuid:
+    def test_returns_explicit_resource_uuid_when_set(self):
+        client = MagicMock()
+        resources = [
+            Resource(uuid="uuid-1", name="A", description=""),
+            Resource(uuid="uuid-2", name="B", description=""),
+        ]
+        session = Session(
+            client=client,
+            user_email="u@e.com",
+            token_expiration="",
+            resources=resources,
+            resource_uuid="uuid-2",
+        )
+        assert session._default_resource_uuid() == "uuid-2"
+
+    def test_returns_first_resource_when_not_set(self):
+        session = _make_session()
+        assert session._default_resource_uuid() == "uuid-1"
+
+    def test_raises_when_no_resources(self):
+        session = _make_session(resources=[])
+        with __import__("pytest").raises(
+            __import__("picsure.errors", fromlist=["PicSureError"]).PicSureError,
+            match="No resources",
+        ):
+            session._default_resource_uuid()
+
+
+BASE_URL = "https://test.example.com"
+TOKEN = "test-token"
+
+
+def _make_live_session(
+    resource_uuid: str = "resource-uuid-aaaa-1111",
+) -> Session:
+    from picsure._transport.client import PicSureClient
+
+    client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+    resources = [Resource(uuid=resource_uuid, name="Test", description="")]
+    return Session(
+        client=client,
+        user_email="test@test.com",
+        token_expiration="2026-12-31T00:00:00Z",
+        resources=resources,
+    )
+
+
+class TestSessionSearch:
+    @respx.mock
+    def test_search_returns_dataframe(self, search_response):
+        respx.post(
+            f"{BASE_URL}/picsure/search/resource-uuid-aaaa-1111"
+        ).mock(return_value=httpx.Response(200, json=search_response))
+
+        session = _make_live_session()
+        df = session.search("sex")
+
+        assert isinstance(df, pd.DataFrame)
+        assert len(df) == 3
+
+    @respx.mock
+    def test_search_empty_term(self, search_response):
+        respx.post(
+            f"{BASE_URL}/picsure/search/resource-uuid-aaaa-1111"
+        ).mock(return_value=httpx.Response(200, json=search_response))
+
+        session = _make_live_session()
+        df = session.search()
+
+        assert isinstance(df, pd.DataFrame)
+
+
+class TestSessionFacets:
+    @respx.mock
+    def test_facets_returns_facet_set(self, search_response):
+        respx.post(
+            f"{BASE_URL}/picsure/search/resource-uuid-aaaa-1111"
+        ).mock(return_value=httpx.Response(200, json=search_response))
+
+        session = _make_live_session()
+        fs = session.facets()
+
+        from picsure._models.facet import FacetSet
+
+        assert isinstance(fs, FacetSet)
+        view = fs.view()
+        assert "study_ids" in view
+        assert "data_type" in view
+
+    @respx.mock
+    def test_facets_can_add_and_use_in_search(self, search_response):
+        route = respx.post(
+            f"{BASE_URL}/picsure/search/resource-uuid-aaaa-1111"
+        ).mock(return_value=httpx.Response(200, json=search_response))
+
+        session = _make_live_session()
+        fs = session.facets()
+        fs.add("study_ids", "phs000007")
+        session.search("sex", facets=fs)
+
+        import json
+
+        last_body = json.loads(route.calls[-1].request.content)
+        assert last_body["query"]["includedFacets"][0]["name"] == "study_ids"
+
+
+class TestSessionShowAllFacets:
+    @respx.mock
+    def test_show_all_facets_returns_dataframe(self, search_response):
+        respx.post(
+            f"{BASE_URL}/picsure/search/resource-uuid-aaaa-1111"
+        ).mock(return_value=httpx.Response(200, json=search_response))
+
+        session = _make_live_session()
+        df = session.showAllFacets()
+
+        assert isinstance(df, pd.DataFrame)
+        assert list(df.columns) == ["category", "display", "value", "count"]
+        assert len(df) == 4
