@@ -7,7 +7,10 @@ import pandas as pd
 from picsure._models.resource import Resource
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from picsure._models.facet import FacetSet
+    from picsure._models.query import Query
     from picsure._transport.client import PicSureClient
 
 
@@ -138,6 +141,80 @@ class Session:
         from picsure._services.search import show_all_facets
 
         return show_all_facets(self._client, self._default_resource_uuid())
+
+    def runQuery(  # noqa: N802
+        self,
+        query: Query,
+        type: str = "count",  # noqa: A002
+    ) -> int | pd.DataFrame:
+        """Execute a query and return the result.
+
+        Args:
+            query: A Clause or ClauseGroup built with createClause/buildClauseGroup.
+            type: Result type — "count" (returns int), "participant"
+                (returns DataFrame), or "timestamp" (returns DataFrame).
+
+        Returns:
+            An integer for count queries, or a DataFrame for data queries.
+        """
+        from picsure._services.query_run import run_query
+
+        return run_query(
+            self._client,
+            self._default_resource_uuid(),
+            query,
+            type,
+        )
+
+    def exportPFB(  # noqa: N802
+        self,
+        query: Query,
+        path: str | Path,
+    ) -> None:
+        """Execute a query and write the result as a PFB file.
+
+        Args:
+            query: A Clause or ClauseGroup.
+            path: File path to write the PFB data to.
+        """
+        from picsure._services.export import export_pfb
+
+        export_pfb(
+            self._client,
+            self._default_resource_uuid(),
+            query,
+            path,
+        )
+
+    def exportCSV(  # noqa: N802
+        self,
+        data: pd.DataFrame,
+        path: str | Path,
+    ) -> None:
+        """Write a DataFrame to a CSV file.
+
+        Args:
+            data: DataFrame to export (e.g. from runQuery).
+            path: File path for the CSV output.
+        """
+        from picsure._services.export import export_csv
+
+        export_csv(data, path)
+
+    def exportTSV(  # noqa: N802
+        self,
+        data: pd.DataFrame,
+        path: str | Path,
+    ) -> None:
+        """Write a DataFrame to a TSV file.
+
+        Args:
+            data: DataFrame to export (e.g. from runQuery).
+            path: File path for the TSV output.
+        """
+        from picsure._services.export import export_tsv
+
+        export_tsv(data, path)
 
     def _default_resource_uuid(self) -> str:
         if self._resource_uuid is not None:

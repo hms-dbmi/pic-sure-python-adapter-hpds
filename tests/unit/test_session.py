@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import httpx
@@ -249,3 +250,81 @@ class TestSessionShowAllFacets:
         assert isinstance(df, pd.DataFrame)
         assert list(df.columns) == ["category", "display", "value", "count"]
         assert len(df) == 4
+
+
+class TestSessionRunQuery:
+    @respx.mock
+    def test_run_query_count(self):
+        respx.post(f"{BASE_URL}/picsure/query/sync").mock(
+            return_value=httpx.Response(200, content=b"42")
+        )
+        from picsure._models.clause import Clause, ClauseType
+
+        session = _make_live_session()
+        clause = Clause(keys=["\\sex\\"], type=ClauseType.FILTER, categories=["Male"])
+        result = session.runQuery(clause, type="count")
+
+        assert result == 42
+        assert isinstance(result, int)
+
+    @respx.mock
+    def test_run_query_participant(self, participant_response):
+        respx.post(f"{BASE_URL}/picsure/query/sync").mock(
+            return_value=httpx.Response(200, content=participant_response)
+        )
+        from picsure._models.clause import Clause, ClauseType
+
+        session = _make_live_session()
+        clause = Clause(keys=["\\sex\\"], type=ClauseType.FILTER, categories=["Male"])
+        df = session.runQuery(clause, type="participant")
+
+        assert isinstance(df, pd.DataFrame)
+        assert len(df) == 5
+
+    @respx.mock
+    def test_run_query_default_type_is_count(self):
+        respx.post(f"{BASE_URL}/picsure/query/sync").mock(
+            return_value=httpx.Response(200, content=b"99")
+        )
+        from picsure._models.clause import Clause, ClauseType
+
+        session = _make_live_session()
+        clause = Clause(keys=["\\sex\\"], type=ClauseType.FILTER, categories=["Male"])
+        result = session.runQuery(clause)
+
+        assert result == 99
+
+
+class TestSessionExport:
+    @respx.mock
+    def test_export_pfb(self, tmp_path):
+        respx.post(f"{BASE_URL}/picsure/query/sync").mock(
+            return_value=httpx.Response(200, content=b"pfb_data")
+        )
+        from picsure._models.clause import Clause, ClauseType
+
+        session = _make_live_session()
+        clause = Clause(keys=["\\sex\\"], type=ClauseType.FILTER, categories=["Male"])
+        output = tmp_path / "test.pfb"
+        session.exportPFB(clause, output)
+
+        assert output.exists()
+        assert output.read_bytes() == b"pfb_data"
+
+    def test_export_csv(self, tmp_path):
+        session = _make_session()
+        df = pd.DataFrame({"id": [1, 2], "name": ["A", "B"]})
+        output = tmp_path / "test.csv"
+        session.exportCSV(df, output)
+
+        assert output.exists()
+        assert "id,name" in output.read_text()
+
+    def test_export_tsv(self, tmp_path):
+        session = _make_session()
+        df = pd.DataFrame({"id": [1, 2], "name": ["A", "B"]})
+        output = tmp_path / "test.tsv"
+        session.exportTSV(df, output)
+
+        assert output.exists()
+        assert "id\tname" in output.read_text()
