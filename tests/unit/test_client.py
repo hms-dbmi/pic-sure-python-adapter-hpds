@@ -112,3 +112,51 @@ class TestPicSureClient:
         client = PicSureClient(base_url=BASE_URL, token=TOKEN)
         client.close()
         assert client._http.is_closed
+
+    @respx.mock
+    def test_post_raw_returns_bytes(self):
+        respx.post(f"{BASE_URL}/query/sync").mock(
+            return_value=httpx.Response(200, content=b"1234")
+        )
+
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+        result = client.post_raw("/query/sync", body={"query": "test"})
+
+        assert result == b"1234"
+        assert isinstance(result, bytes)
+
+    @respx.mock
+    def test_post_raw_sends_auth_header(self):
+        route = respx.post(f"{BASE_URL}/data").mock(
+            return_value=httpx.Response(200, content=b"csv,data")
+        )
+
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+        client.post_raw("/data", body={"q": "x"})
+
+        request = route.calls[0].request
+        assert request.headers["authorization"] == f"Bearer {TOKEN}"
+
+    @respx.mock
+    def test_post_raw_500_retries_then_raises(self):
+        route = respx.post(f"{BASE_URL}/fail").mock(
+            return_value=httpx.Response(500, content=b"error")
+        )
+
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+        with pytest.raises(TransportServerError):
+            client.post_raw("/fail")
+        assert route.call_count == 2
+
+    @respx.mock
+    def test_post_raw_csv_content(self):
+        csv = b"patient_id,sex,age\nP001,Male,45\nP002,Female,52\n"
+        respx.post(f"{BASE_URL}/query/sync").mock(
+            return_value=httpx.Response(200, content=csv)
+        )
+
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+        result = client.post_raw("/query/sync")
+
+        assert b"patient_id" in result
+        assert result.count(b"\n") == 3

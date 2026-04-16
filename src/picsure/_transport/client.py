@@ -37,6 +37,14 @@ class PicSureClient:
         response = self._request("POST", path, json=body)
         return response.json()  # type: ignore[no-any-return]
 
+    def post_raw(self, path: str, body: dict | None = None) -> bytes:  # type: ignore[type-arg]
+        """Send POST request with JSON body and return raw response bytes.
+
+        Use this for endpoints that return non-JSON data (CSV, PFB, etc.).
+        """
+        response = self._request("POST", path, json=body)
+        return response.content
+
     def _request(self, method: str, path: str, **kwargs: object) -> httpx.Response:
         last_exc: Exception | None = None
 
