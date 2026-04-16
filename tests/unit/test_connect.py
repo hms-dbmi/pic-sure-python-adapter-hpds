@@ -56,9 +56,7 @@ class TestConnectSuccess:
         assert session._resources[0].uuid == "resource-uuid-aaaa-1111"
 
     @respx.mock
-    def test_prints_success_message(
-        self, profile_response, resources_response, capsys
-    ):
+    def test_prints_success_message(self, profile_response, resources_response, capsys):
         respx.get(f"{BASE_URL}/psama/user/me").mock(
             return_value=httpx.Response(200, json=profile_response)
         )
@@ -128,9 +126,7 @@ class TestConnectConnectionErrors:
         assert BASE_URL in msg
 
     @respx.mock
-    def test_resource_fetch_failure_raises_connection_error(
-        self, profile_response
-    ):
+    def test_resource_fetch_failure_raises_connection_error(self, profile_response):
         respx.get(f"{BASE_URL}/psama/user/me").mock(
             return_value=httpx.Response(200, json=profile_response)
         )

@@ -1,7 +1,7 @@
 from picsure.errors import (
-    PicSureError,
     PicSureAuthError,
     PicSureConnectionError,
+    PicSureError,
     PicSureQueryError,
     PicSureValidationError,
 )

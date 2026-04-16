@@ -68,9 +68,7 @@ def _fetch_profile(
         ) from exc
 
 
-def _fetch_resources(
-    client: PicSureClient, platform: str
-) -> list[Resource]:
+def _fetch_resources(client: PicSureClient, platform: str) -> list[Resource]:
     try:
         data = client.get_json(_PICSURE_RESOURCES_PATH)
     except TransportError as exc:

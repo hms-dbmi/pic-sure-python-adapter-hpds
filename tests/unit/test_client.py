@@ -101,9 +101,7 @@ class TestPicSureClient:
 
     @respx.mock
     def test_timeout_raises_transport_connection_error(self):
-        respx.get(f"{BASE_URL}/slow").mock(
-            side_effect=httpx.ReadTimeout("timed out")
-        )
+        respx.get(f"{BASE_URL}/slow").mock(side_effect=httpx.ReadTimeout("timed out"))
 
         client = PicSureClient(base_url=BASE_URL, token=TOKEN)
         with pytest.raises(TransportConnectionError, match="timed out"):

@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import pytest
 
@@ -14,8 +15,10 @@ def pytest_collection_modifyitems(
         skip = pytest.mark.skip(
             reason="Integration tests disabled. Set PICSURE_INTEGRATION=1 to run."
         )
+        integration_dir = str(Path(__file__).parent)
         for item in items:
-            item.add_marker(skip)
+            if str(item.fspath).startswith(integration_dir):
+                item.add_marker(skip)
 
 
 @pytest.fixture()

@@ -55,9 +55,7 @@ class PicSureClient:
                 raise TransportConnectionError(f"Request timed out: {exc}") from exc
 
             if response.status_code in (401, 403):
-                raise TransportAuthenticationError(
-                    response.status_code, response.text
-                )
+                raise TransportAuthenticationError(response.status_code, response.text)
 
             if response.status_code >= 500:
                 if attempt < _MAX_RETRIES:
@@ -66,9 +64,7 @@ class PicSureClient:
 
             return response
 
-        raise TransportConnectionError(
-            "Request failed after retries"
-        ) from last_exc
+        raise TransportConnectionError("Request failed after retries") from last_exc
 
     def close(self) -> None:
         self._http.close()
