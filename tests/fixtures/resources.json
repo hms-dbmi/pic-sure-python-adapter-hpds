@@ -1,0 +1,12 @@
+[
+    {
+        "uuid": "resource-uuid-aaaa-1111",
+        "name": "BDC Authorized Access",
+        "description": "Authorized access to BDC data"
+    },
+    {
+        "uuid": "resource-uuid-bbbb-2222",
+        "name": "BDC Open Access",
+        "description": "Open access to BDC data"
+    }
+]

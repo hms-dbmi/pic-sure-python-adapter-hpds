@@ -1,0 +1,8 @@
+{
+    "uuid": "test-user-uuid-1234-5678",
+    "email": "researcher@university.edu",
+    "expirationDate": "2026-06-15T00:00:00Z",
+    "queryScopes": ["\\_studies\\"],
+    "queryTemplate": "{}",
+    "acceptedTOS": true
+}
