@@ -53,9 +53,7 @@ class FacetSet:
     """
 
     def __init__(self, available: list[FacetCategory]) -> None:
-        self._available: dict[str, FacetCategory] = {
-            cat.name: cat for cat in available
-        }
+        self._available: dict[str, FacetCategory] = {cat.name: cat for cat in available}
         self._selected: dict[str, list[str]] = {}
 
     def add(self, category: str, values: str | list[str]) -> None:

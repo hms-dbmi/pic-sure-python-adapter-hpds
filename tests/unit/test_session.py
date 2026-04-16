@@ -180,9 +180,9 @@ def _make_live_session(
 class TestSessionSearch:
     @respx.mock
     def test_search_returns_dataframe(self, search_response):
-        respx.post(
-            f"{BASE_URL}/picsure/search/resource-uuid-aaaa-1111"
-        ).mock(return_value=httpx.Response(200, json=search_response))
+        respx.post(f"{BASE_URL}/picsure/search/resource-uuid-aaaa-1111").mock(
+            return_value=httpx.Response(200, json=search_response)
+        )
 
         session = _make_live_session()
         df = session.search("sex")
@@ -192,9 +192,9 @@ class TestSessionSearch:
 
     @respx.mock
     def test_search_empty_term(self, search_response):
-        respx.post(
-            f"{BASE_URL}/picsure/search/resource-uuid-aaaa-1111"
-        ).mock(return_value=httpx.Response(200, json=search_response))
+        respx.post(f"{BASE_URL}/picsure/search/resource-uuid-aaaa-1111").mock(
+            return_value=httpx.Response(200, json=search_response)
+        )
 
         session = _make_live_session()
         df = session.search()
@@ -205,9 +205,9 @@ class TestSessionSearch:
 class TestSessionFacets:
     @respx.mock
     def test_facets_returns_facet_set(self, search_response):
-        respx.post(
-            f"{BASE_URL}/picsure/search/resource-uuid-aaaa-1111"
-        ).mock(return_value=httpx.Response(200, json=search_response))
+        respx.post(f"{BASE_URL}/picsure/search/resource-uuid-aaaa-1111").mock(
+            return_value=httpx.Response(200, json=search_response)
+        )
 
         session = _make_live_session()
         fs = session.facets()
@@ -221,9 +221,9 @@ class TestSessionFacets:
 
     @respx.mock
     def test_facets_can_add_and_use_in_search(self, search_response):
-        route = respx.post(
-            f"{BASE_URL}/picsure/search/resource-uuid-aaaa-1111"
-        ).mock(return_value=httpx.Response(200, json=search_response))
+        route = respx.post(f"{BASE_URL}/picsure/search/resource-uuid-aaaa-1111").mock(
+            return_value=httpx.Response(200, json=search_response)
+        )
 
         session = _make_live_session()
         fs = session.facets()
@@ -239,9 +239,9 @@ class TestSessionFacets:
 class TestSessionShowAllFacets:
     @respx.mock
     def test_show_all_facets_returns_dataframe(self, search_response):
-        respx.post(
-            f"{BASE_URL}/picsure/search/resource-uuid-aaaa-1111"
-        ).mock(return_value=httpx.Response(200, json=search_response))
+        respx.post(f"{BASE_URL}/picsure/search/resource-uuid-aaaa-1111").mock(
+            return_value=httpx.Response(200, json=search_response)
+        )
 
         session = _make_live_session()
         df = session.showAllFacets()

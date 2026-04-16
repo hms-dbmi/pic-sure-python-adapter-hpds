@@ -42,7 +42,9 @@ class TestSearchLive:
         fs = session.facets()
         categories = list(fs.view().keys())
         if categories:
-            fs.add(categories[0], fs.view()[categories[0]][:1] if fs.view()[categories[0]] else [])
+            first_cat = categories[0]
+            first_values = fs.view()[first_cat][:1]
+            fs.add(first_cat, first_values if first_values else [])
             df = session.search("age", facets=fs)
             assert isinstance(df, pd.DataFrame)
 

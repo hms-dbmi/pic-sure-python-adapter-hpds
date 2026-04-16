@@ -87,8 +87,7 @@ class Session:
 
         valid = ", ".join(r.name for r in self._resources)
         raise PicSureValidationError(
-            f"'{name}' does not match any resource. "
-            f"Available resources: {valid}."
+            f"'{name}' does not match any resource. Available resources: {valid}."
         )
 
     def search(

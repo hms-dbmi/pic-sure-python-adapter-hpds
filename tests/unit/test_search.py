@@ -223,9 +223,7 @@ class TestShowAllFacets:
     @respx.mock
     def test_empty_facets_returns_empty_dataframe(self):
         empty = {"results": [], "facets": [], "totalCount": 0}
-        respx.post(SEARCH_URL).mock(
-            return_value=httpx.Response(200, json=empty)
-        )
+        respx.post(SEARCH_URL).mock(return_value=httpx.Response(200, json=empty))
         client = _make_client()
         df = show_all_facets(client, RESOURCE_UUID)
         assert len(df) == 0
