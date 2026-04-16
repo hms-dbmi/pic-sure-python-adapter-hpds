@@ -22,3 +22,9 @@ def resources_response() -> dict[str, str]:
 def search_response() -> dict:
     """Sample /picsure/search/{resourceId} response."""
     return json.loads((_FIXTURES_DIR / "dictionary_search.json").read_text())
+
+
+@pytest.fixture()
+def participant_response() -> bytes:
+    """Sample participant-level CSV query response."""
+    return (_FIXTURES_DIR / "query_participant.csv").read_bytes()

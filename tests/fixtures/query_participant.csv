@@ -1,0 +1,6 @@
+patient_id,sex,age,study
+P001,Male,45,phs000007
+P002,Female,52,phs000007
+P003,Male,38,phs000179
+P004,Female,61,phs000007
+P005,Male,29,phs000179
