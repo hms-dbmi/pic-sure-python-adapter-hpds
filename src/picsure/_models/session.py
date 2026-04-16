@@ -67,3 +67,25 @@ class Session:
                 f"Use session.getResourceID() to see available resources."
             )
         self._resource_uuid = resource_uuid
+
+    def setResourceIDByName(self, name: str) -> None:
+        """Set the active resource by looking up its name.
+
+        Args:
+            name: The resource name (e.g. ``"hpds"``, ``"auth-hpds"``).
+
+        Raises:
+            PicSureValidationError: If no resource matches the given name.
+        """
+        from picsure.errors import PicSureValidationError
+
+        for r in self._resources:
+            if r.name == name:
+                self._resource_uuid = r.uuid
+                return
+
+        valid = ", ".join(r.name for r in self._resources)
+        raise PicSureValidationError(
+            f"'{name}' does not match any resource. "
+            f"Available resources: {valid}."
+        )

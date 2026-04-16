@@ -102,3 +102,26 @@ class TestSession:
         )
         session.setResourceID("uuid-2")
         assert session._resource_uuid == "uuid-2"
+
+    def test_set_resource_id_by_name(self):
+        session = _make_session()
+        session.setResourceIDByName("Resource B")
+        assert session._resource_uuid == "uuid-2"
+
+    def test_set_resource_id_by_name_invalid_raises(self):
+        import pytest
+
+        from picsure.errors import PicSureValidationError
+
+        session = _make_session()
+        with pytest.raises(PicSureValidationError, match="does not match"):
+            session.setResourceIDByName("nonexistent")
+
+    def test_set_resource_id_by_name_lists_valid(self):
+        import pytest
+
+        from picsure.errors import PicSureValidationError
+
+        session = _make_session()
+        with pytest.raises(PicSureValidationError, match="Resource A"):
+            session.setResourceIDByName("nope")
