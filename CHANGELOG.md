@@ -20,3 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `FacetSet` for building facet selections with validation.
 - Search result deduplication by concept path.
 - Zero-result searches return empty DataFrames with a stderr note.
+- `picsure.createClause()` to build individual filter clauses (FILTER, ANYRECORD, SELECT, REQUIRE).
+- `picsure.buildClauseGroup()` to combine clauses with AND/OR logic, supporting arbitrary nesting.
+- `ClauseType` and `GroupOperator` enums for type-safe clause and group construction.
+- `Clause`, `ClauseGroup`, and `Query` types with `to_query_json()` serialization.
+- Input validation with actionable error messages for invalid clause configurations.
