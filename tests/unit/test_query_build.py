@@ -169,9 +169,7 @@ class TestBuildClauseGroup:
         asthma = createClause("\\asthma\\", type=ClauseType.ANYRECORD)
 
         copd_or_asthma = buildClauseGroup([copd, asthma], root=GroupOperator.OR)
-        full = buildClauseGroup(
-            [sex, age, copd_or_asthma], root=GroupOperator.AND
-        )
+        full = buildClauseGroup([sex, age, copd_or_asthma], root=GroupOperator.AND)
 
         result = full.to_query_json()
         assert result["type"] == "and"

@@ -49,12 +49,7 @@ def createClause(  # noqa: N802
                 "the min/max arguments."
             )
 
-    if (
-        type == ClauseType.FILTER
-        and categories is None
-        and min is None
-        and max is None
-    ):
+    if type == ClauseType.FILTER and categories is None and min is None and max is None:
         raise PicSureValidationError(
             "FILTER clauses require at least one of: categories, min, or max. "
             "Use categories for categorical variables or min/max for "
@@ -89,8 +84,6 @@ def buildClauseGroup(  # noqa: N802
         PicSureValidationError: If the clause list is empty.
     """
     if not clauses:
-        raise PicSureValidationError(
-            "A clause group must contain at least one clause."
-        )
+        raise PicSureValidationError("A clause group must contain at least one clause.")
 
     return ClauseGroup(clauses=clauses, operator=root)
