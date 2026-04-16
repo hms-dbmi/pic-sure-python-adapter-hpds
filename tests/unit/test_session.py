@@ -57,3 +57,48 @@ class TestSession:
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 0
         assert list(df.columns) == ["uuid", "name", "description"]
+
+    def test_stores_resource_uuid(self):
+        client = MagicMock()
+        session = Session(
+            client=client,
+            user_email="u@e.com",
+            token_expiration="",
+            resources=[],
+            resource_uuid="my-uuid",
+        )
+        assert session._resource_uuid == "my-uuid"
+
+    def test_resource_uuid_defaults_to_none(self):
+        session = _make_session()
+        assert session._resource_uuid is None
+
+    def test_set_resource_id(self):
+        session = _make_session()
+        session.setResourceID("uuid-1")
+        assert session._resource_uuid == "uuid-1"
+
+    def test_set_resource_id_invalid_raises(self):
+        import pytest
+
+        from picsure.errors import PicSureValidationError
+
+        session = _make_session()
+        with pytest.raises(PicSureValidationError, match="not a valid resource UUID"):
+            session.setResourceID("nonexistent-uuid")
+
+    def test_set_resource_id_overrides_existing(self):
+        client = MagicMock()
+        resources = [
+            Resource(uuid="uuid-1", name="A", description=""),
+            Resource(uuid="uuid-2", name="B", description=""),
+        ]
+        session = Session(
+            client=client,
+            user_email="u@e.com",
+            token_expiration="",
+            resources=resources,
+            resource_uuid="uuid-1",
+        )
+        session.setResourceID("uuid-2")
+        assert session._resource_uuid == "uuid-2"

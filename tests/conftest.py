@@ -13,6 +13,6 @@ def profile_response() -> dict:
 
 
 @pytest.fixture()
-def resources_response() -> list[dict]:
-    """Sample /info/resources response."""
+def resources_response() -> dict[str, str]:
+    """Sample /info/resources response ({uuid: name, ...})."""
     return json.loads((_FIXTURES_DIR / "resources.json").read_text())

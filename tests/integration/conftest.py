@@ -3,9 +3,13 @@ from pathlib import Path
 
 import pytest
 
+from picsure._transport.platforms import Platform
+
 PICSURE_INTEGRATION = os.environ.get("PICSURE_INTEGRATION", "0") == "1"
 PICSURE_TEST_TOKEN = os.environ.get("PICSURE_TEST_TOKEN", "")
-PICSURE_TEST_PLATFORM = os.environ.get("PICSURE_TEST_PLATFORM", "Demo")
+PICSURE_TEST_PLATFORM = os.environ.get("PICSURE_TEST_PLATFORM", "DEMO")
+
+_PLATFORM_BY_NAME = {p.name: p for p in Platform}
 
 
 def pytest_collection_modifyitems(
@@ -29,5 +33,12 @@ def test_token() -> str:
 
 
 @pytest.fixture()
-def test_platform() -> str:
+def test_platform() -> Platform | str:
+    """Resolve PICSURE_TEST_PLATFORM to a Platform enum or URL string.
+
+    Accepts enum names (e.g. ``DEMO``, ``BDC_AUTHORIZED``) or full URLs.
+    """
+    key = PICSURE_TEST_PLATFORM.upper()
+    if key in _PLATFORM_BY_NAME:
+        return _PLATFORM_BY_NAME[key]
     return PICSURE_TEST_PLATFORM

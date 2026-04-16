@@ -53,7 +53,23 @@ class TestConnectSuccess:
         session = connect(platform=BASE_URL, token=TOKEN)
 
         assert len(session._resources) == 2
-        assert session._resources[0].uuid == "resource-uuid-aaaa-1111"
+        uuids = {r.uuid for r in session._resources}
+        assert "resource-uuid-aaaa-1111" in uuids
+
+    @respx.mock
+    def test_custom_url_has_no_resource_uuid(
+        self, profile_response, resources_response
+    ):
+        respx.get(f"{BASE_URL}/psama/user/me").mock(
+            return_value=httpx.Response(200, json=profile_response)
+        )
+        respx.get(f"{BASE_URL}/picsure/info/resources").mock(
+            return_value=httpx.Response(200, json=resources_response)
+        )
+
+        session = connect(platform=BASE_URL, token=TOKEN)
+
+        assert session._resource_uuid is None
 
     @respx.mock
     def test_prints_success_message(self, profile_response, resources_response, capsys):
@@ -139,6 +155,58 @@ class TestConnectConnectionErrors:
 
         msg = str(exc_info.value)
         assert "resources" in msg.lower()
+
+
+class TestConnectResourceUuid:
+    @respx.mock
+    def test_explicit_uuid_overrides_platform(
+        self, profile_response, resources_response
+    ):
+        respx.get(f"{BASE_URL}/psama/user/me").mock(
+            return_value=httpx.Response(200, json=profile_response)
+        )
+        respx.get(f"{BASE_URL}/picsure/info/resources").mock(
+            return_value=httpx.Response(200, json=resources_response)
+        )
+
+        session = connect(
+            platform=BASE_URL, token=TOKEN, resource_uuid="my-custom-uuid"
+        )
+
+        assert session._resource_uuid == "my-custom-uuid"
+
+    @respx.mock
+    def test_custom_url_no_uuid_prints_resources(
+        self, profile_response, resources_response, capsys
+    ):
+        respx.get(f"{BASE_URL}/psama/user/me").mock(
+            return_value=httpx.Response(200, json=profile_response)
+        )
+        respx.get(f"{BASE_URL}/picsure/info/resources").mock(
+            return_value=httpx.Response(200, json=resources_response)
+        )
+
+        connect(platform=BASE_URL, token=TOKEN)
+
+        captured = capsys.readouterr()
+        assert "Available resources" in captured.out
+        assert "setResourceID" in captured.out
+
+    @respx.mock
+    def test_custom_url_with_uuid_no_prompt(
+        self, profile_response, resources_response, capsys
+    ):
+        respx.get(f"{BASE_URL}/psama/user/me").mock(
+            return_value=httpx.Response(200, json=profile_response)
+        )
+        respx.get(f"{BASE_URL}/picsure/info/resources").mock(
+            return_value=httpx.Response(200, json=resources_response)
+        )
+
+        connect(platform=BASE_URL, token=TOKEN, resource_uuid="resource-uuid-aaaa-1111")
+
+        captured = capsys.readouterr()
+        assert "Available resources" not in captured.out
 
 
 class TestConnectValidation:

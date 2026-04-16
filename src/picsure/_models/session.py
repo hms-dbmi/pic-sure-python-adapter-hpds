@@ -24,11 +24,13 @@ class Session:
         user_email: str,
         token_expiration: str,
         resources: list[Resource],
+        resource_uuid: str | None = None,
     ) -> None:
         self._client = client
         self._user_email = user_email
         self._token_expiration = token_expiration
         self._resources = resources
+        self._resource_uuid = resource_uuid
 
     def getResourceID(self) -> pd.DataFrame:
         """Return resource IDs and metadata as a DataFrame."""
@@ -44,3 +46,24 @@ class Session:
                 for r in self._resources
             ]
         )
+
+    def setResourceID(self, resource_uuid: str) -> None:
+        """Set the active resource UUID for searches and queries.
+
+        Args:
+            resource_uuid: The UUID of the resource to use. See
+                ``getResourceID()`` for available resources.
+
+        Raises:
+            PicSureValidationError: If the UUID does not match any
+                resource on this connection.
+        """
+        from picsure.errors import PicSureValidationError
+
+        known_uuids = {r.uuid for r in self._resources}
+        if known_uuids and resource_uuid not in known_uuids:
+            raise PicSureValidationError(
+                f"'{resource_uuid}' is not a valid resource UUID. "
+                f"Use session.getResourceID() to see available resources."
+            )
+        self._resource_uuid = resource_uuid

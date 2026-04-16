@@ -29,8 +29,13 @@ class TestResource:
         assert resource.uuid == "abc-123"
         assert not hasattr(resource, "extra_field")
 
-    def test_from_dict_list(self, resources_response):
-        resources = [Resource.from_dict(r) for r in resources_response]
+    def test_from_api_dict(self, resources_response):
+        resources = [
+            Resource(uuid=uuid, name=name, description="")
+            for uuid, name in resources_response.items()
+        ]
         assert len(resources) == 2
-        assert resources[0].uuid == "resource-uuid-aaaa-1111"
-        assert resources[1].name == "BDC Open Access"
+        uuids = {r.uuid for r in resources}
+        assert "resource-uuid-aaaa-1111" in uuids
+        names = {r.name for r in resources}
+        assert "open-hpds-v3" in names

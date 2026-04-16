@@ -1686,6 +1686,7 @@ dev = [
     { name = "mypy" },
     { name = "pandas-stubs", version = "2.3.3.260113", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pandas-stubs", version = "3.0.0.260204", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "picsure" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "respx" },
@@ -1704,6 +1705,7 @@ provides-extras = ["pfb"]
 dev = [
     { name = "mypy", specifier = ">=1.11" },
     { name = "pandas-stubs", specifier = ">=2.0" },
+    { name = "picsure", editable = "." },
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-cov", specifier = ">=5" },
     { name = "respx", specifier = ">=0.21" },

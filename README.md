@@ -6,6 +6,8 @@ data — all from a Jupyter notebook.
 
 ## Installation
 
+### pip
+
 ```bash
 pip install picsure
 ```
@@ -14,6 +16,18 @@ For PFB export support:
 
 ```bash
 pip install picsure[pfb]
+```
+
+### uv
+
+```bash
+uv add picsure
+```
+
+For PFB export support:
+
+```bash
+uv add picsure[pfb]
 ```
 
 ## Quickstart
