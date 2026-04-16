@@ -1,13 +1,24 @@
 """PIC-SURE Python API adapter."""
 
+from picsure._models.clause import Clause, ClauseType
+from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure._models.facet import FacetSet
+from picsure._models.query import Query
 from picsure._models.session import Session
 from picsure._services.connect import connect
+from picsure._services.query_build import buildClauseGroup, createClause
 from picsure.errors import PicSureError
 
 __all__ = [
+    "buildClauseGroup",
     "connect",
+    "createClause",
+    "Clause",
+    "ClauseGroup",
+    "ClauseType",
     "FacetSet",
+    "GroupOperator",
     "PicSureError",
+    "Query",
     "Session",
 ]
