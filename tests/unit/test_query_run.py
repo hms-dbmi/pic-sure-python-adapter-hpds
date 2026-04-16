@@ -6,7 +6,11 @@ from picsure._models.clause import Clause, ClauseType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure._services.query_run import run_query
 from picsure._transport.client import PicSureClient
-from picsure.errors import PicSureConnectionError, PicSureQueryError, PicSureValidationError
+from picsure.errors import (
+    PicSureConnectionError,
+    PicSureQueryError,
+    PicSureValidationError,
+)
 
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
@@ -25,9 +29,7 @@ def _simple_clause() -> Clause:
 class TestRunQueryCount:
     @respx.mock
     def test_returns_int(self):
-        respx.post(QUERY_URL).mock(
-            return_value=httpx.Response(200, content=b"1234")
-        )
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"1234"))
         client = _make_client()
         result = run_query(client, RESOURCE_UUID, _simple_clause(), "count")
         assert result == 1234
@@ -94,9 +96,7 @@ class TestRunQueryParticipant:
 
     @respx.mock
     def test_empty_csv_returns_empty_dataframe(self):
-        respx.post(QUERY_URL).mock(
-            return_value=httpx.Response(200, content=b"")
-        )
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
         client = _make_client()
         df = run_query(client, RESOURCE_UUID, _simple_clause(), "participant")
         assert len(df) == 0
@@ -119,9 +119,7 @@ class TestRunQueryTimestamp:
     @respx.mock
     def test_returns_dataframe(self):
         csv = b"patient_id,variable,date,value\nP001,bp,2024-01-15,120\n"
-        respx.post(QUERY_URL).mock(
-            return_value=httpx.Response(200, content=csv)
-        )
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=csv))
         client = _make_client()
         df = run_query(client, RESOURCE_UUID, _simple_clause(), "timestamp")
         assert len(df) == 1
@@ -134,8 +132,9 @@ class TestRunQueryWithClauseGroup:
         route = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"100")
         )
+        age = Clause(keys=["\\age\\"], type=ClauseType.FILTER, min=40.0)
         group = ClauseGroup(
-            clauses=[_simple_clause(), Clause(keys=["\\age\\"], type=ClauseType.FILTER, min=40.0)],
+            clauses=[_simple_clause(), age],
             operator=GroupOperator.AND,
         )
         client = _make_client()
@@ -172,9 +171,7 @@ class TestRunQueryErrors:
 
     @respx.mock
     def test_network_error_raises_connection_error(self):
-        respx.post(QUERY_URL).mock(
-            side_effect=httpx.ConnectError("Connection refused")
-        )
+        respx.post(QUERY_URL).mock(side_effect=httpx.ConnectError("Connection refused"))
         client = _make_client()
         with pytest.raises(PicSureConnectionError):
             run_query(client, RESOURCE_UUID, _simple_clause(), "count")

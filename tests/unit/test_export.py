@@ -28,9 +28,7 @@ class TestExportPFB:
     @respx.mock
     def test_writes_bytes_to_file(self, tmp_path):
         pfb_bytes = b"\x00PFB_MOCK_DATA\x01\x02\x03"
-        respx.post(QUERY_URL).mock(
-            return_value=httpx.Response(200, content=pfb_bytes)
-        )
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=pfb_bytes))
 
         output = tmp_path / "test.pfb"
         client = _make_client()
@@ -58,18 +56,14 @@ class TestExportPFB:
 
     @respx.mock
     def test_server_error_raises_connection_error(self, tmp_path):
-        respx.post(QUERY_URL).mock(
-            return_value=httpx.Response(500, text="error")
-        )
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(500, text="error"))
         client = _make_client()
         with pytest.raises(PicSureConnectionError, match="PFB"):
             export_pfb(client, RESOURCE_UUID, _simple_clause(), tmp_path / "out.pfb")
 
     @respx.mock
     def test_accepts_string_path(self, tmp_path):
-        respx.post(QUERY_URL).mock(
-            return_value=httpx.Response(200, content=b"data")
-        )
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"data"))
         output = str(tmp_path / "test.pfb")
         client = _make_client()
         export_pfb(client, RESOURCE_UUID, _simple_clause(), output)
