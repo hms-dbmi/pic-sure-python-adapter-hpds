@@ -16,3 +16,9 @@ def profile_response() -> dict:
 def resources_response() -> dict[str, str]:
     """Sample /info/resources response ({uuid: name, ...})."""
     return json.loads((_FIXTURES_DIR / "resources.json").read_text())
+
+
+@pytest.fixture()
+def search_response() -> dict:
+    """Sample /picsure/search/{resourceId} response."""
+    return json.loads((_FIXTURES_DIR / "dictionary_search.json").read_text())

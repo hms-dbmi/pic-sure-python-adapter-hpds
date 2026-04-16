@@ -1,0 +1,50 @@
+{
+    "results": [
+        {
+            "conceptPath": "\\phs000007\\pht000001\\phv00001\\sex\\",
+            "name": "sex",
+            "display": "Sex of participant",
+            "description": "Biological sex of the participant",
+            "dataType": "categorical",
+            "studyId": "phs000007",
+            "values": ["Male", "Female", "Unknown"]
+        },
+        {
+            "conceptPath": "\\phs000179\\pht000002\\phv00005\\sex\\",
+            "name": "sex",
+            "display": "Subject sex",
+            "description": "Subject's biological sex",
+            "dataType": "categorical",
+            "studyId": "phs000179",
+            "values": ["Male", "Female"]
+        },
+        {
+            "conceptPath": "\\phs000007\\pht000003\\phv00010\\age\\",
+            "name": "age",
+            "display": "Age at enrollment",
+            "description": "Age of participant at enrollment in years",
+            "dataType": "continuous",
+            "studyId": "phs000007",
+            "values": []
+        }
+    ],
+    "facets": [
+        {
+            "name": "study_ids",
+            "display": "Study",
+            "categories": [
+                {"value": "phs000007", "count": 42},
+                {"value": "phs000179", "count": 15}
+            ]
+        },
+        {
+            "name": "data_type",
+            "display": "Data Type",
+            "categories": [
+                {"value": "categorical", "count": 30},
+                {"value": "continuous", "count": 27}
+            ]
+        }
+    ],
+    "totalCount": 57
+}
