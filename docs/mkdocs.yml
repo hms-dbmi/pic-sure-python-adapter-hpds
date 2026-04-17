@@ -1,0 +1,53 @@
+site_name: picsure
+site_description: Python client for the PIC-SURE API
+repo_url: https://github.com/hms-dbmi/pic-sure-python-adapter-hpds
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue
+  features:
+    - content.code.copy
+    - navigation.sections
+    - search.highlight
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [../src]
+          options:
+            docstring_style: google
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: false
+            members_order: source
+            merge_init_into_class: true
+            show_signature_annotations: true
+            separate_signature: true
+
+markdown_extensions:
+  - admonitions
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - User Guides:
+      - Search & Facets: guides/search-and-facets.md
+      - Building Queries: guides/building-queries.md
+      - Running & Exporting: guides/running-and-exporting.md
+      - Migration Guide: guides/migrating-from-picsurehpdslib.md
+  - API Reference: reference/api.md

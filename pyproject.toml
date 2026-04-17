@@ -23,6 +23,11 @@ dev = [
     "pandas-stubs>=2.0",
     "picsure",
 ]
+docs = [
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.25",
+]
 
 [build-system]
 requires = ["hatchling>=1.21"]
