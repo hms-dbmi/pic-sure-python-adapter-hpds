@@ -84,10 +84,17 @@ class Platform(Enum):
         include_consents=False,
         requires_auth=False,
     )
-    DEMO = PlatformConfig(
-        url="https://demo.picsure.biodatacatalyst.nhlbi.nih.gov",
-        resource_uuid="REPLACE-ME-demo-resource-uuid",
-        label="Demo",
+    NHANES_AUTHORIZED = PlatformConfig(
+        url="https://nhanes.hms.harvard.edu/",
+        resource_uuid="",
+        label="Nhanes Authorized",
+        include_consents=False,
+        requires_auth=True,
+    )
+    NHANES_OPEN = PlatformConfig(
+        url="https://nhanes.hms.harvard.edu/",
+        resource_uuid="ded89b08-faa9-435c-b7c4-55b81922ee5f",
+        label="Nhanes Open",
         include_consents=False,
         requires_auth=False,
     )
