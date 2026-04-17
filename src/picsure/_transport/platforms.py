@@ -34,6 +34,26 @@ class Platform(Enum):
         "ac004461-1b47-4832-80e2-22a4aecabe39",
         "BDC Open",
     )
+    BDC_DEV_AUTHORIZED = (
+        "https://predev.picsure.biodatacatalyst.nhlbi.nih.gov",
+        "02e23f52-f354-4e8b-992c-d37c8b9ba140",
+        "BDC Authorized",
+    )
+    BDC_DEV_OPEN = (
+        "https://predev.picsure.biodatacatalyst.nhlbi.nih.gov",
+        "ac004461-1b47-4832-80e2-22a4aecabe39",
+        "BDC Open",
+    )
+    BDC_PREDEV_AUTHORIZED = (
+        "https://predev.picsure.biodatacatalyst.nhlbi.nih.gov",
+        "02e23f52-f354-4e8b-992c-d37c8b9ba140",
+        "BDC Authorized",
+    )
+    BDC_PREDEV_OPEN = (
+        "https://predev.picsure.biodatacatalyst.nhlbi.nih.gov",
+        "ac004461-1b47-4832-80e2-22a4aecabe39",
+        "BDC Open",
+    )
     DEMO = (
         "https://demo.picsure.biodatacatalyst.nhlbi.nih.gov",
         "REPLACE-ME-demo-resource-uuid",
