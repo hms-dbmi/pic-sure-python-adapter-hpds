@@ -309,7 +309,7 @@ class TestSessionShowAllFacets:
 
         assert isinstance(df, pd.DataFrame)
         assert list(df.columns) == ["category", "display", "value", "count"]
-        assert len(df) == 4
+        assert len(df) == 7
 
 
 class TestSessionRunQuery:

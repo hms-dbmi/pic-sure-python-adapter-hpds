@@ -275,9 +275,10 @@ class TestFetchFacets:
             return_value=httpx.Response(200, json=facets_response)
         )
         cats = fetch_facets(_make_client())
-        assert len(cats) == 2
+        assert len(cats) == 3
         assert cats[0].name == "dataset_id"
         assert cats[1].name == "data_type"
+        assert cats[2].name == "Consortium_Curated_Facets"
 
     @respx.mock
     def test_facet_options_populated(self, facets_response):
@@ -289,6 +290,17 @@ class TestFetchFacets:
         assert cats[0].options[0].value == "phs000007"
         assert cats[0].options[0].count == 54984
         assert cats[0].options[0].display == "FHS (phs000007)"
+
+    @respx.mock
+    def test_nested_children_preserved(self, facets_response):
+        respx.post(FACETS_URL).mock(
+            return_value=httpx.Response(200, json=facets_response)
+        )
+        cats = fetch_facets(_make_client())
+        curated = cats[2]
+        parent = curated.options[0]
+        assert len(parent.children) == 2
+        assert {c.value for c in parent.children} == {"Infected", "Non-infected"}
 
     @respx.mock
     def test_body_shape(self, facets_response):
@@ -339,8 +351,28 @@ class TestShowAllFacets:
             return_value=httpx.Response(200, json=facets_response)
         )
         df = show_all_facets(_make_client())
-        assert len(df) == 4
-        assert set(df["category"]) == {"dataset_id", "data_type"}
+        # 2 dataset_id + 2 data_type + 1 parent + 2 nested children = 7
+        assert len(df) == 7
+        assert set(df["category"]) == {
+            "dataset_id",
+            "data_type",
+            "Consortium_Curated_Facets",
+        }
+
+    @respx.mock
+    def test_flattens_nested_children(self, facets_response):
+        respx.post(FACETS_URL).mock(
+            return_value=httpx.Response(200, json=facets_response)
+        )
+        df = show_all_facets(_make_client())
+        curated_values = set(
+            df[df["category"] == "Consortium_Curated_Facets"]["value"]
+        )
+        assert curated_values == {
+            "RECOVER Adult Curated",
+            "Infected",
+            "Non-infected",
+        }
 
     @respx.mock
     def test_empty_facets_returns_empty_dataframe(self):

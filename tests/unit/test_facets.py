@@ -71,9 +71,19 @@ class TestFacetCategory:
 
     def test_from_dict_list_from_fixture(self, facets_response):
         cats = [FacetCategory.from_dict(f) for f in facets_response]
-        assert len(cats) == 2
-        assert cats[0].name == "dataset_id"
-        assert cats[1].name == "data_type"
+        assert len(cats) == 3
+        names = [c.name for c in cats]
+        assert names == ["dataset_id", "data_type", "Consortium_Curated_Facets"]
+
+    def test_from_dict_parses_children(self, facets_response):
+        cats = [FacetCategory.from_dict(f) for f in facets_response]
+        curated = cats[2]
+        parent = curated.options[0]
+        assert parent.value == "RECOVER Adult Curated"
+        assert len(parent.children) == 2
+        assert parent.children[0].value == "Infected"
+        assert parent.children[0].count == 84173
+        assert parent.children[1].value == "Non-infected"
 
     def test_frozen(self):
         cat = FacetCategory(name="test", display="Test", options=[])
@@ -180,6 +190,53 @@ class TestFacetSet:
         assert result[0]["name"] == "phs999999"
         assert result[0]["display"] == "phs999999"
         assert result[0]["count"] == 0
+
+    def test_parses_arbitrarily_deep_tree(self):
+        """A tree far deeper than Python's default recursion limit must parse."""
+        import sys
+
+        depth = sys.getrecursionlimit() * 3  # ~3000 by default
+        leaf: dict[str, object] = {"name": f"lvl{depth}", "count": 0, "children": []}
+        node = leaf
+        for lvl in range(depth - 1, -1, -1):
+            node = {"name": f"lvl{lvl}", "count": 0, "children": [node]}
+
+        root = Facet.from_dict(node)
+
+        # Walk iteratively to verify structure integrity at every level.
+        cur: Facet | None = root
+        seen = 0
+        while cur is not None:
+            assert cur.value == f"lvl{seen}"
+            cur = cur.children[0] if cur.children else None
+            seen += 1
+        assert seen == depth + 1  # one node per level
+
+    def test_to_request_facets_finds_nested_child(self):
+        # Build a FacetSet with a hierarchical category.
+        parent = Facet(
+            value="RECOVER Adult Curated",
+            count=142749,
+            display="RECOVER Adult Curated",
+            children=[
+                Facet(value="Infected", count=84173, display="Infected"),
+                Facet(value="Non-infected", count=58320, display="Non-infected"),
+            ],
+        )
+        fs = FacetSet(
+            [
+                FacetCategory(
+                    name="Consortium_Curated_Facets",
+                    display="Consortium Curated Facets",
+                    options=[parent],
+                )
+            ]
+        )
+        fs.add("Consortium_Curated_Facets", "Infected")
+        result = fs.to_request_facets()
+        assert result[0]["name"] == "Infected"
+        assert result[0]["count"] == 84173
+        assert result[0]["display"] == "Infected"
 
     def test_clear(self):
         fs = self._make_facet_set()

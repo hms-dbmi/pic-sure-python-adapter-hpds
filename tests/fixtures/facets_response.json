@@ -48,5 +48,37 @@
                 "meta": null
             }
         ]
+    },
+    {
+        "name": "Consortium_Curated_Facets",
+        "display": "Consortium Curated Facets",
+        "description": "Consortium Curated Facets Description",
+        "facets": [
+            {
+                "name": "RECOVER Adult Curated",
+                "display": "RECOVER Adult Curated",
+                "description": "Recover adult parent facet.",
+                "count": 142749,
+                "category": "Consortium_Curated_Facets",
+                "children": [
+                    {
+                        "name": "Infected",
+                        "display": "Infected",
+                        "description": "",
+                        "count": 84173,
+                        "category": "Consortium_Curated_Facets",
+                        "children": []
+                    },
+                    {
+                        "name": "Non-infected",
+                        "display": "Non-infected",
+                        "description": "",
+                        "count": 58320,
+                        "category": "Consortium_Curated_Facets",
+                        "children": []
+                    }
+                ]
+            }
+        ]
     }
 ]

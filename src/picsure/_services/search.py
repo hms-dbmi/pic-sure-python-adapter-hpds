@@ -156,21 +156,41 @@ def show_all_facets(
 
     Columns: ``category``, ``display`` (category's display), ``value``
     (option identifier to pass to ``FacetSet.add``), ``count``.
+
+    Some facet categories are hierarchical (e.g.
+    Consortium_Curated_Facets).  Every option is flattened into its
+    own row regardless of depth.
     """
     categories = fetch_facets(client, consents=consents)
-    rows: list[dict[str, object]] = [
-        {
-            "category": cat.name,
-            "display": cat.display,
-            "value": opt.value,
-            "count": opt.count,
-        }
-        for cat in categories
-        for opt in cat.options
-    ]
+    rows: list[dict[str, object]] = []
+    for cat in categories:
+        for opt in _walk_options(cat.options):
+            rows.append(
+                {
+                    "category": cat.name,
+                    "display": cat.display,
+                    "value": opt.value,
+                    "count": opt.count,
+                }
+            )
     if not rows:
         return pd.DataFrame(columns=["category", "display", "value", "count"])
     return pd.DataFrame(rows)
+
+
+def _walk_options(options: list[FacetCategory]) -> list[FacetCategory]:
+    """Yield every option and its descendants in depth-first order."""
+    result: list[FacetCategory] = []
+    stack: list[FacetCategory] = list(reversed(options))
+    while stack:
+        opt = stack.pop()
+        result.append(opt)
+        # ``children`` is only defined on Facet, not FacetCategory; the
+        # type annotation above is approximate — we only call this on
+        # Facet lists.  Kept loose to avoid a circular import.
+        children = getattr(opt, "children", None) or []
+        stack.extend(reversed(children))
+    return result
 
 
 def _build_concepts_body(

@@ -13,24 +13,57 @@ class Facet:
     ``value`` is the identifier used when filtering (e.g. the study
     dbGaP accession ``phs000007``).  ``display`` is a human-readable
     label (e.g. ``"FHS (phs000007)"``).  ``description`` is an
-    optional longer description from the server.
+    optional longer description from the server.  ``children`` holds
+    nested sub-options for hierarchical facet categories (e.g.
+    Consortium_Curated_Facets → RECOVER Adult Curated → Infected).
     """
 
     value: str
     count: int
     display: str = ""
     description: str = ""
+    children: list[Facet] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> Facet:
-        raw_count = data.get("count", 0)
-        raw_value = data.get("name", data.get("value"))
-        return cls(
-            value=str(raw_value) if raw_value is not None else "",
-            count=int(cast(int, raw_count)),
-            display=str(data.get("display") or ""),
-            description=str(data.get("description") or ""),
-        )
+        # Iterative build so arbitrarily deep facet trees don't blow
+        # Python's recursion limit.  Two phases:
+        #   1. DFS the input, recording each node and which indices
+        #      are its children (order-preserved).
+        #   2. Build Facets in reverse index order so every parent's
+        #      children are already constructed when referenced.
+        flat: list[dict[str, object]] = []
+        children_of: dict[int, list[int]] = {}
+        pending: list[tuple[dict[str, object], int]] = [(data, -1)]
+        while pending:
+            node, parent_idx = pending.pop()
+            idx = len(flat)
+            flat.append(node)
+            if parent_idx >= 0:
+                children_of.setdefault(parent_idx, []).append(idx)
+            raw_children = node.get("children", [])
+            if isinstance(raw_children, list):
+                # Reverse so LIFO pop yields original sibling order.
+                for child in reversed(raw_children):
+                    if isinstance(child, dict):
+                        pending.append((cast(dict[str, object], child), idx))
+
+        facets: list[Facet | None] = [None] * len(flat)
+        for idx in range(len(flat) - 1, -1, -1):
+            node = flat[idx]
+            child_indices = children_of.get(idx, [])
+            own_children = [cast(Facet, facets[i]) for i in child_indices]
+            raw_count = node.get("count", 0)
+            raw_value = node.get("name", node.get("value"))
+            facets[idx] = cls(
+                value=str(raw_value) if raw_value is not None else "",
+                count=int(cast(int, raw_count)),
+                display=str(node.get("display") or ""),
+                description=str(node.get("description") or ""),
+                children=own_children,
+            )
+
+        return cast(Facet, facets[0])
 
 
 @dataclass(frozen=True)
@@ -113,7 +146,7 @@ class FacetSet:
                 "display": cat.display,
                 "description": cat.description,
             }
-            by_value = {opt.value: opt for opt in cat.options}
+            by_value = _flatten_options_by_value(cat.options)
             for value in values:
                 opt = by_value.get(value)
                 display = opt.display if opt is not None else value
@@ -141,3 +174,14 @@ class FacetSet:
                 f"'{category}' is not a valid facet category. "
                 f"Valid categories: {valid}."
             )
+
+
+def _flatten_options_by_value(options: list[Facet]) -> dict[str, Facet]:
+    """Return a map of value → Facet covering the tree of options."""
+    result: dict[str, Facet] = {}
+    stack: list[Facet] = list(options)
+    while stack:
+        opt = stack.pop()
+        result[opt.value] = opt
+        stack.extend(opt.children)
+    return result
