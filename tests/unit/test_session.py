@@ -308,7 +308,14 @@ class TestSessionShowAllFacets:
         df = session.showAllFacets()
 
         assert isinstance(df, pd.DataFrame)
-        assert list(df.columns) == ["category", "display", "value", "count"]
+        assert list(df.columns) == [
+            "category",
+            "Category Display",
+            "display",
+            "description",
+            "value",
+            "count",
+        ]
         assert len(df) == 7
 
 

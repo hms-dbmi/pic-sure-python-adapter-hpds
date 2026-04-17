@@ -148,14 +148,30 @@ def fetch_facets(
     return [FacetCategory.from_dict(f) for f in raw_categories]
 
 
+_SHOW_ALL_FACETS_COLUMNS = [
+    "category",
+    "Category Display",
+    "display",
+    "description",
+    "value",
+    "count",
+]
+
+
 def show_all_facets(
     client: PicSureClient,
     consents: list[str] | None = None,
 ) -> pd.DataFrame:
     """Fetch all facet categories and return as a flat DataFrame.
 
-    Columns: ``category``, ``display`` (category's display), ``value``
-    (option identifier to pass to ``FacetSet.add``), ``count``.
+    Columns:
+
+    - ``category`` — category identifier (pass to ``FacetSet.add``)
+    - ``Category Display`` — human-readable category label
+    - ``display`` — facet option's display label
+    - ``description`` — facet option's description
+    - ``value`` — option identifier (pass to ``FacetSet.add``)
+    - ``count`` — option count
 
     Some facet categories are hierarchical (e.g.
     Consortium_Curated_Facets).  Every option is flattened into its
@@ -168,13 +184,15 @@ def show_all_facets(
             rows.append(
                 {
                     "category": cat.name,
-                    "display": cat.display,
+                    "Category Display": cat.display,
+                    "display": opt.display,
+                    "description": opt.description,
                     "value": opt.value,
                     "count": opt.count,
                 }
             )
     if not rows:
-        return pd.DataFrame(columns=["category", "display", "value", "count"])
+        return pd.DataFrame(columns=_SHOW_ALL_FACETS_COLUMNS)
     return pd.DataFrame(rows)
 
 

@@ -336,6 +336,16 @@ class TestFetchFacets:
             fetch_facets(_make_client())
 
 
+_EXPECTED_COLUMNS = [
+    "category",
+    "Category Display",
+    "display",
+    "description",
+    "value",
+    "count",
+]
+
+
 class TestShowAllFacets:
     @respx.mock
     def test_returns_dataframe(self, facets_response):
@@ -343,7 +353,19 @@ class TestShowAllFacets:
             return_value=httpx.Response(200, json=facets_response)
         )
         df = show_all_facets(_make_client())
-        assert list(df.columns) == ["category", "display", "value", "count"]
+        assert list(df.columns) == _EXPECTED_COLUMNS
+
+    @respx.mock
+    def test_option_display_and_description_populated(self, facets_response):
+        respx.post(FACETS_URL).mock(
+            return_value=httpx.Response(200, json=facets_response)
+        )
+        df = show_all_facets(_make_client())
+        fhs = df[df["value"] == "phs000007"].iloc[0]
+        assert fhs["display"] == "FHS (phs000007)"
+        assert fhs["description"] == "Framingham Cohort"
+        assert fhs["Category Display"] == "Dataset"
+        assert fhs["category"] == "dataset_id"
 
     @respx.mock
     def test_has_all_facet_values(self, facets_response):
@@ -379,4 +401,4 @@ class TestShowAllFacets:
         respx.post(FACETS_URL).mock(return_value=httpx.Response(200, json=[]))
         df = show_all_facets(_make_client())
         assert len(df) == 0
-        assert list(df.columns) == ["category", "display", "value", "count"]
+        assert list(df.columns) == _EXPECTED_COLUMNS
