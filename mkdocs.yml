@@ -1,6 +1,11 @@
 site_name: picsure
 site_description: Python client for the PIC-SURE API
 repo_url: https://github.com/hms-dbmi/pic-sure-python-adapter-hpds
+docs_dir: docs
+site_dir: site
+exclude_docs: |
+  rewrite/
+  superpowers/
 
 theme:
   name: material
@@ -21,7 +26,7 @@ plugins:
   - mkdocstrings:
       handlers:
         python:
-          paths: [../src]
+          paths: [src]
           options:
             docstring_style: google
             show_source: false
@@ -33,7 +38,7 @@ plugins:
             separate_signature: true
 
 markdown_extensions:
-  - admonitions
+  - admonition
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.superfences

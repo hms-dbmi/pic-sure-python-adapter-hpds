@@ -19,11 +19,11 @@ jobs:
       - run: uv sync --frozen --group docs
 
       - name: Build docs (strict mode catches broken references)
-        run: cd docs && uv run mkdocs build --strict
+        run: uv run mkdocs build --strict
 
       - name: Deploy to GitHub Pages
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: docs/site
+          publish_dir: site
