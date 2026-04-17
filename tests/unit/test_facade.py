@@ -15,6 +15,7 @@ class TestPublicFacade:
         expected = {
             "connect",
             "PicSureError",
+            "Platform",
             "Session",
             "FacetSet",
             "createClause",
@@ -48,3 +49,7 @@ class TestPublicFacade:
 
     def test_query_is_importable(self):
         assert picsure.Query is not None
+
+    def test_platform_is_importable(self):
+        assert picsure.Platform.BDC_AUTHORIZED.url.startswith("https://")
+        assert picsure.Platform.BDC_DEV_OPEN.requires_auth is False

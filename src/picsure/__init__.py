@@ -7,6 +7,7 @@ from picsure._models.query import Query
 from picsure._models.session import Session
 from picsure._services.connect import connect
 from picsure._services.query_build import buildClauseGroup, createClause
+from picsure._transport.platforms import Platform
 from picsure.errors import PicSureError
 
 __all__ = [
@@ -19,6 +20,7 @@ __all__ = [
     "FacetSet",
     "GroupOperator",
     "PicSureError",
+    "Platform",
     "Query",
     "Session",
 ]
