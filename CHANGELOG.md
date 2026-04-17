@@ -30,3 +30,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `Session.exportCSV()` and `Session.exportTSV()` to save DataFrames to disk.
 - `PicSureClient.post_raw()` for non-JSON response handling.
 - Query type validation with actionable error messages ("count", "participant", "timestamp").
+- Documentation site with MkDocs + Material theme.
+- Auto-generated API reference from docstrings via mkdocstrings.
+- User guides: search, facets, query building, running, and exporting.
+- Migration guide from PicSureHpdsLib with side-by-side examples.
+- Docs CI workflow: build on PR, deploy to GitHub Pages on push to main.

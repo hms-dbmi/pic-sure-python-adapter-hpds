@@ -6,8 +6,6 @@ data — all from a Jupyter notebook.
 
 ## Installation
 
-### pip
-
 ```bash
 pip install picsure
 ```
@@ -18,36 +16,37 @@ For PFB export support:
 pip install picsure[pfb]
 ```
 
-### uv
-
-```bash
-uv add picsure
-```
-
-For PFB export support:
-
-```bash
-uv add picsure[pfb]
-```
-
 ## Quickstart
 
 ```python
 import picsure
+from picsure import ClauseType, GroupOperator
 
+# Connect to PIC-SURE
 session = picsure.connect(platform="BDC Authorized", token="your-token")
 
 # Search the data dictionary
 results = session.search("blood pressure")
 
-# See your available resources
-session.getResourceID()
+# Build a query
+sex = picsure.createClause(r"\phs1\sex\", type=ClauseType.FILTER, categories="Male")
+age = picsure.createClause(r"\phs1\age\", type=ClauseType.FILTER, min=40)
+query = picsure.buildClauseGroup([sex, age], root=GroupOperator.AND)
+
+# Run and export
+count = session.runQuery(query, type="count")
+df = session.runQuery(query, type="participant")
+session.exportCSV(df, "cohort.csv")
 ```
 
 ## Documentation
 
-Full documentation including API reference and tutorial notebooks is
-available at the project documentation site.
+- **[Getting Started](docs/getting-started.md)** — connect and run your first query
+- **[Search & Facets](docs/guides/search-and-facets.md)** — search the dictionary with facet filters
+- **[Building Queries](docs/guides/building-queries.md)** — nested AND/OR clause groups
+- **[Running & Exporting](docs/guides/running-and-exporting.md)** — counts, DataFrames, CSV/TSV/PFB
+- **[API Reference](docs/reference/api.md)** — complete function documentation
+- **[Migration Guide](docs/guides/migrating-from-picsurehpdslib.md)** — upgrading from PicSureHpdsLib
 
 ## License
 
