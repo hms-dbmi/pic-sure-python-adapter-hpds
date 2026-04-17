@@ -21,12 +21,14 @@ class DictionaryEntry:
         values: list[str] = (
             [str(v) for v in raw_values] if isinstance(raw_values, list) else []
         )
+        data_type_raw = data.get("type", data.get("dataType", ""))
+        study_id_raw = data.get("dataset", data.get("studyId", ""))
         return cls(
             concept_path=str(data.get("conceptPath", "")),
             name=str(data.get("name", "")),
             display=str(data.get("display", "")),
-            description=str(data.get("description", "")),
-            data_type=str(data.get("dataType", "")),
-            study_id=str(data.get("studyId", "")),
+            description=str(data.get("description") or ""),
+            data_type=str(data_type_raw),
+            study_id=str(study_id_raw),
             values=values,
         )

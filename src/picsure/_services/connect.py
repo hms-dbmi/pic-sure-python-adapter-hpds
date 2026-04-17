@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from picsure._models.resource import Resource
 from picsure._models.session import Session
+from picsure._services.consents import fetch_consents
+from picsure._services.search import fetch_total_concepts
 from picsure._transport.client import PicSureClient
 from picsure._transport.errors import (
     TransportAuthenticationError,
@@ -15,23 +17,39 @@ from picsure.errors import PicSureAuthError, PicSureConnectionError
 _PSAMA_PROFILE_PATH = "/psama/user/me"
 _PICSURE_RESOURCES_PATH = "/picsure/info/resources"
 
+_ANONYMOUS_EMAIL = "anonymous"
+_ANONYMOUS_EXPIRATION = "N/A"
+
 
 def connect(
     platform: Platform | str,
-    token: str,
+    token: str = "",
     resource_uuid: str | None = None,
+    *,
+    include_consents: bool | None = None,
+    requires_auth: bool | None = None,
 ) -> Session:
-    """Connect to a PIC-SURE instance and return an authenticated Session.
+    """Connect to a PIC-SURE instance and return a Session.
 
     Args:
         platform: A :class:`Platform` enum member (e.g.
             ``Platform.BDC_AUTHORIZED``) or a full URL
             (e.g. ``"https://my-picsure.example.com"``).
-        token: Your PIC-SURE API token.
+        token: Your PIC-SURE API token.  Leave empty for open-access
+            platforms (e.g. ``Platform.BDC_OPEN``) that don't require
+            authentication.
         resource_uuid: Optional resource UUID to use. Overrides the
             default UUID from the Platform enum. Required for custom
             URLs — if omitted, call ``session.setResourceID(uuid)``
             after reviewing ``session.getResourceID()``.
+        include_consents: Override the platform's consent policy.  For
+            known Platform members this defaults to the member's own
+            flag; for custom URLs it defaults to ``False``.  Pass
+            ``True`` to fetch the consent list from PSAMA on connect.
+        requires_auth: Override the platform's auth requirement.  Known
+            Platform members default to their own flag; custom URLs
+            default to ``True``.  Pass ``False`` to skip the PSAMA
+            profile call on an open-access deployment.
 
     Returns:
         A Session you can use to search, build queries, and export data.
@@ -48,22 +66,38 @@ def connect(
         ... )
         You're successfully connected to BDC Authorized as user you@email.com!
         Your token expires on 2026-06-15T00:00:00Z.
+
+        >>> # Open-access: no token needed
+        >>> session = picsure.connect(platform=picsure.Platform.BDC_OPEN)
     """
-    info = resolve_platform(platform)
+    info = resolve_platform(
+        platform,
+        include_consents=include_consents,
+        requires_auth=requires_auth,
+    )
     display_name = platform.label if isinstance(platform, Platform) else platform
     client = PicSureClient(base_url=info.url, token=token)
 
-    profile = _fetch_profile(client, display_name, info.url)
-    resources = _fetch_resources(client, display_name)
+    if info.requires_auth:
+        profile = _fetch_profile(client, display_name, info.url)
+        email = str(profile.get("email", "unknown"))
+        expiration = str(profile.get("expirationDate", "unknown"))
+    else:
+        email = _ANONYMOUS_EMAIL
+        expiration = _ANONYMOUS_EXPIRATION
 
-    email = str(profile.get("email", "unknown"))
-    expiration = str(profile.get("expirationDate", "unknown"))
+    resources = _fetch_resources(client, display_name, info.requires_auth)
+    consents = fetch_consents(client) if info.include_consents else []
+    total_concepts = fetch_total_concepts(client, consents=consents)
 
     # Explicit resource_uuid wins, then Platform default, then None.
     effective_uuid = resource_uuid if resource_uuid is not None else info.resource_uuid
 
-    print(f"You're successfully connected to {display_name} as user {email}!")
-    print(f"Your token expires on {expiration}.")
+    if info.requires_auth:
+        print(f"You're successfully connected to {display_name} as user {email}!")
+        print(f"Your token expires on {expiration}.")
+    else:
+        print(f"You're successfully connected to {display_name} (open access).")
 
     if effective_uuid is None and resources:
         print("\nAvailable resources:")
@@ -80,6 +114,8 @@ def connect(
         token_expiration=expiration,
         resources=resources,
         resource_uuid=effective_uuid,
+        consents=consents,
+        total_concepts=total_concepts,
     )
 
 
@@ -100,9 +136,18 @@ def _fetch_profile(
         ) from exc
 
 
-def _fetch_resources(client: PicSureClient, display_name: str) -> list[Resource]:
+def _fetch_resources(
+    client: PicSureClient, display_name: str, requires_auth: bool
+) -> list[Resource]:
     try:
         data = client.get_json(_PICSURE_RESOURCES_PATH)
+    except TransportAuthenticationError:
+        # Open-access deployments may gate /info/resources behind auth
+        # even though the dictionary-api is public.  Silently degrade
+        # to no resources so search/facets still work.
+        if not requires_auth:
+            return []
+        raise
     except TransportError as exc:
         raise PicSureConnectionError(
             f"Connected to {display_name} but could not fetch resources. "

@@ -27,8 +27,7 @@ def pytest_collection_modifyitems(
 
 @pytest.fixture()
 def test_token() -> str:
-    if not PICSURE_TEST_TOKEN:
-        pytest.skip("PICSURE_TEST_TOKEN not set")
+    """Return the configured token, or an empty string for open-access runs."""
     return PICSURE_TEST_TOKEN
 
 

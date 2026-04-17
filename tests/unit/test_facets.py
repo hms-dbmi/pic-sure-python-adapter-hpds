@@ -5,11 +5,25 @@ from picsure.errors import PicSureValidationError
 
 
 class TestFacet:
-    def test_from_dict(self):
+    def test_from_dict_new_shape(self):
+        data = {
+            "name": "phs000007",
+            "display": "FHS (phs000007)",
+            "description": "Framingham Cohort",
+            "count": 54984,
+        }
+        facet = Facet.from_dict(data)
+        assert facet.value == "phs000007"
+        assert facet.display == "FHS (phs000007)"
+        assert facet.description == "Framingham Cohort"
+        assert facet.count == 54984
+
+    def test_from_dict_legacy_value_key(self):
         data = {"value": "phs000007", "count": 42}
         facet = Facet.from_dict(data)
         assert facet.value == "phs000007"
         assert facet.count == 42
+        assert facet.display == ""
 
     def test_frozen(self):
         facet = Facet(value="test", count=10)
@@ -18,7 +32,26 @@ class TestFacet:
 
 
 class TestFacetCategory:
-    def test_from_dict(self):
+    def test_from_dict_new_shape(self):
+        data = {
+            "name": "dataset_id",
+            "display": "Dataset",
+            "description": "First node of concept path",
+            "facets": [
+                {"name": "phs000007", "display": "FHS (phs000007)", "count": 42},
+                {"name": "phs000179", "display": "COPDGene (phs000179)", "count": 15},
+            ],
+        }
+        cat = FacetCategory.from_dict(data)
+        assert cat.name == "dataset_id"
+        assert cat.display == "Dataset"
+        assert cat.description == "First node of concept path"
+        assert len(cat.options) == 2
+        assert cat.options[0].value == "phs000007"
+        assert cat.options[0].display == "FHS (phs000007)"
+        assert cat.options[1].count == 15
+
+    def test_from_dict_legacy_shape(self):
         data = {
             "name": "study_ids",
             "display": "Study",
@@ -28,21 +61,18 @@ class TestFacetCategory:
             ],
         }
         cat = FacetCategory.from_dict(data)
-        assert cat.name == "study_ids"
-        assert cat.display == "Study"
-        assert len(cat.options) == 2
         assert cat.options[0].value == "phs000007"
         assert cat.options[1].count == 15
 
-    def test_from_dict_empty_categories(self):
-        data = {"name": "empty", "display": "Empty", "categories": []}
+    def test_from_dict_empty_options(self):
+        data = {"name": "empty", "display": "Empty", "facets": []}
         cat = FacetCategory.from_dict(data)
         assert cat.options == []
 
-    def test_from_dict_list_from_fixture(self, search_response):
-        cats = [FacetCategory.from_dict(f) for f in search_response["facets"]]
+    def test_from_dict_list_from_fixture(self, facets_response):
+        cats = [FacetCategory.from_dict(f) for f in facets_response]
         assert len(cats) == 2
-        assert cats[0].name == "study_ids"
+        assert cats[0].name == "dataset_id"
         assert cats[1].name == "data_type"
 
     def test_frozen(self):

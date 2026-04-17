@@ -8,8 +8,8 @@ class TestDictionaryEntry:
             "name": "sex",
             "display": "Sex of participant",
             "description": "Biological sex",
-            "dataType": "categorical",
-            "studyId": "phs000007",
+            "type": "categorical",
+            "dataset": "phs000007",
             "values": ["Male", "Female"],
         }
         entry = DictionaryEntry.from_dict(data)
@@ -20,6 +20,22 @@ class TestDictionaryEntry:
         assert entry.data_type == "categorical"
         assert entry.study_id == "phs000007"
         assert entry.values == ["Male", "Female"]
+
+    def test_from_dict_null_description(self):
+        data = {"conceptPath": "\\x\\", "name": "x", "description": None}
+        entry = DictionaryEntry.from_dict(data)
+        assert entry.description == ""
+
+    def test_from_dict_legacy_field_names(self):
+        data = {
+            "conceptPath": "\\p\\",
+            "name": "v",
+            "dataType": "categorical",
+            "studyId": "phs000007",
+        }
+        entry = DictionaryEntry.from_dict(data)
+        assert entry.data_type == "categorical"
+        assert entry.study_id == "phs000007"
 
     def test_from_dict_missing_optional_fields(self):
         data = {
@@ -39,7 +55,7 @@ class TestDictionaryEntry:
         data = {
             "conceptPath": "\\path\\",
             "name": "age",
-            "dataType": "continuous",
+            "type": "continuous",
             "values": [],
         }
         entry = DictionaryEntry.from_dict(data)
@@ -56,7 +72,7 @@ class TestDictionaryEntry:
         assert not hasattr(entry, "unknownField")
 
     def test_from_dict_list_from_fixture(self, search_response):
-        entries = [DictionaryEntry.from_dict(r) for r in search_response["results"]]
+        entries = [DictionaryEntry.from_dict(r) for r in search_response["content"]]
         assert len(entries) == 3
         assert entries[0].concept_path == "\\phs000007\\pht000001\\phv00001\\sex\\"
         assert entries[0].study_id == "phs000007"

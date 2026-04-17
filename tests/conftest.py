@@ -20,8 +20,14 @@ def resources_response() -> dict[str, str]:
 
 @pytest.fixture()
 def search_response() -> dict:
-    """Sample /picsure/search/{resourceId} response."""
+    """Sample /picsure/proxy/dictionary-api/concepts response."""
     return json.loads((_FIXTURES_DIR / "dictionary_search.json").read_text())
+
+
+@pytest.fixture()
+def facets_response() -> list:
+    """Sample /picsure/proxy/dictionary-api/facets response (top-level array)."""
+    return json.loads((_FIXTURES_DIR / "facets_response.json").read_text())
 
 
 @pytest.fixture()

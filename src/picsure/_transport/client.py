@@ -17,13 +17,13 @@ class PicSureClient:
     connection errors, and translation to internal transport exceptions.
     """
 
-    def __init__(self, base_url: str, token: str) -> None:
+    def __init__(self, base_url: str, token: str = "") -> None:
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
         self._http = httpx.Client(
             base_url=base_url,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-            },
+            headers=headers,
             timeout=_TIMEOUT_SECONDS,
         )
 

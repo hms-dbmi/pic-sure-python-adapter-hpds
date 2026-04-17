@@ -8,17 +8,28 @@ from picsure.errors import PicSureValidationError
 
 @dataclass(frozen=True)
 class Facet:
-    """A single facet option with its count."""
+    """A single facet option with its count.
+
+    ``value`` is the identifier used when filtering (e.g. the study
+    dbGaP accession ``phs000007``).  ``display`` is a human-readable
+    label (e.g. ``"FHS (phs000007)"``).  ``description`` is an
+    optional longer description from the server.
+    """
 
     value: str
     count: int
+    display: str = ""
+    description: str = ""
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> Facet:
         raw_count = data.get("count", 0)
+        raw_value = data.get("name", data.get("value"))
         return cls(
-            value=str(data["value"]),
+            value=str(raw_value) if raw_value is not None else "",
             count=int(cast(int, raw_count)),
+            display=str(data.get("display") or ""),
+            description=str(data.get("description") or ""),
         )
 
 
@@ -29,19 +40,21 @@ class FacetCategory:
     name: str
     display: str
     options: list[Facet] = field(default_factory=list)
+    description: str = ""
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> FacetCategory:
-        raw_cats = data.get("categories", [])
+        raw_options = data.get("facets", data.get("categories", []))
         options: list[Facet] = (
-            [Facet.from_dict(cast(dict[str, object], c)) for c in raw_cats]
-            if isinstance(raw_cats, list)
+            [Facet.from_dict(cast(dict[str, object], c)) for c in raw_options]
+            if isinstance(raw_options, list)
             else []
         )
         return cls(
             name=str(data.get("name", "")),
             display=str(data.get("display", "")),
             options=options,
+            description=str(data.get("description") or ""),
         )
 
 

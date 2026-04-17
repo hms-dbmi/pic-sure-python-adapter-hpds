@@ -29,6 +29,28 @@ class TestPicSureClient:
         assert request.headers["authorization"] == f"Bearer {TOKEN}"
 
     @respx.mock
+    def test_empty_token_omits_auth_header(self):
+        route = respx.get(f"{BASE_URL}/some/path").mock(
+            return_value=httpx.Response(200, json={"ok": True})
+        )
+
+        client = PicSureClient(base_url=BASE_URL, token="")
+        client.get_json("/some/path")
+
+        assert "authorization" not in route.calls[0].request.headers
+
+    @respx.mock
+    def test_default_token_omits_auth_header(self):
+        route = respx.get(f"{BASE_URL}/some/path").mock(
+            return_value=httpx.Response(200, json={"ok": True})
+        )
+
+        client = PicSureClient(base_url=BASE_URL)
+        client.get_json("/some/path")
+
+        assert "authorization" not in route.calls[0].request.headers
+
+    @respx.mock
     def test_post_json_sends_body_and_auth_header(self):
         route = respx.post(f"{BASE_URL}/query").mock(
             return_value=httpx.Response(200, json={"count": 42})

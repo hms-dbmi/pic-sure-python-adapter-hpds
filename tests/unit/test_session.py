@@ -75,6 +75,33 @@ class TestSession:
         session = _make_session()
         assert session._resource_uuid is None
 
+    def test_consents_default_to_empty(self):
+        session = _make_session()
+        assert session.consents == []
+
+    def test_consents_stored(self):
+        client = MagicMock()
+        session = Session(
+            client=client,
+            user_email="u@e.com",
+            token_expiration="",
+            resources=[],
+            consents=["phs000007.c1", "phs000179.c1"],
+        )
+        assert session.consents == ["phs000007.c1", "phs000179.c1"]
+
+    def test_consents_property_returns_copy(self):
+        client = MagicMock()
+        session = Session(
+            client=client,
+            user_email="u@e.com",
+            token_expiration="",
+            resources=[],
+            consents=["phs000007.c1"],
+        )
+        session.consents.append("phs999999.c9")
+        assert session.consents == ["phs000007.c1"]
+
     def test_set_resource_id(self):
         session = _make_session()
         session.setResourceID("uuid-1")
@@ -177,10 +204,16 @@ def _make_live_session(
     )
 
 
+_CONCEPTS_URL = (
+    f"{BASE_URL}/picsure/proxy/dictionary-api/concepts?page_number=0&page_size=100"
+)
+_FACETS_URL = f"{BASE_URL}/picsure/proxy/dictionary-api/facets"
+
+
 class TestSessionSearch:
     @respx.mock
     def test_search_returns_dataframe(self, search_response):
-        respx.post(f"{BASE_URL}/picsure/search/resource-uuid-aaaa-1111").mock(
+        respx.post(_CONCEPTS_URL).mock(
             return_value=httpx.Response(200, json=search_response)
         )
 
@@ -192,7 +225,7 @@ class TestSessionSearch:
 
     @respx.mock
     def test_search_empty_term(self, search_response):
-        respx.post(f"{BASE_URL}/picsure/search/resource-uuid-aaaa-1111").mock(
+        respx.post(_CONCEPTS_URL).mock(
             return_value=httpx.Response(200, json=search_response)
         )
 
@@ -201,12 +234,31 @@ class TestSessionSearch:
 
         assert isinstance(df, pd.DataFrame)
 
+    @respx.mock
+    def test_search_forwards_consents(self, search_response):
+        route = respx.post(_CONCEPTS_URL).mock(
+            return_value=httpx.Response(200, json=search_response)
+        )
+        from picsure._transport.client import PicSureClient
+
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+        session = Session(
+            client=client,
+            user_email="u@e.com",
+            token_expiration="",
+            resources=[Resource(uuid="r", name="t", description="")],
+            consents=["phs000007.c1"],
+        )
+        session.search("age")
+        body = __import__("json").loads(route.calls[0].request.content)
+        assert body["consents"] == ["phs000007.c1"]
+
 
 class TestSessionFacets:
     @respx.mock
-    def test_facets_returns_facet_set(self, search_response):
-        respx.post(f"{BASE_URL}/picsure/search/resource-uuid-aaaa-1111").mock(
-            return_value=httpx.Response(200, json=search_response)
+    def test_facets_returns_facet_set(self, facets_response):
+        respx.post(_FACETS_URL).mock(
+            return_value=httpx.Response(200, json=facets_response)
         )
 
         session = _make_live_session()
@@ -216,31 +268,38 @@ class TestSessionFacets:
 
         assert isinstance(fs, FacetSet)
         view = fs.view()
-        assert "study_ids" in view
+        assert "dataset_id" in view
         assert "data_type" in view
 
     @respx.mock
-    def test_facets_can_add_and_use_in_search(self, search_response):
-        route = respx.post(f"{BASE_URL}/picsure/search/resource-uuid-aaaa-1111").mock(
+    def test_facets_can_add_and_use_in_search(
+        self, facets_response, search_response
+    ):
+        respx.post(_FACETS_URL).mock(
+            return_value=httpx.Response(200, json=facets_response)
+        )
+        concepts_route = respx.post(_CONCEPTS_URL).mock(
             return_value=httpx.Response(200, json=search_response)
         )
 
         session = _make_live_session()
         fs = session.facets()
-        fs.add("study_ids", "phs000007")
+        fs.add("dataset_id", "phs000007")
         session.search("sex", facets=fs)
 
         import json
 
-        last_body = json.loads(route.calls[-1].request.content)
-        assert last_body["query"]["includedFacets"][0]["name"] == "study_ids"
+        last_body = json.loads(concepts_route.calls[-1].request.content)
+        assert last_body["facets"] == [
+            {"name": "dataset_id", "values": ["phs000007"]}
+        ]
 
 
 class TestSessionShowAllFacets:
     @respx.mock
-    def test_show_all_facets_returns_dataframe(self, search_response):
-        respx.post(f"{BASE_URL}/picsure/search/resource-uuid-aaaa-1111").mock(
-            return_value=httpx.Response(200, json=search_response)
+    def test_show_all_facets_returns_dataframe(self, facets_response):
+        respx.post(_FACETS_URL).mock(
+            return_value=httpx.Response(200, json=facets_response)
         )
 
         session = _make_live_session()

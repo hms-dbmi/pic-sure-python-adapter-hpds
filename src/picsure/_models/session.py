@@ -29,12 +29,35 @@ class Session:
         token_expiration: str,
         resources: list[Resource],
         resource_uuid: str | None = None,
+        consents: list[str] | None = None,
+        total_concepts: int = 0,
     ) -> None:
         self._client = client
         self._user_email = user_email
         self._token_expiration = token_expiration
         self._resources = resources
         self._resource_uuid = resource_uuid
+        self._consents: list[str] = list(consents) if consents else []
+        self._total_concepts = total_concepts
+
+    @property
+    def consents(self) -> list[str]:
+        """Study-consent identifiers the user is authorized for.
+
+        Empty list on open-access deployments.  Dictionary-api calls
+        on authorized deployments must include this list in the request
+        body so the backend scopes results to accessible studies.
+        """
+        return list(self._consents)
+
+    @property
+    def total_concepts(self) -> int:
+        """Total number of concepts in the data dictionary.
+
+        Captured at connect time and used as the page size for search
+        requests so every result comes back in one page.
+        """
+        return self._total_concepts
 
     def getResourceID(self) -> pd.DataFrame:
         """Return resource IDs and metadata as a DataFrame."""
@@ -118,10 +141,11 @@ class Session:
 
         return _search(
             self._client,
-            self._default_resource_uuid(),
-            term,
-            facets,
-            include_values,
+            term=term,
+            facets=facets,
+            include_values=include_values,
+            consents=self._consents,
+            page_size=self._total_concepts,
         )
 
     def facets(self) -> FacetSet:
@@ -138,7 +162,7 @@ class Session:
         from picsure._models.facet import FacetSet as _FacetSet
         from picsure._services.search import fetch_facets
 
-        available = fetch_facets(self._client, self._default_resource_uuid())
+        available = fetch_facets(self._client, consents=self._consents)
         return _FacetSet(available)
 
     def showAllFacets(self) -> pd.DataFrame:
@@ -149,7 +173,7 @@ class Session:
         """
         from picsure._services.search import show_all_facets
 
-        return show_all_facets(self._client, self._default_resource_uuid())
+        return show_all_facets(self._client, consents=self._consents)
 
     def runQuery(  # noqa: N802
         self,

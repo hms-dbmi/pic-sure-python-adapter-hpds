@@ -23,6 +23,34 @@ class TestPlatformEnum:
         for p in Platform:
             assert p.label
 
+    def test_authorized_platforms_include_consents(self):
+        assert Platform.BDC_AUTHORIZED.include_consents is True
+        assert Platform.BDC_DEV_AUTHORIZED.include_consents is True
+        assert Platform.BDC_PREDEV_AUTHORIZED.include_consents is True
+
+    def test_open_platforms_do_not_include_consents(self):
+        assert Platform.BDC_OPEN.include_consents is False
+        assert Platform.BDC_DEV_OPEN.include_consents is False
+        assert Platform.BDC_PREDEV_OPEN.include_consents is False
+
+    def test_aim_ahead_includes_consents(self):
+        assert Platform.AIM_AHEAD.include_consents is True
+
+    def test_demo_does_not_include_consents(self):
+        assert Platform.DEMO.include_consents is False
+
+    def test_authorized_platforms_require_auth(self):
+        assert Platform.BDC_AUTHORIZED.requires_auth is True
+        assert Platform.BDC_DEV_AUTHORIZED.requires_auth is True
+        assert Platform.BDC_PREDEV_AUTHORIZED.requires_auth is True
+        assert Platform.AIM_AHEAD.requires_auth is True
+
+    def test_open_platforms_do_not_require_auth(self):
+        assert Platform.BDC_OPEN.requires_auth is False
+        assert Platform.BDC_DEV_OPEN.requires_auth is False
+        assert Platform.BDC_PREDEV_OPEN.requires_auth is False
+        assert Platform.DEMO.requires_auth is False
+
 
 class TestResolvePlatform:
     def test_known_platform_returns_platform_info(self):
@@ -30,6 +58,14 @@ class TestResolvePlatform:
         assert isinstance(info, PlatformInfo)
         assert info.url == Platform.BDC_AUTHORIZED.url
         assert info.resource_uuid == Platform.BDC_AUTHORIZED.resource_uuid
+
+    def test_known_platform_propagates_include_consents(self):
+        assert resolve_platform(Platform.BDC_AUTHORIZED).include_consents is True
+        assert resolve_platform(Platform.BDC_OPEN).include_consents is False
+
+    def test_known_platform_include_consents_override(self):
+        info = resolve_platform(Platform.BDC_OPEN, include_consents=True)
+        assert info.include_consents is True
 
     def test_bdc_open_returns_same_url_different_uuid(self):
         auth = resolve_platform(Platform.BDC_AUTHORIZED)
@@ -41,6 +77,34 @@ class TestResolvePlatform:
         info = resolve_platform("https://my-picsure.example.com")
         assert info.url == "https://my-picsure.example.com"
         assert info.resource_uuid is None
+
+    def test_custom_url_defaults_to_no_consents(self):
+        info = resolve_platform("https://my-picsure.example.com")
+        assert info.include_consents is False
+
+    def test_custom_url_include_consents_override(self):
+        info = resolve_platform(
+            "https://my-picsure.example.com", include_consents=True
+        )
+        assert info.include_consents is True
+
+    def test_known_platform_propagates_requires_auth(self):
+        assert resolve_platform(Platform.BDC_AUTHORIZED).requires_auth is True
+        assert resolve_platform(Platform.BDC_OPEN).requires_auth is False
+
+    def test_known_platform_requires_auth_override(self):
+        info = resolve_platform(Platform.BDC_AUTHORIZED, requires_auth=False)
+        assert info.requires_auth is False
+
+    def test_custom_url_defaults_to_requires_auth(self):
+        info = resolve_platform("https://my-picsure.example.com")
+        assert info.requires_auth is True
+
+    def test_custom_url_requires_auth_override(self):
+        info = resolve_platform(
+            "https://my-picsure.example.com", requires_auth=False
+        )
+        assert info.requires_auth is False
 
     def test_custom_url_http(self):
         info = resolve_platform("http://localhost:8080")

@@ -1,0 +1,52 @@
+[
+    {
+        "name": "dataset_id",
+        "display": "Dataset",
+        "description": "First node of concept path",
+        "facets": [
+            {
+                "name": "phs000007",
+                "display": "FHS (phs000007)",
+                "description": "Framingham Cohort",
+                "count": 54984,
+                "children": [],
+                "category": "dataset_id",
+                "meta": null
+            },
+            {
+                "name": "phs000179",
+                "display": "COPDGene (phs000179)",
+                "description": "Genetic Epidemiology of COPD",
+                "count": 1023,
+                "children": [],
+                "category": "dataset_id",
+                "meta": null
+            }
+        ]
+    },
+    {
+        "name": "data_type",
+        "display": "Type of Variable",
+        "description": "Continuous or categorical",
+        "facets": [
+            {
+                "name": "categorical",
+                "display": "Categorical",
+                "description": "",
+                "count": 282035,
+                "children": [],
+                "category": "data_type",
+                "meta": null
+            },
+            {
+                "name": "continuous",
+                "display": "Continuous",
+                "description": "",
+                "count": 205326,
+                "children": [],
+                "category": "data_type",
+                "meta": null
+            }
+        ]
+    }
+]
