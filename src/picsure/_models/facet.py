@@ -97,12 +97,42 @@ class FacetSet:
             self._selected.clear()
 
     def to_request_facets(self) -> list[dict[str, object]]:
-        """Serialize selected facets for the search request body."""
-        return [
-            {"name": name, "values": values}
-            for name, values in self._selected.items()
-            if values
-        ]
+        """Serialize selected facets for the concepts/facets request body.
+
+        The backend expects each selected option to arrive as the full
+        facet object (the shape returned by ``/dictionary-api/facets``)
+        with an added ``categoryRef`` pointing back at its category.
+        """
+        result: list[dict[str, object]] = []
+        for cat_name, values in self._selected.items():
+            if not values:
+                continue
+            cat = self._available[cat_name]
+            category_ref = {
+                "name": cat.name,
+                "display": cat.display,
+                "description": cat.description,
+            }
+            by_value = {opt.value: opt for opt in cat.options}
+            for value in values:
+                opt = by_value.get(value)
+                display = opt.display if opt is not None else value
+                description = opt.description if opt is not None else ""
+                count = opt.count if opt is not None else 0
+                result.append(
+                    {
+                        "name": value,
+                        "display": display,
+                        "description": description,
+                        "fullName": None,
+                        "count": count,
+                        "children": [],
+                        "category": cat.name,
+                        "meta": None,
+                        "categoryRef": category_ref,
+                    }
+                )
+        return result
 
     def _validate_category(self, category: str) -> None:
         if category not in self._available:

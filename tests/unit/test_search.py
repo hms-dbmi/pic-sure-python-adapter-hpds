@@ -88,13 +88,45 @@ class TestSearch:
         route = respx.post(_concepts_url(100)).mock(
             return_value=httpx.Response(200, json=search_response)
         )
-        categories = [FacetCategory(name="dataset_id", display="Dataset", options=[])]
+        from picsure._models.facet import Facet
+
+        categories = [
+            FacetCategory(
+                name="dataset_id",
+                display="Dataset",
+                description="First node of concept path",
+                options=[
+                    Facet(
+                        value="phs000007",
+                        count=54984,
+                        display="FHS (phs000007)",
+                        description="Framingham Cohort",
+                    )
+                ],
+            )
+        ]
         facets = FacetSet(categories)
         facets.add("dataset_id", "phs000007")
 
         search(_make_client(), term="sex", facets=facets)
         body = json.loads(route.calls[0].request.content)
-        assert body["facets"] == [{"name": "dataset_id", "values": ["phs000007"]}]
+        assert body["facets"] == [
+            {
+                "name": "phs000007",
+                "display": "FHS (phs000007)",
+                "description": "Framingham Cohort",
+                "fullName": None,
+                "count": 54984,
+                "children": [],
+                "category": "dataset_id",
+                "meta": None,
+                "categoryRef": {
+                    "name": "dataset_id",
+                    "display": "Dataset",
+                    "description": "First node of concept path",
+                },
+            }
+        ]
 
     @respx.mock
     def test_consents_included_when_provided(self, search_response):

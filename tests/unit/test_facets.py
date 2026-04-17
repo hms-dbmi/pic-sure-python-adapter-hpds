@@ -146,10 +146,40 @@ class TestFacetSet:
         fs.add("data_type", "categorical")
         result = fs.to_request_facets()
         assert len(result) == 2
+        categories = {r["category"] for r in result}
+        assert categories == {"study_ids", "data_type"}
+        study_facet = next(r for r in result if r["category"] == "study_ids")
+        assert study_facet["name"] == "phs000007"
+        assert study_facet["count"] == 42
+        assert study_facet["categoryRef"] == {
+            "name": "study_ids",
+            "display": "Study",
+            "description": "",
+        }
+        assert study_facet["children"] == []
+        assert study_facet["fullName"] is None
+        assert study_facet["meta"] is None
+
+    def test_to_request_facets_multiple_values_same_category(self):
+        fs = self._make_facet_set()
+        fs.add("study_ids", ["phs000007", "phs000179"])
+        result = fs.to_request_facets()
+        assert len(result) == 2
         names = {r["name"] for r in result}
-        assert names == {"study_ids", "data_type"}
-        study_facet = next(r for r in result if r["name"] == "study_ids")
-        assert study_facet["values"] == ["phs000007"]
+        assert names == {"phs000007", "phs000179"}
+        for entry in result:
+            assert entry["category"] == "study_ids"
+            assert entry["categoryRef"]["name"] == "study_ids"
+
+    def test_to_request_facets_unknown_value_falls_back(self):
+        fs = self._make_facet_set()
+        # Skip validation by reaching into internal state so we can
+        # exercise the "not in catalog" branch.
+        fs._selected["study_ids"] = ["phs999999"]
+        result = fs.to_request_facets()
+        assert result[0]["name"] == "phs999999"
+        assert result[0]["display"] == "phs999999"
+        assert result[0]["count"] == 0
 
     def test_clear(self):
         fs = self._make_facet_set()

@@ -17,7 +17,7 @@ class TestPlatformEnum:
 
     def test_all_members_have_resource_uuid(self):
         for p in Platform:
-            assert p.resource_uuid
+            assert isinstance(p.resource_uuid, str)
 
     def test_all_members_have_label(self):
         for p in Platform:
@@ -36,20 +36,22 @@ class TestPlatformEnum:
     def test_aim_ahead_includes_consents(self):
         assert Platform.AIM_AHEAD.include_consents is True
 
-    def test_demo_does_not_include_consents(self):
-        assert Platform.DEMO.include_consents is False
+    def test_nhanes_does_not_include_consents(self):
+        assert Platform.NHANES_AUTHORIZED.include_consents is False
+        assert Platform.NHANES_OPEN.include_consents is False
 
     def test_authorized_platforms_require_auth(self):
         assert Platform.BDC_AUTHORIZED.requires_auth is True
         assert Platform.BDC_DEV_AUTHORIZED.requires_auth is True
         assert Platform.BDC_PREDEV_AUTHORIZED.requires_auth is True
         assert Platform.AIM_AHEAD.requires_auth is True
+        assert Platform.NHANES_AUTHORIZED.requires_auth is True
 
     def test_open_platforms_do_not_require_auth(self):
         assert Platform.BDC_OPEN.requires_auth is False
         assert Platform.BDC_DEV_OPEN.requires_auth is False
         assert Platform.BDC_PREDEV_OPEN.requires_auth is False
-        assert Platform.DEMO.requires_auth is False
+        assert Platform.NHANES_OPEN.requires_auth is False
 
 
 class TestResolvePlatform:
@@ -123,8 +125,8 @@ class TestResolvePlatform:
         with pytest.raises(PicSureValidationError, match="BDC Authorized"):
             resolve_platform("typo")
 
-    def test_demo_resolves(self):
-        info = resolve_platform(Platform.DEMO)
+    def test_nhanes_open_resolves(self):
+        info = resolve_platform(Platform.NHANES_OPEN)
         assert info.url.startswith("https://")
         assert info.resource_uuid is not None
 

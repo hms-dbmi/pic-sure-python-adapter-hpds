@@ -290,9 +290,11 @@ class TestSessionFacets:
         import json
 
         last_body = json.loads(concepts_route.calls[-1].request.content)
-        assert last_body["facets"] == [
-            {"name": "dataset_id", "values": ["phs000007"]}
-        ]
+        assert len(last_body["facets"]) == 1
+        sent = last_body["facets"][0]
+        assert sent["category"] == "dataset_id"
+        assert sent["name"] == "phs000007"
+        assert sent["categoryRef"]["name"] == "dataset_id"
 
 
 class TestSessionShowAllFacets:
