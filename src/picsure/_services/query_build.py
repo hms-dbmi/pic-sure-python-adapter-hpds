@@ -29,6 +29,19 @@ def createClause(  # noqa: N802
 
     Raises:
         PicSureValidationError: If the clause configuration is invalid.
+
+    Example:
+        >>> from picsure import createClause, ClauseType
+        >>> sex = createClause(
+        ...     r"\\phs1\\pht1\\phv1\\sex\\",
+        ...     type=ClauseType.FILTER,
+        ...     categories="Male",
+        ... )
+        >>> age = createClause(
+        ...     r"\\phs1\\pht1\\phv5\\age\\",
+        ...     type=ClauseType.FILTER,
+        ...     min=40.0,
+        ... )
     """
     if isinstance(keys, str):
         keys = [keys]
@@ -82,6 +95,13 @@ def buildClauseGroup(  # noqa: N802
 
     Raises:
         PicSureValidationError: If the clause list is empty.
+
+    Example:
+        >>> from picsure import buildClauseGroup, GroupOperator
+        >>> group = buildClauseGroup(
+        ...     [sex_filter, age_filter],
+        ...     root=GroupOperator.AND,
+        ... )
     """
     if not clauses:
         raise PicSureValidationError("A clause group must contain at least one clause.")

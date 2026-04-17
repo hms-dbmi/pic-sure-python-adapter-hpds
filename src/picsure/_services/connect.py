@@ -39,6 +39,15 @@ def connect(
     Raises:
         PicSureError: If the token is invalid, the server is unreachable,
             or the platform name is not recognized.
+
+    Example:
+        >>> import picsure
+        >>> session = picsure.connect(
+        ...     platform="BDC Authorized",
+        ...     token="your-api-token",
+        ... )
+        You're successfully connected to BDC Authorized as user you@email.com!
+        Your token expires on 2026-06-15T00:00:00Z.
     """
     info = resolve_platform(platform)
     display_name = platform.label if isinstance(platform, Platform) else platform

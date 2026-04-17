@@ -109,6 +109,10 @@ class Session:
 
         Returns:
             DataFrame of matching data dictionary entries.
+
+        Example:
+            >>> df = session.search("blood pressure")
+            >>> df_filtered = session.search("sex", facets=my_facets)
         """
         from picsure._services.search import search as _search
 
@@ -125,6 +129,11 @@ class Session:
 
         The FacetSet starts with no selections. Use ``add()`` to select
         values, then pass it to ``search()`` to narrow results.
+
+        Example:
+            >>> fs = session.facets()
+            >>> fs.add("study_ids", "phs000007")
+            >>> df = session.search("sex", facets=fs)
         """
         from picsure._models.facet import FacetSet as _FacetSet
         from picsure._services.search import fetch_facets
@@ -156,6 +165,10 @@ class Session:
 
         Returns:
             An integer for count queries, or a DataFrame for data queries.
+
+        Example:
+            >>> count = session.runQuery(my_query, type="count")
+            >>> df = session.runQuery(my_query, type="participant")
         """
         from picsure._services.query_run import run_query
 
