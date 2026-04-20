@@ -34,6 +34,10 @@ class PicSureClient:
         token: str = "",
         dev_config: DevConfig | None = None,
     ) -> None:
+        # BDC's API gateway routes auth based on a "request-source" header:
+        # "Authorized" when a bearer token is present, "Open" otherwise.
+        # Without it, authorized endpoints (e.g. /picsure/v3/query/sync) can
+        # reject tokens that are otherwise valid on PSAMA or the data-dictionary.
         headers = {
             "Content-Type": "application/json",
             "request-source": "Authorized" if token else "Open",
@@ -48,14 +52,20 @@ class PicSureClient:
         self._dev_config = dev_config
 
     def get_json(self, path: str) -> dict:  # type: ignore[type-arg]
+        """Send GET request and return parsed JSON."""
         response = self._request("GET", path, body=None)
         return response.json()  # type: ignore[no-any-return]
 
     def post_json(self, path: str, body: dict | None = None) -> dict:  # type: ignore[type-arg]
+        """Send POST request with JSON body and return parsed JSON."""
         response = self._request("POST", path, body=body)
         return response.json()  # type: ignore[no-any-return]
 
     def post_raw(self, path: str, body: dict | None = None) -> bytes:  # type: ignore[type-arg]
+        """Send POST request with JSON body and return raw response bytes.
+
+        Use this for endpoints that return non-JSON data (CSV, PFB, etc.).
+        """
         response = self._request("POST", path, body=body)
         return response.content
 
