@@ -97,6 +97,29 @@ def test_server_error_after_retries_emits_events_for_each_attempt():
     http_events = [e for e in events if e.kind == "http"]
     assert [e.retry for e in http_events] == [0, 1]
     assert all(e.status == 500 for e in http_events)
+    assert any(
+        e.kind == "error" and e.error == "TransportServerError" for e in events
+    )
+
+
+@respx.mock
+def test_auth_error_emits_error_event_before_raising():
+    from picsure._transport.errors import TransportAuthenticationError
+
+    respx.get(f"{BASE_URL}/denied").mock(
+        return_value=httpx.Response(401, text="nope")
+    )
+    cfg = DevConfig(enabled=True, max_events=10)
+    client = PicSureClient(base_url=BASE_URL, token=TOKEN, dev_config=cfg)
+
+    with pytest.raises(TransportAuthenticationError):
+        client.get_json("/denied")
+
+    events = cfg.buffer.snapshot()
+    assert any(
+        e.kind == "error" and e.error == "TransportAuthenticationError"
+        for e in events
+    )
 
 
 @respx.mock

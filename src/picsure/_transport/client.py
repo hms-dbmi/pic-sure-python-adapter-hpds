@@ -100,11 +100,17 @@ class PicSureClient:
             self._emit_http(method, path, body, response, attempt, start)
 
             if response.status_code in (401, 403):
+                self._emit_error(
+                    method, path, attempt, start, "TransportAuthenticationError"
+                )
                 raise TransportAuthenticationError(response.status_code, response.text)
 
             if response.status_code >= 500:
                 if attempt < _MAX_RETRIES:
                     continue
+                self._emit_error(
+                    method, path, attempt, start, "TransportServerError"
+                )
                 raise TransportServerError(response.status_code, response.text)
 
             return response
