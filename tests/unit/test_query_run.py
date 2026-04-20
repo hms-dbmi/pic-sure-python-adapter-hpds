@@ -217,7 +217,9 @@ class TestRunQueryCrossCount:
     @respx.mock
     def test_sends_cross_count_result_type(self):
         route = respx.post(QUERY_URL).mock(
-            return_value=httpx.Response(200, content=b"42")
+            return_value=httpx.Response(
+                200, content=b'{"\\\\phs000001\\\\": "42"}'
+            )
         )
         client = _make_client()
         run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")
@@ -226,6 +228,63 @@ class TestRunQueryCrossCount:
 
         body = json.loads(route.calls[0].request.content)
         assert body["query"]["expectedResultType"] == "CROSS_COUNT"
+
+    @respx.mock
+    def test_returns_dict_of_count_results(self):
+        # Mirrors the real server shape: concept_path -> count string.
+        # Includes one of each count shape (exact, noisy, suppressed).
+        payload = (
+            '{"\\\\phs000001\\\\consent_a\\\\": "42",'
+            ' "\\\\phs000001\\\\consent_b\\\\": "11309 \u00b13",'
+            ' "\\\\phs000002\\\\": "< 10"}'
+        ).encode()
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=payload))
+        client = _make_client()
+        result = run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")
+
+        assert isinstance(result, dict)
+        assert set(result.keys()) == {
+            "\\phs000001\\consent_a\\",
+            "\\phs000001\\consent_b\\",
+            "\\phs000002\\",
+        }
+        exact = result["\\phs000001\\consent_a\\"]
+        assert isinstance(exact, CountResult)
+        assert exact.value == 42
+        assert exact.obfuscated is False
+
+        noisy = result["\\phs000001\\consent_b\\"]
+        assert noisy.value == 11309
+        assert noisy.margin == 3
+
+        suppressed = result["\\phs000002\\"]
+        assert suppressed.value is None
+        assert suppressed.cap == 10
+
+    @respx.mock
+    def test_malformed_json_raises(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"not json")
+        )
+        client = _make_client()
+        with pytest.raises(PicSureQueryError, match="cross-count"):
+            run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")
+
+    @respx.mock
+    def test_non_object_json_raises(self):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"[1,2,3]"))
+        client = _make_client()
+        with pytest.raises(PicSureQueryError, match="cross-count"):
+            run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")
+
+    @respx.mock
+    def test_invalid_count_value_raises(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b'{"\\\\p\\\\": "banana"}')
+        )
+        client = _make_client()
+        with pytest.raises(PicSureQueryError, match="Expected a count"):
+            run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")
 
 
 class TestRunQueryWithClauseGroup:

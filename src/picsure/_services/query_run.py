@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import re
 
 import pandas as pd
@@ -36,7 +37,7 @@ def run_query(
     resource_uuid: str,
     query: Query,
     query_type: str,
-) -> CountResult | pd.DataFrame:
+) -> CountResult | dict[str, CountResult] | pd.DataFrame:
     """Execute a query against PIC-SURE and return the result.
 
     Args:
@@ -46,7 +47,10 @@ def run_query(
         query_type: One of "count", "participant", "timestamp", or "cross_count".
 
     Returns:
-        An integer for count queries, or a DataFrame for data queries.
+        - ``count``        → :class:`CountResult`
+        - ``cross_count``  → ``dict[str, CountResult]`` keyed by concept path
+        - ``participant``  → :class:`pandas.DataFrame`
+        - ``timestamp``    → :class:`pandas.DataFrame`
 
     Raises:
         PicSureValidationError: If the query type is invalid.
@@ -65,6 +69,8 @@ def run_query(
 
     if resolved_type == "COUNT":
         return _parse_count(raw)
+    if resolved_type == "CROSS_COUNT":
+        return _parse_cross_count(raw)
     return _parse_dataframe(raw)
 
 
@@ -157,6 +163,28 @@ def _parse_count_string(s: str) -> CountResult:
 def _parse_count(raw: bytes) -> CountResult:
     """Decode and parse a bytes count response."""
     return _parse_count_string(raw.decode("utf-8"))
+
+
+def _parse_cross_count(raw: bytes) -> dict[str, CountResult]:
+    """Parse a CROSS_COUNT response into a mapping of concept path → count.
+
+    The server returns a JSON object where each value is a count string
+    in the same format as a COUNT response. Malformed JSON, non-object
+    top-level values, and malformed count strings all raise
+    :class:`PicSureQueryError`.
+    """
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        preview = raw[:200]
+        raise PicSureQueryError(
+            f"Expected a cross-count JSON object, but got: {preview!r}"
+        ) from exc
+    if not isinstance(data, dict):
+        raise PicSureQueryError(
+            f"Expected a cross-count JSON object, got {type(data).__name__}"
+        )
+    return {str(path): _parse_count_string(str(v)) for path, v in data.items()}
 
 
 def _parse_dataframe(raw: bytes) -> pd.DataFrame:
