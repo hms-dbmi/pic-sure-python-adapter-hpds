@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import logging
+import sys
+from datetime import datetime, timezone
+
+from picsure._dev.config import DevConfig
+from picsure._dev.events import Event
 from picsure._models.resource import Resource
 from picsure._models.session import Session
 from picsure._services.consents import fetch_consents
@@ -20,6 +26,8 @@ _PICSURE_RESOURCES_PATH = "/picsure/info/resources"
 _ANONYMOUS_EMAIL = "anonymous"
 _ANONYMOUS_EXPIRATION = "N/A"
 
+_LOGGER_NAME = "picsure"
+
 
 def connect(
     platform: Platform | str,
@@ -28,47 +36,19 @@ def connect(
     *,
     include_consents: bool | None = None,
     requires_auth: bool | None = None,
+    dev_mode: bool | None = None,
 ) -> Session:
     """Connect to a PIC-SURE instance and return a Session.
 
-    Args:
-        platform: A :class:`Platform` enum member (e.g.
-            ``Platform.BDC_AUTHORIZED``) or a full URL
-            (e.g. ``"https://my-picsure.example.com"``).
-        token: Your PIC-SURE API token.  Leave empty for open-access
-            platforms (e.g. ``Platform.BDC_OPEN``) that don't require
-            authentication.
-        resource_uuid: Optional resource UUID to use. Overrides the
-            default UUID from the Platform enum. Required for custom
-            URLs — if omitted, call ``session.setResourceID(uuid)``
-            after reviewing ``session.getResourceID()``.
-        include_consents: Override the platform's consent policy.  For
-            known Platform members this defaults to the member's own
-            flag; for custom URLs it defaults to ``False``.  Pass
-            ``True`` to fetch the consent list from PSAMA on connect.
-        requires_auth: Override the platform's auth requirement.  Known
-            Platform members default to their own flag; custom URLs
-            default to ``True``.  Pass ``False`` to skip the PSAMA
-            profile call on an open-access deployment.
+    See module docstring for full parameter docs. `dev_mode`:
 
-    Returns:
-        A Session you can use to search, build queries, and export data.
+    - ``None`` (default): defer to ``PICSURE_DEV_MODE`` env var.
+    - ``True`` / ``False``: explicit override.
 
-    Raises:
-        PicSureError: If the token is invalid, the server is unreachable,
-            or the platform name is not recognized.
-
-    Example:
-        >>> import picsure
-        >>> session = picsure.connect(
-        ...     platform="BDC Authorized",
-        ...     token="your-api-token",
-        ... )
-        You're successfully connected to BDC Authorized as user you@email.com!
-        Your token expires on 2026-06-15T00:00:00Z.
-
-        >>> # Open-access: no token needed
-        >>> session = picsure.connect(platform=picsure.Platform.BDC_OPEN)
+    When dev mode is on, events for every HTTP call and public Session
+    method are captured in an in-memory buffer, and a default stderr
+    handler is attached to the ``picsure`` logger (unless one already
+    exists).
     """
     info = resolve_platform(
         platform,
@@ -76,7 +56,12 @@ def connect(
         requires_auth=requires_auth,
     )
     display_name = platform.label if isinstance(platform, Platform) else platform
-    client = PicSureClient(base_url=info.url, token=token)
+
+    dev_config = DevConfig.from_env(override=dev_mode)
+    if dev_config.enabled:
+        _install_default_handler()
+
+    client = PicSureClient(base_url=info.url, token=token, dev_config=dev_config)
 
     if info.requires_auth:
         profile = _fetch_profile(client, display_name, info.url)
@@ -108,6 +93,27 @@ def connect(
             "to choose a resource before searching or querying."
         )
 
+    if dev_config.enabled:
+        dev_config.emit(
+            Event(
+                timestamp=datetime.now(timezone.utc),
+                kind="connect",
+                name="connect",
+                duration_ms=0.0,
+                bytes_in=None,
+                bytes_out=None,
+                status=None,
+                retry=0,
+                error=None,
+                metadata={
+                    "resources": len(resources),
+                    "consents": len(consents),
+                    "total_concepts": total_concepts,
+                    "requires_auth": info.requires_auth,
+                },
+            )
+        )
+
     return Session(
         client=client,
         user_email=email,
@@ -116,7 +122,23 @@ def connect(
         resource_uuid=effective_uuid,
         consents=consents,
         total_concepts=total_concepts,
+        dev_config=dev_config,
     )
+
+
+def _install_default_handler() -> None:
+    """Attach a stderr handler to the picsure logger if no handlers exist.
+
+    Idempotent: repeat calls do nothing once a handler is present.
+    """
+    logger = logging.getLogger(_LOGGER_NAME)
+    if logger.handlers:
+        return
+    handler = logging.StreamHandler(stream=sys.stderr)
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(logging.Formatter("%(name)s %(message)s"))
+    logger.addHandler(handler)
+    logger.setLevel(logging.DEBUG)
 
 
 def _fetch_profile(
