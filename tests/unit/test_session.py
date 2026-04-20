@@ -326,13 +326,15 @@ class TestSessionRunQuery:
             return_value=httpx.Response(200, content=b"42")
         )
         from picsure._models.clause import Clause, ClauseType
+        from picsure._models.count_result import CountResult
 
         session = _make_live_session()
         clause = Clause(keys=["\\sex\\"], type=ClauseType.FILTER, categories=["Male"])
         result = session.runQuery(clause, type="count")
 
-        assert result == 42
-        assert isinstance(result, int)
+        assert isinstance(result, CountResult)
+        assert result.value == 42
+        assert result.obfuscated is False
 
     @respx.mock
     def test_run_query_participant(self, participant_response):
@@ -354,12 +356,14 @@ class TestSessionRunQuery:
             return_value=httpx.Response(200, content=b"99")
         )
         from picsure._models.clause import Clause, ClauseType
+        from picsure._models.count_result import CountResult
 
         session = _make_live_session()
         clause = Clause(keys=["\\sex\\"], type=ClauseType.FILTER, categories=["Male"])
         result = session.runQuery(clause)
 
-        assert result == 99
+        assert isinstance(result, CountResult)
+        assert result.value == 99
 
 
 class TestSessionExport:

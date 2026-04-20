@@ -9,6 +9,7 @@ from picsure._models.resource import Resource
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from picsure._models.count_result import CountResult
     from picsure._models.facet import FacetSet
     from picsure._models.query import Query
     from picsure._transport.client import PicSureClient
@@ -179,19 +180,31 @@ class Session:
         self,
         query: Query,
         type: str = "count",  # noqa: A002
-    ) -> int | pd.DataFrame:
+    ) -> CountResult | dict[str, CountResult] | pd.DataFrame:
         """Execute a query and return the result.
 
         Args:
             query: A Clause or ClauseGroup built with createClause/buildClauseGroup.
-            type: Result type — "count" (returns int), "participant"
-                (returns DataFrame), or "timestamp" (returns DataFrame).
+            type: Result type — one of:
+
+                - ``"count"`` → :class:`CountResult` with ``value`` /
+                  ``margin`` / ``cap`` fields, preserving server-side
+                  obfuscation of small counts.
+                - ``"cross_count"`` → ``dict[str, CountResult]`` keyed
+                  by concept path.
+                - ``"participant"`` → :class:`pandas.DataFrame`.
+                - ``"timestamp"`` → :class:`pandas.DataFrame`.
 
         Returns:
-            An integer for count queries, or a DataFrame for data queries.
+            A :class:`CountResult`, a ``dict[str, CountResult]``, or a
+            DataFrame depending on ``type``.
 
         Example:
             >>> count = session.runQuery(my_query, type="count")
+            >>> if count.value is not None:
+            ...     print(f"{count.value} participants")
+            ... else:
+            ...     print(f"fewer than {count.cap} participants")
             >>> df = session.runQuery(my_query, type="participant")
         """
         from picsure._services.query_run import run_query
