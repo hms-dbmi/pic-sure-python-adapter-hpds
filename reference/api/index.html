@@ -2273,9 +2273,12 @@ group = buildClauseGroup(
 <p>Use these constants with <code>picsure.createClause()</code>:</p>
 <ul>
 <li><code>FILTER</code> — filter by categorical values or numeric range</li>
-<li><code>ANYRECORD</code> — match any record that has a value for the variable</li>
-<li><code>SELECT</code> — include the variable in output without filtering</li>
-<li><code>REQUIRE</code> — require the variable to have a non-null value</li>
+<li><code>ANYRECORD</code> — match records where the concept path <em>or any
+  descendant</em> has a value (wire: <code>ANY_RECORD_OF</code>)</li>
+<li><code>SELECT</code> — include the concept path(s) in query output; does
+  not contribute to filtering</li>
+<li><code>REQUIRE</code> — require the concept path to have a non-null value
+  (wire: <code>REQUIRED</code>)</li>
 </ul>
 
 
@@ -2564,7 +2567,35 @@ group = buildClauseGroup(
 
     <div class="doc doc-contents ">
 
-        <p>Serialize this clause to the v3 query JSON format.</p>
+        <p>Serialize this clause as a v3 <code>PhenotypicClause</code>.</p>
+<p>Emits a <code>PhenotypicFilter</code> leaf for single-key clauses, or
+an OR <code>PhenotypicSubquery</code> of per-key leaves when the clause
+spans multiple keys.</p>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="PicSureValidationError">PicSureValidationError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If this is a SELECT clause. SELECT
+clauses don't participate in filtering; extract their
+paths via :meth:<code>select_paths</code> instead.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
 
 
     </div>
@@ -2642,7 +2673,12 @@ deep nesting.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Serialize this group to the v3 query JSON format.</p>
+        <p>Serialize this group as a v3 <code>PhenotypicSubquery</code>.</p>
+<p>SELECT clauses are stripped out — they are lifted to the
+top-level <code>select</code> array by the query builder. If every
+child is a SELECT, the resulting <code>phenotypicClauses</code> list
+is empty; callers should check this via :meth:<code>has_phenotypic</code>
+and pass <code>None</code> for <code>phenotypicClause</code> on empty groups.</p>
 
 
     </div>
