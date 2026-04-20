@@ -217,9 +217,7 @@ class TestRunQueryCrossCount:
     @respx.mock
     def test_sends_cross_count_result_type(self):
         route = respx.post(QUERY_URL).mock(
-            return_value=httpx.Response(
-                200, content=b'{"\\\\phs000001\\\\": "42"}'
-            )
+            return_value=httpx.Response(200, content=b'{"\\\\phs000001\\\\": "42"}')
         )
         client = _make_client()
         run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")

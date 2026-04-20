@@ -85,9 +85,7 @@ class TestResolvePlatform:
         assert info.include_consents is False
 
     def test_custom_url_include_consents_override(self):
-        info = resolve_platform(
-            "https://my-picsure.example.com", include_consents=True
-        )
+        info = resolve_platform("https://my-picsure.example.com", include_consents=True)
         assert info.include_consents is True
 
     def test_known_platform_propagates_requires_auth(self):
@@ -103,9 +101,7 @@ class TestResolvePlatform:
         assert info.requires_auth is True
 
     def test_custom_url_requires_auth_override(self):
-        info = resolve_platform(
-            "https://my-picsure.example.com", requires_auth=False
-        )
+        info = resolve_platform("https://my-picsure.example.com", requires_auth=False)
         assert info.requires_auth is False
 
     def test_custom_url_http(self):

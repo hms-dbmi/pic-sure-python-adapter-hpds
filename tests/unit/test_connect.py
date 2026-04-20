@@ -20,9 +20,7 @@ def _concepts_prefetch_url(host: str = BASE_URL) -> str:
 
 def _mock_concepts_prefetch(host: str = BASE_URL, total: int = 57) -> None:
     respx.post(_concepts_prefetch_url(host)).mock(
-        return_value=httpx.Response(
-            200, json={"content": [], "totalElements": total}
-        )
+        return_value=httpx.Response(200, json={"content": [], "totalElements": total})
     )
 
 
@@ -71,9 +69,7 @@ class TestConnectSuccess:
         assert session._resource_uuid is None
 
     @respx.mock
-    def test_prints_success_message(
-        self, profile_response, resources_response, capsys
-    ):
+    def test_prints_success_message(self, profile_response, resources_response, capsys):
         _mock_connect_flow(profile_response, resources_response)
         connect(platform=BASE_URL, token=TOKEN)
         captured = capsys.readouterr()
@@ -91,9 +87,7 @@ class TestConnectSuccess:
         assert "2026-06-15" in captured.out
 
     @respx.mock
-    def test_session_stores_total_concepts(
-        self, profile_response, resources_response
-    ):
+    def test_session_stores_total_concepts(self, profile_response, resources_response):
         _mock_connect_flow(profile_response, resources_response, total=487375)
         session = connect(platform=BASE_URL, token=TOKEN)
         assert session.total_concepts == 487375
@@ -195,9 +189,7 @@ class TestConnectResourceUuid:
         self, profile_response, resources_response, capsys
     ):
         _mock_connect_flow(profile_response, resources_response)
-        connect(
-            platform=BASE_URL, token=TOKEN, resource_uuid="resource-uuid-aaaa-1111"
-        )
+        connect(platform=BASE_URL, token=TOKEN, resource_uuid="resource-uuid-aaaa-1111")
         captured = capsys.readouterr()
         assert "Available resources" not in captured.out
 
@@ -212,8 +204,7 @@ class TestConnectConsents:
     _TEMPLATE_URL = f"{BASE_URL}/psama/user/me/queryTemplate/"
     _CONSENT_PAYLOAD = {
         "queryTemplate": (
-            '{"categoryFilters":'
-            '{"\\\\_consents\\\\":["phs000007.c1","phs001013.c1"]}}'
+            '{"categoryFilters":{"\\\\_consents\\\\":["phs000007.c1","phs001013.c1"]}}'
         )
     }
 
@@ -245,9 +236,7 @@ class TestConnectConsents:
         assert session.consents == ["phs000007.c1", "phs001013.c1"]
 
     @respx.mock
-    def test_consents_forwarded_to_prefetch(
-        self, profile_response, resources_response
-    ):
+    def test_consents_forwarded_to_prefetch(self, profile_response, resources_response):
         respx.get(f"{BASE_URL}/psama/user/me").mock(
             return_value=httpx.Response(200, json=profile_response)
         )
@@ -258,9 +247,7 @@ class TestConnectConsents:
             return_value=httpx.Response(200, json=self._CONSENT_PAYLOAD)
         )
         prefetch_route = respx.post(_concepts_prefetch_url()).mock(
-            return_value=httpx.Response(
-                200, json={"content": [], "totalElements": 100}
-            )
+            return_value=httpx.Response(200, json={"content": [], "totalElements": 100})
         )
 
         connect(platform=BASE_URL, token=TOKEN, include_consents=True)
@@ -351,9 +338,7 @@ class TestConnectOpenAccess:
             return_value=httpx.Response(200, json=resources_response)
         )
         prefetch_route = respx.post(_concepts_prefetch_url(host)).mock(
-            return_value=httpx.Response(
-                200, json={"content": [], "totalElements": 0}
-            )
+            return_value=httpx.Response(200, json={"content": [], "totalElements": 0})
         )
 
         connect(platform=Platform.BDC_DEV_OPEN)
@@ -378,9 +363,7 @@ class TestConnectOpenAccess:
         assert "token expires" not in out.lower()
 
     @respx.mock
-    def test_requires_auth_false_override_on_custom_url(
-        self, resources_response
-    ):
+    def test_requires_auth_false_override_on_custom_url(self, resources_response):
         respx.get(f"{BASE_URL}/picsure/info/resources").mock(
             return_value=httpx.Response(200, json=resources_response)
         )

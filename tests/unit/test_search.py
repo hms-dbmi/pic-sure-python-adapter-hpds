@@ -387,9 +387,7 @@ class TestShowAllFacets:
             return_value=httpx.Response(200, json=facets_response)
         )
         df = show_all_facets(_make_client())
-        curated_values = set(
-            df[df["category"] == "Consortium_Curated_Facets"]["value"]
-        )
+        curated_values = set(df[df["category"] == "Consortium_Curated_Facets"]["value"])
         assert curated_values == {
             "RECOVER Adult Curated",
             "Infected",

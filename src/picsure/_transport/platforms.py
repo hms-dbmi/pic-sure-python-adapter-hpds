@@ -160,9 +160,7 @@ def resolve_platform(
             else platform.include_consents
         )
         resolved_auth = (
-            requires_auth
-            if requires_auth is not None
-            else platform.requires_auth
+            requires_auth if requires_auth is not None else platform.requires_auth
         )
         return PlatformInfo(
             url=platform.url,

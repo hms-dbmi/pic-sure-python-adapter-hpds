@@ -272,9 +272,7 @@ class TestSessionFacets:
         assert "data_type" in view
 
     @respx.mock
-    def test_facets_can_add_and_use_in_search(
-        self, facets_response, search_response
-    ):
+    def test_facets_can_add_and_use_in_search(self, facets_response, search_response):
         respx.post(_FACETS_URL).mock(
             return_value=httpx.Response(200, json=facets_response)
         )

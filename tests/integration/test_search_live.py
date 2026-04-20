@@ -5,7 +5,9 @@ from picsure._models.facet import FacetSet
 
 
 class TestSearchLive:
-    def test_search_returns_dataframe(self, test_token, test_platform, test_search_term):
+    def test_search_returns_dataframe(
+        self, test_token, test_platform, test_search_term
+    ):
         session = picsure.connect(platform=test_platform, token=test_token)
         df = session.search(test_search_term)
         assert isinstance(df, pd.DataFrame)
