@@ -3,13 +3,8 @@ import pytest
 
 import picsure
 from picsure import ClauseType, createClause
-from picsure._transport.platforms import Platform
 
-
-def _requires_auth(test_platform: Platform | str) -> bool:
-    if isinstance(test_platform, Platform):
-        return test_platform.requires_auth
-    return True
+from .conftest import requires_auth
 
 
 class TestRunQueryLive:
@@ -23,7 +18,7 @@ class TestRunQueryLive:
     def test_participant_returns_dataframe(
         self, test_token, test_platform, test_concept_path
     ):
-        if not _requires_auth(test_platform):
+        if not requires_auth(test_platform):
             pytest.skip(
                 "DATAFRAME result type is authorized-only; "
                 "open-access platforms don't support participant queries."
