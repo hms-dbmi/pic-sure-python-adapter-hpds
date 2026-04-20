@@ -26,7 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `Clause`, `ClauseGroup`, and `Query` types with `to_query_json()` serialization.
 - `CountResult` dataclass exposing `value`, `margin`, `cap`, `raw`, and an `obfuscated` property for count query responses.
 - Input validation with actionable error messages for invalid clause configurations.
-- `Session.runQuery()` to execute queries and return count (int) or data (DataFrame).
+- `Session.runQuery()` to execute queries and return a `CountResult`, a `dict[str, CountResult]` (cross-count), or a `DataFrame` (participant / timestamp).
 - `Session.exportPFB()` to export query results as PFB files.
 - `Session.exportCSV()` and `Session.exportTSV()` to save DataFrames to disk.
 - `PicSureClient.post_raw()` for non-JSON response handling.
