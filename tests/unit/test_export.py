@@ -13,7 +13,7 @@ from picsure.errors import PicSureConnectionError
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
 RESOURCE_UUID = "resource-uuid-aaaa-1111"
-QUERY_URL = f"{BASE_URL}/picsure/query/sync"
+QUERY_URL = f"{BASE_URL}/picsure/v3/query/sync"
 
 
 def _make_client() -> PicSureClient:
@@ -51,7 +51,7 @@ class TestExportPFB:
         import json
 
         body = json.loads(route.calls[0].request.content)
-        assert body["expectedResultType"] == "PFB"
+        assert body["query"]["expectedResultType"] == "DATAFRAME_PFB"
         assert body["resourceUUID"] == RESOURCE_UUID
 
     @respx.mock

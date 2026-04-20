@@ -86,7 +86,7 @@ class Platform(Enum):
     )
     NHANES_AUTHORIZED = PlatformConfig(
         url="https://nhanes.hms.harvard.edu/",
-        resource_uuid="",
+        resource_uuid="ded89b08-faa9-435c-b7c4-55b81922ee5f",
         label="Nhanes Authorized",
         include_consents=False,
         requires_auth=True,

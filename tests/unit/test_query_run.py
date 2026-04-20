@@ -15,7 +15,7 @@ from picsure.errors import (
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
 RESOURCE_UUID = "resource-uuid-aaaa-1111"
-QUERY_URL = f"{BASE_URL}/picsure/query/sync"
+QUERY_URL = f"{BASE_URL}/picsure/v3/query/sync"
 
 
 def _make_client() -> PicSureClient:
@@ -47,8 +47,33 @@ class TestRunQueryCount:
 
         body = json.loads(route.calls[0].request.content)
         assert body["resourceUUID"] == RESOURCE_UUID
-        assert body["query"]["type"] == "clause"
-        assert body["expectedResultType"] == "COUNT"
+        query = body["query"]
+        assert query["expectedResultType"] == "COUNT"
+        assert query["select"] == []
+        assert query["genomicFilters"] == []
+        assert query["picsureId"] is None
+        assert query["id"] is None
+        pheno = query["phenotypicClause"]
+        assert pheno["phenotypicFilterType"] == "FILTER"
+        assert pheno["conceptPath"] == "\\phs1\\sex\\"
+        assert pheno["values"] == ["Male"]
+        assert pheno["not"] is False
+
+    @respx.mock
+    def test_does_not_send_authorization_filters(self):
+        # PSAMA populates authorizationFilters server-side from the user's
+        # token. A client-asserted list is treated as tampering and can be
+        # rejected with a 401, so we must never send the key.
+        route = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"7")
+        )
+        client = _make_client()
+        run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+
+        import json
+
+        body = json.loads(route.calls[0].request.content)
+        assert "authorizationFilters" not in body["query"]
 
     @respx.mock
     def test_invalid_count_raises_query_error(self):
@@ -67,6 +92,31 @@ class TestRunQueryCount:
         client = _make_client()
         result = run_query(client, RESOURCE_UUID, _simple_clause(), "count")
         assert result == 567
+
+    @respx.mock
+    def test_count_strips_obfuscation_margin(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content="11309 \u00b13".encode())
+        )
+        client = _make_client()
+        result = run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+        assert result == 11309
+
+    @respx.mock
+    def test_count_strips_margin_without_spaces(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content="42\u00b13".encode())
+        )
+        client = _make_client()
+        result = run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+        assert result == 42
+
+    @respx.mock
+    def test_count_below_threshold_returns_cap(self):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"< 10"))
+        client = _make_client()
+        result = run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+        assert result == 10
 
 
 class TestRunQueryParticipant:
@@ -92,7 +142,7 @@ class TestRunQueryParticipant:
         import json
 
         body = json.loads(route.calls[0].request.content)
-        assert body["expectedResultType"] == "DATAFRAME"
+        assert body["query"]["expectedResultType"] == "DATAFRAME"
 
     @respx.mock
     def test_empty_csv_returns_empty_dataframe(self):
@@ -114,7 +164,7 @@ class TestRunQueryTimestamp:
         import json
 
         body = json.loads(route.calls[0].request.content)
-        assert body["expectedResultType"] == "DATAFRAME_TIMESERIES"
+        assert body["query"]["expectedResultType"] == "DATAFRAME_TIMESERIES"
 
     @respx.mock
     def test_returns_dataframe(self):
@@ -124,6 +174,21 @@ class TestRunQueryTimestamp:
         df = run_query(client, RESOURCE_UUID, _simple_clause(), "timestamp")
         assert len(df) == 1
         assert "date" in df.columns
+
+
+class TestRunQueryCrossCount:
+    @respx.mock
+    def test_sends_cross_count_result_type(self):
+        route = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"42")
+        )
+        client = _make_client()
+        run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")
+
+        import json
+
+        body = json.loads(route.calls[0].request.content)
+        assert body["query"]["expectedResultType"] == "CROSS_COUNT"
 
 
 class TestRunQueryWithClauseGroup:
@@ -143,8 +208,66 @@ class TestRunQueryWithClauseGroup:
         import json
 
         body = json.loads(route.calls[0].request.content)
-        assert body["query"]["type"] == "and"
-        assert len(body["query"]["children"]) == 2
+        pheno = body["query"]["phenotypicClause"]
+        assert pheno["operator"] == "AND"
+        assert pheno["not"] is False
+        assert len(pheno["phenotypicClauses"]) == 2
+
+    @respx.mock
+    def test_select_clauses_lifted_to_top_level(self):
+        route = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"100")
+        )
+        out = Clause(keys=["\\out_a\\", "\\out_b\\"], type=ClauseType.SELECT)
+        group = ClauseGroup(
+            clauses=[_simple_clause(), out],
+            operator=GroupOperator.AND,
+        )
+        client = _make_client()
+        run_query(client, RESOURCE_UUID, group, "count")
+
+        import json
+
+        body = json.loads(route.calls[0].request.content)
+        assert body["query"]["select"] == ["\\out_a\\", "\\out_b\\"]
+        pheno_children = body["query"]["phenotypicClause"]["phenotypicClauses"]
+        assert len(pheno_children) == 1
+        assert pheno_children[0]["conceptPath"] == "\\phs1\\sex\\"
+
+    @respx.mock
+    def test_group_with_only_selects_yields_null_phenotypic(self):
+        route = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"100")
+        )
+        select_a = Clause(keys=["\\a\\"], type=ClauseType.SELECT)
+        select_b = Clause(keys=["\\b\\"], type=ClauseType.SELECT)
+        group = ClauseGroup(
+            clauses=[select_a, select_b],
+            operator=GroupOperator.AND,
+        )
+        client = _make_client()
+        run_query(client, RESOURCE_UUID, group, "count")
+
+        import json
+
+        body = json.loads(route.calls[0].request.content)
+        assert body["query"]["phenotypicClause"] is None
+        assert body["query"]["select"] == ["\\a\\", "\\b\\"]
+
+    @respx.mock
+    def test_single_select_clause_yields_null_phenotypic(self):
+        route = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"100")
+        )
+        select = Clause(keys=["\\a\\"], type=ClauseType.SELECT)
+        client = _make_client()
+        run_query(client, RESOURCE_UUID, select, "count")
+
+        import json
+
+        body = json.loads(route.calls[0].request.content)
+        assert body["query"]["phenotypicClause"] is None
+        assert body["query"]["select"] == ["\\a\\"]
 
 
 class TestRunQueryValidation:

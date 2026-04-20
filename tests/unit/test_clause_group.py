@@ -47,6 +47,10 @@ def _asthma_clause() -> Clause:
     )
 
 
+def _select_clause() -> Clause:
+    return Clause(keys=["\\phs1\\output\\"], type=ClauseType.SELECT)
+
+
 class TestClauseGroup:
     def test_and_group(self):
         group = ClauseGroup(
@@ -91,9 +95,12 @@ class TestClauseGroupToQueryJson:
             operator=GroupOperator.AND,
         )
         result = group.to_query_json()
-        assert result["type"] == "and"
-        assert len(result["children"]) == 2  # type: ignore[arg-type]
-        assert result["children"][0]["clauseType"] == "filter"  # type: ignore[index]
+        assert result["operator"] == "AND"
+        assert result["not"] is False
+        children = result["phenotypicClauses"]
+        assert len(children) == 2  # type: ignore[arg-type]
+        assert children[0]["phenotypicFilterType"] == "FILTER"  # type: ignore[index]
+        assert children[0]["conceptPath"] == "\\phs1\\sex\\"  # type: ignore[index]
 
     def test_simple_or_group(self):
         group = ClauseGroup(
@@ -101,7 +108,7 @@ class TestClauseGroupToQueryJson:
             operator=GroupOperator.OR,
         )
         result = group.to_query_json()
-        assert result["type"] == "or"
+        assert result["operator"] == "OR"
 
     def test_nested_json(self):
         copd_or_asthma = ClauseGroup(
@@ -113,13 +120,13 @@ class TestClauseGroupToQueryJson:
             operator=GroupOperator.AND,
         )
         result = full.to_query_json()
-        assert result["type"] == "and"
-        children = result["children"]
+        assert result["operator"] == "AND"
+        children = result["phenotypicClauses"]
         assert len(children) == 3  # type: ignore[arg-type]
-        assert children[0]["type"] == "clause"  # type: ignore[index]
-        assert children[1]["type"] == "clause"  # type: ignore[index]
-        assert children[2]["type"] == "or"  # type: ignore[index]
-        assert len(children[2]["children"]) == 2  # type: ignore[index]
+        assert children[0]["phenotypicFilterType"] == "FILTER"  # type: ignore[index]
+        assert children[1]["phenotypicFilterType"] == "FILTER"  # type: ignore[index]
+        assert children[2]["operator"] == "OR"  # type: ignore[index]
+        assert len(children[2]["phenotypicClauses"]) == 2  # type: ignore[index]
 
     def test_deeply_nested_json(self):
         inner_or = ClauseGroup(
@@ -135,8 +142,70 @@ class TestClauseGroupToQueryJson:
             operator=GroupOperator.OR,
         )
         result = outer_or.to_query_json()
-        assert result["type"] == "or"
-        children = result["children"]
-        assert children[1]["type"] == "and"  # type: ignore[index]
-        grandchildren = children[1]["children"]  # type: ignore[index]
-        assert grandchildren[1]["type"] == "or"
+        assert result["operator"] == "OR"
+        children = result["phenotypicClauses"]
+        assert children[1]["operator"] == "AND"  # type: ignore[index]
+        grandchildren = children[1]["phenotypicClauses"]  # type: ignore[index]
+        assert grandchildren[1]["operator"] == "OR"
+
+    def test_selects_stripped_from_phenotypic(self):
+        group = ClauseGroup(
+            clauses=[_sex_clause(), _select_clause()],
+            operator=GroupOperator.AND,
+        )
+        result = group.to_query_json()
+        children = result["phenotypicClauses"]
+        assert len(children) == 1  # type: ignore[arg-type]
+        assert children[0]["conceptPath"] == "\\phs1\\sex\\"  # type: ignore[index]
+
+    def test_all_select_group_yields_empty_children(self):
+        group = ClauseGroup(
+            clauses=[_select_clause(), _select_clause()],
+            operator=GroupOperator.AND,
+        )
+        result = group.to_query_json()
+        assert result["phenotypicClauses"] == []
+
+
+class TestClauseGroupSelectPaths:
+    def test_flat_selects_collected(self):
+        group = ClauseGroup(
+            clauses=[_sex_clause(), _select_clause()],
+            operator=GroupOperator.AND,
+        )
+        assert group.select_paths() == ["\\phs1\\output\\"]
+
+    def test_nested_selects_collected(self):
+        inner = ClauseGroup(
+            clauses=[_select_clause()],
+            operator=GroupOperator.AND,
+        )
+        outer = ClauseGroup(
+            clauses=[_sex_clause(), inner],
+            operator=GroupOperator.AND,
+        )
+        assert outer.select_paths() == ["\\phs1\\output\\"]
+
+
+class TestClauseGroupHasPhenotypic:
+    def test_true_for_filter(self):
+        group = ClauseGroup(clauses=[_sex_clause()], operator=GroupOperator.AND)
+        assert group.has_phenotypic() is True
+
+    def test_false_for_selects_only(self):
+        group = ClauseGroup(
+            clauses=[_select_clause(), _select_clause()],
+            operator=GroupOperator.AND,
+        )
+        assert group.has_phenotypic() is False
+
+    def test_true_for_nested_filter(self):
+        inner = ClauseGroup(
+            clauses=[_sex_clause()],
+            operator=GroupOperator.AND,
+        )
+        outer = ClauseGroup(
+            clauses=[_select_clause(), inner],
+            operator=GroupOperator.AND,
+        )
+        assert outer.has_phenotypic() is True

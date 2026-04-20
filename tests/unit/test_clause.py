@@ -1,6 +1,7 @@
 import pytest
 
 from picsure._models.clause import Clause, ClauseType
+from picsure.errors import PicSureValidationError
 
 
 class TestClauseType:
@@ -80,10 +81,10 @@ class TestClauseToQueryJson:
             categories=["Male", "Female"],
         )
         result = clause.to_query_json()
-        assert result["type"] == "clause"
-        assert result["clauseType"] == "filter"
-        assert result["keys"] == ["\\phs1\\sex\\"]
-        assert result["categories"] == ["Male", "Female"]
+        assert result["phenotypicFilterType"] == "FILTER"
+        assert result["conceptPath"] == "\\phs1\\sex\\"
+        assert result["not"] is False
+        assert result["values"] == ["Male", "Female"]
         assert "min" not in result
         assert "max" not in result
 
@@ -95,10 +96,11 @@ class TestClauseToQueryJson:
             max=65.0,
         )
         result = clause.to_query_json()
-        assert result["clauseType"] == "filter"
+        assert result["phenotypicFilterType"] == "FILTER"
+        assert result["conceptPath"] == "\\phs1\\age\\"
         assert result["min"] == 18.0
         assert result["max"] == 65.0
-        assert "categories" not in result
+        assert "values" not in result
 
     def test_min_only_json(self):
         clause = Clause(
@@ -116,19 +118,53 @@ class TestClauseToQueryJson:
             type=ClauseType.ANYRECORD,
         )
         result = clause.to_query_json()
-        assert result["type"] == "clause"
-        assert result["clauseType"] == "anyrecord"
-        assert result["keys"] == ["\\phs1\\insomnia\\"]
-        assert "categories" not in result
+        assert result["phenotypicFilterType"] == "ANY_RECORD_OF"
+        assert result["conceptPath"] == "\\phs1\\insomnia\\"
+        assert result["not"] is False
+        assert "values" not in result
         assert "min" not in result
         assert "max" not in result
-
-    def test_select_json(self):
-        clause = Clause(keys=["\\path\\"], type=ClauseType.SELECT)
-        result = clause.to_query_json()
-        assert result["clauseType"] == "select"
 
     def test_require_json(self):
         clause = Clause(keys=["\\path\\"], type=ClauseType.REQUIRE)
         result = clause.to_query_json()
-        assert result["clauseType"] == "require"
+        assert result["phenotypicFilterType"] == "REQUIRED"
+        assert result["conceptPath"] == "\\path\\"
+        assert result["not"] is False
+
+    def test_select_raises(self):
+        clause = Clause(keys=["\\path\\"], type=ClauseType.SELECT)
+        with pytest.raises(PicSureValidationError, match="SELECT clauses"):
+            clause.to_query_json()
+
+    def test_multi_key_wrapped_in_or_subquery(self):
+        clause = Clause(
+            keys=["\\path_a\\", "\\path_b\\"],
+            type=ClauseType.ANYRECORD,
+        )
+        result = clause.to_query_json()
+        assert result["operator"] == "OR"
+        assert result["not"] is False
+        assert len(result["phenotypicClauses"]) == 2  # type: ignore[arg-type]
+        leaf_a, leaf_b = result["phenotypicClauses"]  # type: ignore[misc]
+        assert leaf_a["conceptPath"] == "\\path_a\\"
+        assert leaf_b["conceptPath"] == "\\path_b\\"
+        assert leaf_a["phenotypicFilterType"] == "ANY_RECORD_OF"
+
+
+class TestClauseSelectPaths:
+    def test_select_returns_keys(self):
+        clause = Clause(keys=["\\a\\", "\\b\\"], type=ClauseType.SELECT)
+        assert clause.select_paths() == ["\\a\\", "\\b\\"]
+
+    def test_filter_returns_empty(self):
+        clause = Clause(keys=["\\a\\"], type=ClauseType.FILTER, categories=["x"])
+        assert clause.select_paths() == []
+
+    def test_anyrecord_returns_empty(self):
+        clause = Clause(keys=["\\a\\"], type=ClauseType.ANYRECORD)
+        assert clause.select_paths() == []
+
+    def test_require_returns_empty(self):
+        clause = Clause(keys=["\\a\\"], type=ClauseType.REQUIRE)
+        assert clause.select_paths() == []

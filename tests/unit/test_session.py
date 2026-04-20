@@ -322,7 +322,7 @@ class TestSessionShowAllFacets:
 class TestSessionRunQuery:
     @respx.mock
     def test_run_query_count(self):
-        respx.post(f"{BASE_URL}/picsure/query/sync").mock(
+        respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
             return_value=httpx.Response(200, content=b"42")
         )
         from picsure._models.clause import Clause, ClauseType
@@ -336,7 +336,7 @@ class TestSessionRunQuery:
 
     @respx.mock
     def test_run_query_participant(self, participant_response):
-        respx.post(f"{BASE_URL}/picsure/query/sync").mock(
+        respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
             return_value=httpx.Response(200, content=participant_response)
         )
         from picsure._models.clause import Clause, ClauseType
@@ -350,7 +350,7 @@ class TestSessionRunQuery:
 
     @respx.mock
     def test_run_query_default_type_is_count(self):
-        respx.post(f"{BASE_URL}/picsure/query/sync").mock(
+        respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
             return_value=httpx.Response(200, content=b"99")
         )
         from picsure._models.clause import Clause, ClauseType
@@ -365,7 +365,7 @@ class TestSessionRunQuery:
 class TestSessionExport:
     @respx.mock
     def test_export_pfb(self, tmp_path):
-        respx.post(f"{BASE_URL}/picsure/query/sync").mock(
+        respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
             return_value=httpx.Response(200, content=b"pfb_data")
         )
         from picsure._models.clause import Clause, ClauseType

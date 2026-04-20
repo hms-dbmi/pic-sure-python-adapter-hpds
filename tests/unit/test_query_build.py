@@ -172,8 +172,9 @@ class TestBuildClauseGroup:
         full = buildClauseGroup([sex, age, copd_or_asthma], root=GroupOperator.AND)
 
         result = full.to_query_json()
-        assert result["type"] == "and"
-        children = result["children"]
+        assert result["operator"] == "AND"
+        children = result["phenotypicClauses"]
         assert len(children) == 3  # type: ignore[arg-type]
-        assert children[0]["clauseType"] == "filter"  # type: ignore[index]
-        assert children[2]["type"] == "or"  # type: ignore[index]
+        assert children[0]["phenotypicFilterType"] == "FILTER"  # type: ignore[index]
+        assert children[0]["conceptPath"] == "\\sex\\"  # type: ignore[index]
+        assert children[2]["operator"] == "OR"  # type: ignore[index]

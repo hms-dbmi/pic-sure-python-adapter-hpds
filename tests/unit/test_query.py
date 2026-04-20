@@ -25,8 +25,8 @@ class TestQueryTypeAlias:
         assert q is group
 
     def test_query_has_to_query_json(self):
-        clause = Clause(keys=["\\path\\"], type=ClauseType.SELECT)
+        clause = Clause(keys=["\\path\\"], type=ClauseType.REQUIRE)
         q: Query = clause
         result = q.to_query_json()
-        assert "type" in result
-        assert "clauseType" in result
+        assert result["phenotypicFilterType"] == "REQUIRED"
+        assert result["conceptPath"] == "\\path\\"

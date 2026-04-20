@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-from picsure._models.clause import Clause
+from picsure._models.clause import Clause, ClauseType
 
 
 class GroupOperator(Enum):
@@ -30,8 +30,38 @@ class ClauseGroup:
     operator: GroupOperator
 
     def to_query_json(self) -> dict[str, object]:
-        """Serialize this group to the v3 query JSON format."""
+        """Serialize this group as a v3 ``PhenotypicSubquery``.
+
+        SELECT clauses are stripped out — they are lifted to the
+        top-level ``select`` array by the query builder. If every
+        child is a SELECT, the resulting ``phenotypicClauses`` list
+        is empty; callers should check this via :meth:`has_phenotypic`
+        and pass ``None`` for ``phenotypicClause`` on empty groups.
+        """
+        pheno_children: list[dict[str, object]] = []
+        for child in self.clauses:
+            if isinstance(child, Clause) and child.type == ClauseType.SELECT:
+                continue
+            pheno_children.append(child.to_query_json())
         return {
-            "type": self.operator.value.lower(),
-            "children": [c.to_query_json() for c in self.clauses],
+            "operator": self.operator.value,
+            "phenotypicClauses": pheno_children,
+            "not": False,
         }
+
+    def select_paths(self) -> list[str]:
+        """Return all SELECT-clause concept paths, flattened recursively."""
+        result: list[str] = []
+        for child in self.clauses:
+            result.extend(child.select_paths())
+        return result
+
+    def has_phenotypic(self) -> bool:
+        """True if this group contains any non-SELECT clause, recursively."""
+        for child in self.clauses:
+            if isinstance(child, Clause):
+                if child.type != ClauseType.SELECT:
+                    return True
+            elif child.has_phenotypic():
+                return True
+        return False

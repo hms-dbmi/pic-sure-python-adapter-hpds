@@ -5,11 +5,12 @@ from pathlib import Path
 import pandas as pd
 
 from picsure._models.query import Query
+from picsure._services.query_run import build_query_body
 from picsure._transport.client import PicSureClient
 from picsure._transport.errors import TransportError
 from picsure.errors import PicSureConnectionError
 
-_PICSURE_QUERY_SYNC_PATH = "/picsure/query/sync"
+_PICSURE_QUERY_SYNC_PATH = "/picsure/v3/query/sync"
 
 
 def export_pfb(
@@ -29,11 +30,7 @@ def export_pfb(
     Raises:
         PicSureConnectionError: If the server is unreachable.
     """
-    body: dict[str, object] = {
-        "resourceUUID": resource_uuid,
-        "query": query.to_query_json(),
-        "expectedResultType": "PFB",
-    }
+    body = build_query_body(query, resource_uuid, "DATAFRAME_PFB")
 
     try:
         raw = client.post_raw(_PICSURE_QUERY_SYNC_PATH, body=body)
