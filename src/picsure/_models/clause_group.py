@@ -24,6 +24,11 @@ class ClauseGroup:
     Created by ``picsure.buildClauseGroup()``. Can contain both
     ``Clause`` and nested ``ClauseGroup`` objects for arbitrarily
     deep nesting.
+
+    **Wire format.** :meth:`to_query_json` emits a v3
+    ``PhenotypicSubquery`` (``operator`` / ``phenotypicClauses`` /
+    ``not``) per the ``/picsure/v3/query/sync`` contract. The previous
+    wire format is not supported.
     """
 
     clauses: list[Clause | ClauseGroup]

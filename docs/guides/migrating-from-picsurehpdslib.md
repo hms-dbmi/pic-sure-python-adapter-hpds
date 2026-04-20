@@ -38,6 +38,13 @@ One package replaces both the client and the adapter.
 | `query.getResults()` | `session.runQuery(query, type="participant")` |
 | `query.getResultsDataFrame()` | `session.runQuery(query, type="participant")` |
 
+### Return-type changes
+
+**Note:** `runQuery(..., type="count")` now returns a `CountResult`, not an
+`int`. Use `result.value` for the numeric count (which may be `None` on
+open-access deployments that suppress small counts — check `result.cap` in
+that case).
+
 ## Side-by-Side Examples
 
 ### Connecting
@@ -112,7 +119,11 @@ df = query.getResultsDataFrame()
 **New:**
 
 ```python
-count = session.runQuery(query, type="count")
+count_result = session.runQuery(query, type="count")
+if count_result.value is not None:
+    print(f"{count_result.value} participants match")
+else:
+    print(f"fewer than {count_result.cap} participants match (suppressed)")
 df = session.runQuery(query, type="participant")
 ```
 

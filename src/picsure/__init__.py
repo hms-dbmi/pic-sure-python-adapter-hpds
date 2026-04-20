@@ -2,6 +2,7 @@
 
 from picsure._models.clause import Clause, ClauseType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
+from picsure._models.count_result import CountResult
 from picsure._models.facet import FacetSet
 from picsure._models.query import Query
 from picsure._models.session import Session
@@ -17,6 +18,7 @@ __all__ = [
     "Clause",
     "ClauseGroup",
     "ClauseType",
+    "CountResult",
     "FacetSet",
     "GroupOperator",
     "PicSureError",

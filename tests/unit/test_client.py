@@ -182,3 +182,29 @@ class TestPicSureClient:
 
         assert b"patient_id" in result
         assert result.count(b"\n") == 3
+
+    @respx.mock
+    def test_whitespace_only_token_omits_auth_header(self):
+        route = respx.get(f"{BASE_URL}/some/path").mock(
+            return_value=httpx.Response(200, json={"ok": True})
+        )
+
+        client = PicSureClient(base_url=BASE_URL, token="   ")
+        client.get_json("/some/path")
+
+        request = route.calls[0].request
+        assert "authorization" not in request.headers
+        assert request.headers["request-source"] == "Open"
+
+    @respx.mock
+    def test_token_is_stripped_before_auth_header(self):
+        route = respx.get(f"{BASE_URL}/some/path").mock(
+            return_value=httpx.Response(200, json={"ok": True})
+        )
+
+        client = PicSureClient(base_url=BASE_URL, token="  tok-abc  ")
+        client.get_json("/some/path")
+
+        request = route.calls[0].request
+        assert request.headers["authorization"] == "Bearer tok-abc"
+        assert request.headers["request-source"] == "Authorized"

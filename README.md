@@ -34,7 +34,8 @@ age = picsure.createClause(r"\phs1\age\", type=ClauseType.FILTER, min=40)
 query = picsure.buildClauseGroup([sex, age], root=GroupOperator.AND)
 
 # Run and export
-count = session.runQuery(query, type="count")
+count_result = session.runQuery(query, type="count")
+count = count_result.value  # None if suppressed; check count_result.cap
 df = session.runQuery(query, type="participant")
 session.exportCSV(df, "cohort.csv")
 ```

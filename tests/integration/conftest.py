@@ -21,6 +21,13 @@ PICSURE_TEST_SEARCH_TERM = os.environ.get("PICSURE_TEST_SEARCH_TERM", "age")
 _PLATFORM_BY_NAME = {p.name: p for p in Platform}
 
 
+def requires_auth(test_platform: Platform | str) -> bool:
+    """Return True if the given platform needs a bearer token."""
+    if isinstance(test_platform, Platform):
+        return test_platform.requires_auth
+    return True
+
+
 def pytest_collection_modifyitems(
     config: pytest.Config, items: list[pytest.Item]
 ) -> None:
