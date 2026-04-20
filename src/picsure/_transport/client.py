@@ -22,6 +22,7 @@ class PicSureClient:
         # "Authorized" when a bearer token is present, "Open" otherwise.
         # Without it, authorized endpoints (e.g. /picsure/v3/query/sync) can
         # reject tokens that are otherwise valid on PSAMA or the data-dictionary.
+        token = token.strip()
         headers = {
             "Content-Type": "application/json",
             "request-source": "Authorized" if token else "Open",
