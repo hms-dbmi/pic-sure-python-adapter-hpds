@@ -7,7 +7,7 @@ from typing import Any
 
 @dataclass(frozen=True, slots=True)
 class Event:
-    """A single dev-mode event: HTTP call, function call, connect diagnostic, or error."""
+    """A single dev-mode event: HTTP call, function, connect, or error."""
 
     timestamp: datetime
     kind: str
