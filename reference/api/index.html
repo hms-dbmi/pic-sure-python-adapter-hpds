@@ -2532,6 +2532,10 @@ group = buildClauseGroup(
 <p>Created by <code>picsure.createClause()</code>. Can be passed directly to
 <code>Session.runQuery()</code> or combined with other clauses via
 <code>picsure.buildClauseGroup()</code>.</p>
+<p><strong>Wire format.</strong> :meth:<code>to_query_json</code> emits a v3 <code>PhenotypicFilter</code>
+leaf (or an <code>OR</code> <code>PhenotypicSubquery</code> of leaves for multi-key
+clauses) per the <code>/picsure/v3/query/sync</code> contract. The previous
+wire format is not supported.</p>
 
 
 
@@ -2584,7 +2588,7 @@ spans multiple keys.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="PicSureValidationError">PicSureValidationError</span></code>
+                  <code><span title="picsure.errors.PicSureValidationError">PicSureValidationError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -2638,6 +2642,10 @@ paths via :meth:<code>select_paths</code> instead.</p>
 <p>Created by <code>picsure.buildClauseGroup()</code>. Can contain both
 <code>Clause</code> and nested <code>ClauseGroup</code> objects for arbitrarily
 deep nesting.</p>
+<p><strong>Wire format.</strong> :meth:<code>to_query_json</code> emits a v3
+<code>PhenotypicSubquery</code> (<code>operator</code> / <code>phenotypicClauses</code> /
+<code>not</code>) per the <code>/picsure/v3/query/sync</code> contract. The previous
+wire format is not supported.</p>
 
 
 
@@ -3160,7 +3168,7 @@ df = session.search("sex", facets=fs)</p>
 <a href="#picsure.Session.runQuery" class="headerlink" title="Permanent link">&para;</a></h3>
 <div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">runQuery</span><span class="p">(</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">query</span><span class="p">:</span> <span class="n">Query</span><span class="p">,</span> <span class="nb">type</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;count&quot;</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span> <span class="o">|</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CountResult</span> <span class="o">|</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">CountResult</span><span class="p">]</span> <span class="o">|</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span>
 </code></pre></div>
 
     <div class="doc doc-contents ">
@@ -3209,8 +3217,16 @@ df = session.search("sex", facets=fs)</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Result type — "count" (returns int), "participant"
-(returns DataFrame), or "timestamp" (returns DataFrame).</p>
+                <p>Result type — one of:</p>
+<ul>
+<li><code>"count"</code> → :class:<code>CountResult</code> with <code>value</code> /
+  <code>margin</code> / <code>cap</code> fields, preserving server-side
+  obfuscation of small counts.</li>
+<li><code>"cross_count"</code> → <code>dict[str, CountResult]</code> keyed
+  by concept path.</li>
+<li><code>"participant"</code> → :class:<code>pandas.DataFrame</code>.</li>
+<li><code>"timestamp"</code> → :class:<code>pandas.DataFrame</code>.</li>
+</ul>
               </div>
             </td>
             <td>
@@ -3225,18 +3241,28 @@ df = session.search("sex", facets=fs)</p>
     <table>
       <thead>
         <tr>
-          <th>Type</th>
+<th>Name</th>          <th>Type</th>
           <th>Description</th>
         </tr>
       </thead>
       <tbody>
           <tr class="doc-section-item">
-            <td>
-                  <code><span title="int">int</span> | <span title="pandas.DataFrame">DataFrame</span></code>
+<td><code>A</code></td>            <td>
+                  <code><span title="picsure._models.count_result.CountResult">CountResult</span> | <span title="dict">dict</span>[<span title="str">str</span>, <span title="picsure._models.count_result.CountResult">CountResult</span>] | <span title="pandas.DataFrame">DataFrame</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>An integer for count queries, or a DataFrame for data queries.</p>
+                <p>class:<code>CountResult</code>, a <code>dict[str, CountResult]</code>, or a</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td></td>            <td>
+                  <code><span title="picsure._models.count_result.CountResult">CountResult</span> | <span title="dict">dict</span>[<span title="str">str</span>, <span title="picsure._models.count_result.CountResult">CountResult</span>] | <span title="pandas.DataFrame">DataFrame</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>DataFrame depending on <code>type</code>.</p>
               </div>
             </td>
           </tr>
@@ -3250,6 +3276,10 @@ df = session.search("sex", facets=fs)</p>
 <blockquote>
 <blockquote>
 <p>count = session.runQuery(my_query, type="count")
+if count.value is not None:
+...     print(f"{count.value} participants")
+... else:
+...     print(f"fewer than {count.cap} participants")
 df = session.runQuery(my_query, type="participant")</p>
 </blockquote>
 </blockquote>

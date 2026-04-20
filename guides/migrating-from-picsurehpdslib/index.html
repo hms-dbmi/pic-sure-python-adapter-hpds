@@ -523,6 +523,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Quick Reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#return-type-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Return-type changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -735,6 +752,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Quick Reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#return-type-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Return-type changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -952,6 +986,11 @@ will not work.</p>
 </tr>
 </tbody>
 </table>
+<h3 id="return-type-changes">Return-type changes<a class="headerlink" href="#return-type-changes" title="Permanent link">&para;</a></h3>
+<p><strong>Note:</strong> <code>runQuery(..., type="count")</code> now returns a <code>CountResult</code>, not an
+<code>int</code>. Use <code>result.value</code> for the numeric count (which may be <code>None</code> on
+open-access deployments that suppress small counts — check <code>result.cap</code> in
+that case).</p>
 <h2 id="side-by-side-examples">Side-by-Side Examples<a class="headerlink" href="#side-by-side-examples" title="Permanent link">&para;</a></h2>
 <h3 id="connecting">Connecting<a class="headerlink" href="#connecting" title="Permanent link">&para;</a></h3>
 <p><strong>Old:</strong></p>
@@ -998,8 +1037,12 @@ will not work.</p>
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">df</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">getResultsDataFrame</span><span class="p">()</span>
 </code></pre></div>
 <p><strong>New:</strong></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">count</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">runQuery</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;count&quot;</span><span class="p">)</span>
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="n">df</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">runQuery</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;participant&quot;</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">count_result</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">runQuery</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;count&quot;</span><span class="p">)</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="k">if</span> <span class="n">count_result</span><span class="o">.</span><span class="n">value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">count_result</span><span class="o">.</span><span class="n">value</span><span class="si">}</span><span class="s2"> participants match&quot;</span><span class="p">)</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;fewer than </span><span class="si">{</span><span class="n">count_result</span><span class="o">.</span><span class="n">cap</span><span class="si">}</span><span class="s2"> participants match (suppressed)&quot;</span><span class="p">)</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="n">df</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">runQuery</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;participant&quot;</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="exporting">Exporting<a class="headerlink" href="#exporting" title="Permanent link">&para;</a></h3>
 <p><strong>Old:</strong></p>
