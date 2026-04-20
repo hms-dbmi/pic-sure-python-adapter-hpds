@@ -4,6 +4,7 @@ import respx
 
 from picsure._models.clause import Clause, ClauseType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
+from picsure._models.count_result import CountResult
 from picsure._services.query_run import run_query
 from picsure._transport.client import PicSureClient
 from picsure.errors import (
@@ -28,12 +29,16 @@ def _simple_clause() -> Clause:
 
 class TestRunQueryCount:
     @respx.mock
-    def test_returns_int(self):
+    def test_returns_count_result(self):
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"1234"))
         client = _make_client()
         result = run_query(client, RESOURCE_UUID, _simple_clause(), "count")
-        assert result == 1234
-        assert isinstance(result, int)
+        assert isinstance(result, CountResult)
+        assert result.value == 1234
+        assert result.margin is None
+        assert result.cap is None
+        assert result.obfuscated is False
+        assert result.raw == "1234"
 
     @respx.mock
     def test_sends_correct_body(self):
@@ -85,38 +90,70 @@ class TestRunQueryCount:
             run_query(client, RESOURCE_UUID, _simple_clause(), "count")
 
     @respx.mock
-    def test_count_strips_whitespace(self):
+    def test_count_strips_surrounding_whitespace(self):
         respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"  567  \n")
         )
         client = _make_client()
         result = run_query(client, RESOURCE_UUID, _simple_clause(), "count")
-        assert result == 567
+        assert result.value == 567
+        assert result.obfuscated is False
 
     @respx.mock
-    def test_count_strips_obfuscation_margin(self):
+    def test_noisy_count_preserves_margin(self):
         respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content="11309 \u00b13".encode())
         )
         client = _make_client()
         result = run_query(client, RESOURCE_UUID, _simple_clause(), "count")
-        assert result == 11309
+        assert result.value == 11309
+        assert result.margin == 3
+        assert result.cap is None
+        assert result.obfuscated is True
 
     @respx.mock
-    def test_count_strips_margin_without_spaces(self):
+    def test_noisy_count_without_spaces(self):
         respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content="42\u00b13".encode())
         )
         client = _make_client()
         result = run_query(client, RESOURCE_UUID, _simple_clause(), "count")
-        assert result == 42
+        assert result.value == 42
+        assert result.margin == 3
 
     @respx.mock
-    def test_count_below_threshold_returns_cap(self):
+    def test_suppressed_count_has_cap_and_null_value(self):
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"< 10"))
         client = _make_client()
         result = run_query(client, RESOURCE_UUID, _simple_clause(), "count")
-        assert result == 10
+        assert result.value is None
+        assert result.margin is None
+        assert result.cap == 10
+        assert result.obfuscated is True
+
+    @respx.mock
+    def test_suppressed_count_no_space(self):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"<10"))
+        client = _make_client()
+        result = run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+        assert result.value is None
+        assert result.cap == 10
+
+    @respx.mock
+    def test_malformed_margin_raises(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content="10 \u00b1".encode())
+        )
+        client = _make_client()
+        with pytest.raises(PicSureQueryError, match="Expected a count"):
+            run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+
+    @respx.mock
+    def test_empty_response_raises(self):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
+        client = _make_client()
+        with pytest.raises(PicSureQueryError, match="Expected a count"):
+            run_query(client, RESOURCE_UUID, _simple_clause(), "count")
 
 
 class TestRunQueryParticipant:

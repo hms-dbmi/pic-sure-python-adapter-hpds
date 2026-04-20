@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import io
+import re
 
 import pandas as pd
 
 from picsure._models.clause import Clause, ClauseType
 from picsure._models.clause_group import ClauseGroup
+from picsure._models.count_result import CountResult
 from picsure._models.query import Query
 from picsure._transport.client import PicSureClient
 from picsure._transport.errors import TransportError
@@ -24,13 +26,17 @@ _VALID_QUERY_TYPES: dict[str, str] = {
     "cross_count": "CROSS_COUNT",
 }
 
+_COUNT_EXACT = re.compile(r"^(\d+)$")
+_COUNT_NOISY = re.compile(r"^(\d+)\s*\u00b1\s*(\d+)$")
+_COUNT_SUPPRESSED = re.compile(r"^<\s*(\d+)$")
+
 
 def run_query(
     client: PicSureClient,
     resource_uuid: str,
     query: Query,
     query_type: str,
-) -> int | pd.DataFrame:
+) -> CountResult | pd.DataFrame:
     """Execute a query against PIC-SURE and return the result.
 
     Args:
@@ -118,22 +124,39 @@ def _resolve_query_type(query_type: str) -> str:
     return _VALID_QUERY_TYPES[key]
 
 
-def _parse_count(raw: bytes) -> int:
-    text = raw.decode("utf-8").strip()
-    # Open-access backends may obfuscate small counts:
-    #   "11309 ±3"  — central value with a margin; keep the center.
-    #   "< 10"      — below-threshold cap; return the cap as a conservative
-    #                 upper bound (true value is anywhere in [0, cap)).
-    if "\u00b1" in text:
-        text = text.split("\u00b1", 1)[0].strip()
-    if text.startswith("<"):
-        text = text[1:].strip()
-    try:
-        return int(text)
-    except ValueError as exc:
-        raise PicSureQueryError(
-            f"Expected a count (integer) from the server, but got: '{text[:200]}'"
-        ) from exc
+def _parse_count_string(s: str) -> CountResult:
+    """Parse a single PIC-SURE count string into a :class:`CountResult`.
+
+    Recognises three shapes the server emits:
+
+    - ``"42"``      — exact value
+    - ``"11309 ±3"`` — noisy (additive margin)
+    - ``"< 10"``    — suppressed (below threshold)
+
+    Anything else raises :class:`PicSureQueryError` loudly rather than
+    silently coercing.
+    """
+    text = s.strip()
+    if m := _COUNT_EXACT.match(text):
+        return CountResult(value=int(m.group(1)), margin=None, cap=None, raw=text)
+    if m := _COUNT_NOISY.match(text):
+        return CountResult(
+            value=int(m.group(1)),
+            margin=int(m.group(2)),
+            cap=None,
+            raw=text,
+        )
+    if m := _COUNT_SUPPRESSED.match(text):
+        return CountResult(value=None, margin=None, cap=int(m.group(1)), raw=text)
+    raise PicSureQueryError(
+        f"Expected a count response (e.g. '42', '11309 \u00b13', '< 10'), "
+        f"but got: '{text[:200]}'"
+    )
+
+
+def _parse_count(raw: bytes) -> CountResult:
+    """Decode and parse a bytes count response."""
+    return _parse_count_string(raw.decode("utf-8"))
 
 
 def _parse_dataframe(raw: bytes) -> pd.DataFrame:
