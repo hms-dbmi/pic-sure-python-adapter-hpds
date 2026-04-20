@@ -88,8 +88,11 @@ Queries can be nested arbitrarily deep. See the
 
 ```python
 # Get a count of matching participants
-count = session.runQuery(query, type="count")
-print(f"Found {count} participants")
+count_result = session.runQuery(query, type="count")
+if count_result.value is not None:
+    print(f"{count_result.value} participants match")
+else:
+    print(f"fewer than {count_result.cap} participants match (suppressed)")
 
 # Get participant-level data
 df = session.runQuery(query, type="participant")

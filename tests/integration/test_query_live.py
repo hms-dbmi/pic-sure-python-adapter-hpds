@@ -8,12 +8,20 @@ from .conftest import requires_auth
 
 
 class TestRunQueryLive:
-    def test_count_returns_int(self, test_token, test_platform, test_concept_path):
+    def test_count_returns_count_result(
+        self, test_token, test_platform, test_concept_path
+    ):
+        from picsure import CountResult
+
         session = picsure.connect(platform=test_platform, token=test_token)
         clause = createClause(test_concept_path, type=ClauseType.REQUIRE)
         result = session.runQuery(clause, type="count")
-        assert isinstance(result, int)
-        assert result >= 0
+        assert isinstance(result, CountResult)
+        # Either the server returned an exact or noisy count (value set)
+        # or suppressed it (cap set). Both are valid.
+        assert (result.value is not None and result.value >= 0) or (
+            result.cap is not None and result.cap > 0
+        )
 
     def test_participant_returns_dataframe(
         self, test_token, test_platform, test_concept_path
