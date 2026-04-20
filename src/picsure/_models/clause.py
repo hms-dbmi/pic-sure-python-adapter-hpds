@@ -40,6 +40,11 @@ class Clause:
     Created by ``picsure.createClause()``. Can be passed directly to
     ``Session.runQuery()`` or combined with other clauses via
     ``picsure.buildClauseGroup()``.
+
+    **Wire format.** :meth:`to_query_json` emits a v3 ``PhenotypicFilter``
+    leaf (or an ``OR`` ``PhenotypicSubquery`` of leaves for multi-key
+    clauses) per the ``/picsure/v3/query/sync`` contract. The previous
+    wire format is not supported.
     """
 
     keys: list[str]

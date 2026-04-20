@@ -24,6 +24,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `picsure.buildClauseGroup()` to combine clauses with AND/OR logic, supporting arbitrary nesting.
 - `ClauseType` and `GroupOperator` enums for type-safe clause and group construction.
 - `Clause`, `ClauseGroup`, and `Query` types with `to_query_json()` serialization.
+- `CountResult` dataclass exposing `value`, `margin`, `cap`, `raw`, and an `obfuscated` property for count query responses.
 - Input validation with actionable error messages for invalid clause configurations.
 - `Session.runQuery()` to execute queries and return count (int) or data (DataFrame).
 - `Session.exportPFB()` to export query results as PFB files.
@@ -35,3 +36,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - User guides: search, facets, query building, running, and exporting.
 - Migration guide from PicSureHpdsLib with side-by-side examples.
 - Docs CI workflow: build on PR, deploy to GitHub Pages on push to main.
+
+### Changed
+- Query endpoint changed from `/picsure/query/sync` to `/picsure/v3/query/sync`.
+- `Clause.to_query_json()` / `ClauseGroup.to_query_json()` now emit the v3 `PhenotypicClause` / `PhenotypicSubquery` schema (`operator` / `phenotypicClauses` / `not` for groups; `phenotypicFilterType` / `conceptPath` / `values` / `min` / `max` / `not` for leaves). The previous wire format is no longer produced.
+- `Clause.to_query_json()` now raises `PicSureValidationError` for `SELECT` clauses. Use `Clause.select_paths()` / `ClauseGroup.select_paths()` to retrieve output paths instead.
+- `Session.runQuery(..., type="count")` now returns a `CountResult` dataclass instead of a plain `int`. Access the integer count via `result.value`; check `result.cap` for suppressed small-count responses (`result.value` is `None` in that case) and `result.margin` for noisy responses.
+- `Session.runQuery(..., type="cross_count")` now returns a `dict[str, CountResult]` keyed by concept path instead of a DataFrame.
+- `PicSureClient` now strips leading/trailing whitespace from the bearer token; a whitespace-only token is treated as anonymous (no `Authorization` header, `request-source: Open`).
