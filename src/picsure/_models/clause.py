@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from picsure.errors import PicSureValidationError
+
 
 class ClauseType(Enum):
     """Type of filter clause in a PIC-SURE query.
@@ -58,8 +60,6 @@ class Clause:
                 clauses don't participate in filtering; extract their
                 paths via :meth:`select_paths` instead.
         """
-        from picsure.errors import PicSureValidationError
-
         if self.type == ClauseType.SELECT:
             raise PicSureValidationError(
                 "SELECT clauses do not serialize as PhenotypicClauses. "
