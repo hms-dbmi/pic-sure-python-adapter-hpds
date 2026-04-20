@@ -40,15 +40,50 @@ def connect(
 ) -> Session:
     """Connect to a PIC-SURE instance and return a Session.
 
-    See module docstring for full parameter docs. `dev_mode`:
+    Args:
+        platform: A :class:`Platform` enum member (e.g.
+            ``Platform.BDC_AUTHORIZED``) or a full URL
+            (e.g. ``"https://my-picsure.example.com"``).
+        token: Your PIC-SURE API token.  Leave empty for open-access
+            platforms (e.g. ``Platform.BDC_OPEN``) that don't require
+            authentication.
+        resource_uuid: Optional resource UUID to use. Overrides the
+            default UUID from the Platform enum. Required for custom
+            URLs — if omitted, call ``session.setResourceID(uuid)``
+            after reviewing ``session.getResourceID()``.
+        include_consents: Override the platform's consent policy.  For
+            known Platform members this defaults to the member's own
+            flag; for custom URLs it defaults to ``False``.  Pass
+            ``True`` to fetch the consent list from PSAMA on connect.
+        requires_auth: Override the platform's auth requirement.  Known
+            Platform members default to their own flag; custom URLs
+            default to ``True``.  Pass ``False`` to skip the PSAMA
+            profile call on an open-access deployment.
+        dev_mode: Developer-mode toggle. ``None`` (default) defers to
+            the ``PICSURE_DEV_MODE`` env var; ``True`` / ``False``
+            overrides it. When on, events for every HTTP call and
+            public Session method are captured in an in-memory buffer,
+            and a default stderr handler is attached to the ``picsure``
+            logger (unless one already exists).
 
-    - ``None`` (default): defer to ``PICSURE_DEV_MODE`` env var.
-    - ``True`` / ``False``: explicit override.
+    Returns:
+        A Session you can use to search, build queries, and export data.
 
-    When dev mode is on, events for every HTTP call and public Session
-    method are captured in an in-memory buffer, and a default stderr
-    handler is attached to the ``picsure`` logger (unless one already
-    exists).
+    Raises:
+        PicSureError: If the token is invalid, the server is unreachable,
+            or the platform name is not recognized.
+
+    Example:
+        >>> import picsure
+        >>> session = picsure.connect(
+        ...     platform="BDC Authorized",
+        ...     token="your-api-token",
+        ... )
+        You're successfully connected to BDC Authorized as user you@email.com!
+        Your token expires on 2026-06-15T00:00:00Z.
+
+        >>> # Open-access: no token needed
+        >>> session = picsure.connect(platform=picsure.Platform.BDC_OPEN)
     """
     info = resolve_platform(
         platform,
