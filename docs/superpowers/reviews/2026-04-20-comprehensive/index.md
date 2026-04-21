@@ -136,3 +136,33 @@ These are decisions for the user to make — not a TODO list. Triage and priorit
 5. **Decide whether the adapter should surface Continuous-concept `min`/`max` in the search DataFrame.** If yes, extend `DictionaryEntry`; if no, document the drop.
 6. **Decide whether `AIM_AHEAD` ships in v0.1.** If the UUID isn't available yet, remove the enum member (or guard construction) rather than ship a placeholder string.
 7. **Align docs and code for facet category examples and `showAllFacets` columns before the first public release.** The copy-paste experience matters for the getting-started guide.
+
+---
+
+## Resolution status (2026-04-21)
+
+All Critical findings and the vast majority of Important findings have been resolved on branch `worktree-fix-code-review-items`. Fixes landed as six focused commits:
+
+| Area | Commit | Summary |
+|---|---|---|
+| Transport | [`30d8699`](../../../../.git) | 4xx → `PicSureValidationError` / `PicSureQueryError` / `PicSureConnectionError` mapping with `Retry-After` honored; POST retry restricted to GET and connection/timeout errors; `Session.close()` / `__enter__` / `__exit__`; `Platform.AIM_AHEAD` removed; actionable error when a `requires_auth=True` platform receives a whitespace-only token. |
+| Export | [`57e9be1`](../../../../.git) | `export_pfb` rewritten to the async v3 flow (`POST /picsure/v3/query` → poll `/query/{id}/status` → stream `/query/{id}/result` to disk). Exponential backoff (1s, 2s, 4s, …, capped at 60s per poll; fail after 600s cumulative). Atomic `.part → os.replace`. 4xx mapped to actionable exceptions; `OSError` wrapped in `PicSureConnectionError`. |
+| Search | [`cf94499`](../../../../.git) | `Session.facets(term=..., facets=...)` and `Session.showAllFacets(term=..., facets=...)` now return **contextual** counts (matching the UI) when term/facets are supplied; `DictionaryEntry` surfaces `min`/`max`/`allow_filtering`/`meta`/`study_acronym` and the search DataFrame gains matching columns; truncation guard raises `PicSureQueryError` when `last != True` or the row count disagrees with `totalElements`. |
+| Query building | [`0cdfe01`](../../../../.git) | Symmetric `PicSureValidationError` for FILTER-with-both, REQUIRE/SELECT-with-extras, and empty keys lists; `ClauseGroup.to_query_json()` now raises on SELECT children (symmetric with `Clause.to_query_json()`); defensive list copies in `createClause`; `not` / negation removed from wire-format docstrings. |
+| Query execution | [`e2116fa`](../../../../.git) | `_parse_dataframe` wraps pandas `ParserError` / `EmptyDataError` / `UnicodeDecodeError` in `PicSureQueryError` with body preview; `_parse_cross_count` explicitly supports direct-HPDS integer values; `run_query` docstring documents tab-joined multi-value cells; non-Clause/ClauseGroup queries now fail loudly up front rather than via `AttributeError`. |
+| Docs & cross-cutting | [`b4068a7`](../../../../.git) | `Platform`, `CountResult`, `PicSureError` subclasses, and `Session.consents` / `Session.total_concepts` / `Session.close` surfaced in `docs/reference/api.md`; `PicSureError` subclasses re-exported from the top-level package; guides corrected (`study_ids` → `dataset_id`, `showAllFacets` column list, raw-string-ending-in-backslash examples); `CONTRIBUTING.md` lint path aligned with CI; `pyproject.toml` dependencies upper-bounded (`httpx<1`, `pandas<3`); `Session.close()` context-manager idiom documented in getting-started. |
+
+**Final verification** at commit `b4068a7`:
+- `pytest tests/unit/ -q --cov=picsure --cov-fail-under=80` → 388 passed, 94.71% coverage.
+- `ruff check src/ tests/`, `ruff format --check src/ tests/`, `mypy src/` — all clean.
+- `mkdocs build --strict` — clean.
+
+**Intentionally deferred (not yet resolved):**
+- **Memory pagination for very large searches** (Important in `search.md`). The "one big page" strategy is a deliberate design tradeoff; a `page_size`/pagination knob is future work when a deployment with a significantly larger dictionary shows up.
+- **`request-source` forwarding by the dictionary-api proxy** (Important in `connection-transport.md`). Backend-side concern; the Python adapter's comment was tightened but the gateway behavior is unchanged.
+- **Dedup by `(dataset, conceptPath)`** (Minor in `search.md`). Equivalent to path-only dedup on BDC today.
+- **Enum value casing** on `ClauseType` (Minor in `query-build.md`). Cosmetic.
+- **Negation (`not`) public API**. Per user decision on 2026-04-21: deferred to a future release. Docstring mentions have been removed so there is no implied support.
+- Various other Minor items marked "non-actionable observations" in the area files.
+
+Plan this was executed against: [`2026-04-21-comprehensive-review-fixes.md`](../../plans/2026-04-21-comprehensive-review-fixes.md).
