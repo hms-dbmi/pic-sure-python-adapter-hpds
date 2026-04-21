@@ -266,6 +266,25 @@ class Session:
 
         export_tsv(data, path)
 
+    def close(self) -> None:
+        """Close the underlying HTTP client and release its connection pool.
+
+        Safe to call more than once. Called automatically when ``Session`` is
+        used as a context manager.
+        """
+        self._client.close()
+
+    def __enter__(self) -> Session:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: object,
+        exc_val: object,
+        exc_tb: object,
+    ) -> None:
+        self.close()
+
     def _default_resource_uuid(self) -> str:
         if self._resource_uuid is not None:
             return self._resource_uuid

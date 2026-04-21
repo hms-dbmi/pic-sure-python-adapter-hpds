@@ -6,7 +6,10 @@ from picsure._transport.client import PicSureClient
 from picsure._transport.errors import (
     TransportAuthenticationError,
     TransportConnectionError,
+    TransportNotFoundError,
+    TransportRateLimitError,
     TransportServerError,
+    TransportValidationError,
 )
 
 BASE_URL = "https://test.example.com"
@@ -160,7 +163,8 @@ class TestPicSureClient:
         assert request.headers["authorization"] == f"Bearer {TOKEN}"
 
     @respx.mock
-    def test_post_raw_500_retries_then_raises(self):
+    def test_post_raw_500_does_not_retry(self):
+        # POST is non-idempotent, so 5xx responses are not retried.
         route = respx.post(f"{BASE_URL}/fail").mock(
             return_value=httpx.Response(500, content=b"error")
         )
@@ -168,7 +172,7 @@ class TestPicSureClient:
         client = PicSureClient(base_url=BASE_URL, token=TOKEN)
         with pytest.raises(TransportServerError):
             client.post_raw("/fail")
-        assert route.call_count == 2
+        assert route.call_count == 1
 
     @respx.mock
     def test_post_raw_csv_content(self):
@@ -208,3 +212,144 @@ class TestPicSureClient:
         request = route.calls[0].request
         assert request.headers["authorization"] == "Bearer tok-abc"
         assert request.headers["request-source"] == "Authorized"
+
+
+class TestPicSureClient4xxMapping:
+    @respx.mock
+    def test_400_raises_validation_error(self):
+        respx.get(f"{BASE_URL}/bad").mock(
+            return_value=httpx.Response(400, text="Bad Request")
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+        with pytest.raises(TransportValidationError) as exc_info:
+            client.get_json("/bad")
+        assert exc_info.value.status_code == 400
+
+    @respx.mock
+    def test_422_raises_validation_error(self):
+        respx.post(f"{BASE_URL}/bad").mock(
+            return_value=httpx.Response(422, text="Unprocessable")
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+        with pytest.raises(TransportValidationError) as exc_info:
+            client.post_json("/bad", body={"x": 1})
+        assert exc_info.value.status_code == 422
+
+    @respx.mock
+    def test_404_raises_not_found_error(self):
+        respx.get(f"{BASE_URL}/nope").mock(
+            return_value=httpx.Response(404, text="Not Found")
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+        with pytest.raises(TransportNotFoundError) as exc_info:
+            client.get_json("/nope")
+        assert exc_info.value.status_code == 404
+
+    @respx.mock
+    def test_429_with_retry_after_raises_rate_limit_error(self):
+        respx.post(f"{BASE_URL}/busy").mock(
+            return_value=httpx.Response(
+                429,
+                text="Too many requests",
+                headers={"Retry-After": "30"},
+            )
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+        with pytest.raises(TransportRateLimitError) as exc_info:
+            client.post_json("/busy", body={})
+        assert exc_info.value.status_code == 429
+        assert exc_info.value.retry_after == 30
+
+    @respx.mock
+    def test_429_without_retry_after(self):
+        respx.get(f"{BASE_URL}/busy").mock(
+            return_value=httpx.Response(429, text="Too many")
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+        with pytest.raises(TransportRateLimitError) as exc_info:
+            client.get_json("/busy")
+        assert exc_info.value.retry_after is None
+
+    @respx.mock
+    def test_429_with_non_integer_retry_after(self):
+        respx.get(f"{BASE_URL}/busy").mock(
+            return_value=httpx.Response(
+                429,
+                text="Too many",
+                headers={"Retry-After": "Mon, 01 Jan 2100 00:00:00 GMT"},
+            )
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+        with pytest.raises(TransportRateLimitError) as exc_info:
+            client.get_json("/busy")
+        assert exc_info.value.retry_after is None
+
+    @respx.mock
+    def test_other_4xx_raises_validation_error(self):
+        respx.get(f"{BASE_URL}/teapot").mock(
+            return_value=httpx.Response(418, text="I'm a teapot")
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+        with pytest.raises(TransportValidationError) as exc_info:
+            client.get_json("/teapot")
+        assert exc_info.value.status_code == 418
+
+
+class TestPicSureClientRetryScoping:
+    @respx.mock
+    def test_post_502_does_not_retry(self):
+        route = respx.post(f"{BASE_URL}/query/sync").mock(
+            return_value=httpx.Response(502, text="bad gateway")
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+        with pytest.raises(TransportServerError):
+            client.post_json("/query/sync", body={"q": "x"})
+        assert route.call_count == 1
+
+    @respx.mock
+    def test_get_502_does_retry(self):
+        route = respx.get(f"{BASE_URL}/flaky").mock(
+            return_value=httpx.Response(502, text="bad gateway")
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+        with pytest.raises(TransportServerError):
+            client.get_json("/flaky")
+        assert route.call_count == 2
+
+    @respx.mock
+    def test_post_connect_error_does_retry(self):
+        route = respx.post(f"{BASE_URL}/query/sync").mock(
+            side_effect=httpx.ConnectError("refused")
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+        with pytest.raises(TransportConnectionError):
+            client.post_json("/query/sync", body={"q": "x"})
+        assert route.call_count == 2
+
+    @respx.mock
+    def test_post_timeout_does_retry(self):
+        route = respx.post(f"{BASE_URL}/query/sync").mock(
+            side_effect=httpx.ReadTimeout("timed out")
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+        with pytest.raises(TransportConnectionError):
+            client.post_json("/query/sync", body={"q": "x"})
+        assert route.call_count == 2
+
+    @respx.mock
+    def test_post_raw_502_does_not_retry(self):
+        route = respx.post(f"{BASE_URL}/fail").mock(
+            return_value=httpx.Response(502, content=b"bad gateway")
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+        with pytest.raises(TransportServerError):
+            client.post_raw("/fail", body={"q": "x"})
+        assert route.call_count == 1
+
+    @respx.mock
+    def test_close_is_idempotent(self):
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+        client.close()
+        # A second close should not raise.
+        client.close()
+        assert client._http.is_closed

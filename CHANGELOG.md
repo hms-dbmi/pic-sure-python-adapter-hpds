@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Added
 - `picsure.connect()` to authenticate and connect to a PIC-SURE instance.
 - `Session.getResourceID()` to list available resources as a DataFrame.
-- Platform name resolution for BDC Authorized, BDC Open, Demo, and AIM-AHEAD.
+- Platform name resolution for BDC Authorized, BDC Open, and Demo.
 - Actionable error messages via `PicSureError`.
 - Unit test suite with mocked HTTP via respx.
 - Integration test scaffold gated by `PICSURE_INTEGRATION` env var.

@@ -11,7 +11,12 @@ from picsure._models.clause_group import ClauseGroup
 from picsure._models.count_result import CountResult
 from picsure._models.query import Query
 from picsure._transport.client import PicSureClient
-from picsure._transport.errors import TransportError
+from picsure._transport.errors import (
+    TransportError,
+    TransportNotFoundError,
+    TransportRateLimitError,
+    TransportValidationError,
+)
 from picsure.errors import (
     PicSureConnectionError,
     PicSureQueryError,
@@ -62,6 +67,20 @@ def run_query(
 
     try:
         raw = client.post_raw(_PICSURE_QUERY_SYNC_PATH, body=body)
+    except TransportValidationError as exc:
+        raise PicSureValidationError(
+            f"Server rejected the query (HTTP {exc.status_code}): {exc.body[:200]}"
+        ) from exc
+    except TransportNotFoundError as exc:
+        raise PicSureQueryError(
+            f"Query endpoint not found (HTTP {exc.status_code}): {exc.body[:200]}"
+        ) from exc
+    except TransportRateLimitError as exc:
+        if exc.retry_after is not None:
+            msg = f"Rate limited; server said retry after {exc.retry_after} seconds."
+        else:
+            msg = "Rate limited. Please wait and try again."
+        raise PicSureConnectionError(msg) from exc
     except TransportError as exc:
         raise PicSureConnectionError(
             "Could not execute query. The server may be temporarily unavailable."

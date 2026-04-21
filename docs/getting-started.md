@@ -28,7 +28,7 @@ Your token expires on 2026-06-15T00:00:00Z.
 ```
 
 The `platform` parameter accepts named platforms (`"BDC Authorized"`,
-`"BDC Open"`, `"Demo"`, `"AIM-AHEAD"`) or a custom URL for other
+`"BDC Open"`, `"Demo"`) or a custom URL for other
 PIC-SURE instances.
 
 ## Step 2: Search the Data Dictionary

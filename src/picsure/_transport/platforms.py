@@ -98,13 +98,6 @@ class Platform(Enum):
         include_consents=False,
         requires_auth=False,
     )
-    AIM_AHEAD = PlatformConfig(
-        url="https://picsure.aim-ahead.net",
-        resource_uuid="REPLACE-ME-aim-ahead-resource-uuid",
-        label="AIM-AHEAD",
-        include_consents=True,
-        requires_auth=True,
-    )
 
     @property
     def url(self) -> str:
@@ -160,9 +153,7 @@ def resolve_platform(
             else platform.include_consents
         )
         resolved_auth = (
-            requires_auth
-            if requires_auth is not None
-            else platform.requires_auth
+            requires_auth if requires_auth is not None else platform.requires_auth
         )
         return PlatformInfo(
             url=platform.url,

@@ -3,7 +3,10 @@ import httpx
 from picsure._transport.errors import (
     TransportAuthenticationError,
     TransportConnectionError,
+    TransportNotFoundError,
+    TransportRateLimitError,
     TransportServerError,
+    TransportValidationError,
 )
 
 _MAX_RETRIES = 1
@@ -61,26 +64,68 @@ class PicSureClient:
                 response = self._http.request(method, path, **kwargs)  # type: ignore[arg-type]
             except httpx.ConnectError as exc:
                 last_exc = exc
+                # Connection errors are idempotent-safe: the request never
+                # reached the server, so retrying can't double-execute.
                 if attempt < _MAX_RETRIES:
                     continue
                 raise TransportConnectionError(str(exc)) from exc
             except httpx.TimeoutException as exc:
                 last_exc = exc
+                # Timeouts may or may not have reached the server, but
+                # the convention in this client is to retry — see the
+                # original TransportConnectionError path.
                 if attempt < _MAX_RETRIES:
                     continue
                 raise TransportConnectionError(f"Request timed out: {exc}") from exc
 
-            if response.status_code in (401, 403):
-                raise TransportAuthenticationError(response.status_code, response.text)
+            status = response.status_code
 
-            if response.status_code >= 500:
-                if attempt < _MAX_RETRIES:
+            if status in (401, 403):
+                raise TransportAuthenticationError(status, response.text)
+
+            if status == 404:
+                raise TransportNotFoundError(status, response.text)
+
+            if status == 429:
+                raise TransportRateLimitError(
+                    status, response.text, retry_after=_parse_retry_after(response)
+                )
+
+            if 400 <= status < 500:
+                # 400, 422, and any other 4xx fall into the validation bucket.
+                raise TransportValidationError(status, response.text)
+
+            if status >= 500:
+                # POST is non-idempotent: a 5xx after the request reached
+                # the server may have partially executed.  Only retry GETs.
+                if method == "GET" and attempt < _MAX_RETRIES:
                     continue
-                raise TransportServerError(response.status_code, response.text)
+                raise TransportServerError(status, response.text)
 
             return response
 
         raise TransportConnectionError("Request failed after retries") from last_exc
 
     def close(self) -> None:
+        """Close the underlying HTTP client.  Safe to call more than once."""
+        # httpx.Client.close() is itself idempotent, but be explicit so
+        # callers can rely on the Session-level contract.
         self._http.close()
+
+
+def _parse_retry_after(response: httpx.Response) -> int | None:
+    """Parse a ``Retry-After`` header as an integer number of seconds.
+
+    Returns ``None`` for missing headers and for HTTP-date values that
+    cannot be parsed as a plain integer.  We intentionally don't try to
+    parse HTTP-date here: the value we want to surface is "seconds from
+    now," and converting a date to that requires a wall-clock reference
+    the caller can compute themselves if needed.
+    """
+    raw = response.headers.get("Retry-After")
+    if raw is None:
+        return None
+    try:
+        return int(raw.strip())
+    except (TypeError, ValueError):
+        return None

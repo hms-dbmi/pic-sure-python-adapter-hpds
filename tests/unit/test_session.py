@@ -2,6 +2,7 @@ from unittest.mock import MagicMock
 
 import httpx
 import pandas as pd
+import pytest
 import respx
 
 from picsure._models.resource import Resource
@@ -272,9 +273,7 @@ class TestSessionFacets:
         assert "data_type" in view
 
     @respx.mock
-    def test_facets_can_add_and_use_in_search(
-        self, facets_response, search_response
-    ):
+    def test_facets_can_add_and_use_in_search(self, facets_response, search_response):
         respx.post(_FACETS_URL).mock(
             return_value=httpx.Response(200, json=facets_response)
         )
@@ -399,3 +398,33 @@ class TestSessionExport:
 
         assert output.exists()
         assert "id\tname" in output.read_text()
+
+
+class TestSessionClose:
+    def test_close_calls_client_close(self):
+        session = _make_session()
+        session.close()
+        session._client.close.assert_called_once()
+
+    def test_close_is_idempotent(self):
+        session = _make_session()
+        session.close()
+        # A second close() must not raise.
+        session.close()
+
+    def test_context_manager_returns_session(self):
+        session = _make_session()
+        with session as s:
+            assert s is session
+
+    def test_context_manager_closes_on_exit(self):
+        session = _make_session()
+        with session:
+            pass
+        session._client.close.assert_called_once()
+
+    def test_context_manager_closes_on_exception(self):
+        session = _make_session()
+        with pytest.raises(RuntimeError), session:  # noqa: PT012
+            raise RuntimeError("boom")
+        session._client.close.assert_called_once()
