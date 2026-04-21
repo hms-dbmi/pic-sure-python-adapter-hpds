@@ -57,6 +57,12 @@ def run_query(
         - ``participant``  → :class:`pandas.DataFrame`
         - ``timestamp``    → :class:`pandas.DataFrame`
 
+    Note:
+        For ``participant`` and ``timestamp`` queries, a patient with multiple
+        observations on the same concept appears as a single cell containing
+        all values joined by ``\\t`` (tab). Use ``df[col].str.split("\\t")``
+        to get a list-valued column when you need the individual observations.
+
     Raises:
         PicSureValidationError: If the query type is invalid.
         PicSureConnectionError: If the server is unreachable.
@@ -109,6 +115,11 @@ def build_query_body(
         client-asserted list (especially with a long-term token) is
         treated as tampering and can be rejected with a 401.
     """
+    if not isinstance(query, (Clause, ClauseGroup)):
+        raise PicSureValidationError(
+            "Query must be a Clause or ClauseGroup. "
+            "Use createClause() or buildClauseGroup() to construct one."
+        )
     select_paths = query.select_paths()
     phenotypic = _phenotypic_clause(query)
     return {
@@ -129,11 +140,6 @@ def _phenotypic_clause(query: Query) -> dict[str, object] | None:
         if query.type == ClauseType.SELECT:
             return None
         return query.to_query_json()
-    if not isinstance(query, ClauseGroup):
-        raise PicSureValidationError(
-            "Query must be a Clause or ClauseGroup. "
-            "Use createClause() or buildClauseGroup() to construct one."
-        )
     if not query.has_phenotypic():
         return None
     return query.to_query_json()
@@ -187,10 +193,13 @@ def _parse_count(raw: bytes) -> CountResult:
 def _parse_cross_count(raw: bytes) -> dict[str, CountResult]:
     """Parse a CROSS_COUNT response into a mapping of concept path → count.
 
-    The server returns a JSON object where each value is a count string
-    in the same format as a COUNT response. Malformed JSON, non-object
-    top-level values, and malformed count strings all raise
-    :class:`PicSureQueryError`.
+    The server returns a JSON object. Each value may be an exact integer
+    (direct HPDS response, ``Map<String, Integer>``) or a count string
+    (aggregate-obfuscated response, e.g. ``"42"``, ``"11309 \u00b13"``,
+    or ``"< 10"``). Both are parsed into :class:`CountResult`.
+
+    Malformed JSON, non-object top-level values, and malformed count
+    values all raise :class:`PicSureQueryError`.
     """
     try:
         data = json.loads(raw.decode("utf-8"))
@@ -203,11 +212,32 @@ def _parse_cross_count(raw: bytes) -> dict[str, CountResult]:
         raise PicSureQueryError(
             f"Expected a cross-count JSON object, got {type(data).__name__}"
         )
-    return {str(path): _parse_count_string(str(v)) for path, v in data.items()}
+    result: dict[str, CountResult] = {}
+    for path, v in data.items():
+        key = str(path)
+        # bool is an int subclass in Python; guard against True/False
+        # masquerading as valid counts.
+        if isinstance(v, int) and not isinstance(v, bool):
+            result[key] = CountResult(value=v, margin=None, cap=None, raw=str(v))
+        else:
+            result[key] = _parse_count_string(str(v))
+    return result
 
 
 def _parse_dataframe(raw: bytes) -> pd.DataFrame:
-    text = raw.decode("utf-8")
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        byte_preview = raw[:200]
+        raise PicSureQueryError(
+            f"Server returned a malformed CSV response: {byte_preview!r}"
+        ) from exc
     if not text.strip():
         return pd.DataFrame()
-    return pd.read_csv(io.StringIO(text))
+    try:
+        return pd.read_csv(io.StringIO(text))
+    except (pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
+        text_preview = text[:200]
+        raise PicSureQueryError(
+            f"Server returned a malformed CSV response: {text_preview!r}"
+        ) from exc

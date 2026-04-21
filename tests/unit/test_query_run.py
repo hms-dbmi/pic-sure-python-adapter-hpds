@@ -213,6 +213,56 @@ class TestRunQueryTimestamp:
         assert "date" in df.columns
 
 
+class TestRunQueryParticipantMalformed:
+    @respx.mock
+    def test_inconsistent_columns_raises_query_error(self):
+        # Rows with mismatched field counts trigger pandas ParserError.
+        # We wrap that as PicSureQueryError with a preview so the user
+        # sees an actionable message instead of a raw pandas traceback.
+        body = b"a,b,c\n1,2,3\n4,5,6,7,8\n"
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=body))
+        client = _make_client()
+        with pytest.raises(PicSureQueryError, match="malformed CSV"):
+            run_query(client, RESOURCE_UUID, _simple_clause(), "participant")
+
+    @respx.mock
+    def test_malformed_csv_error_includes_preview(self):
+        # The preview in the error message lets the user spot a proxy
+        # error page or truncated response without enabling debug logs.
+        body = b"a,b,c\n1,2,3\n4,5,6,7,8\nmarker-xyz\n"
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=body))
+        client = _make_client()
+        with pytest.raises(PicSureQueryError) as excinfo:
+            run_query(client, RESOURCE_UUID, _simple_clause(), "participant")
+        assert "a,b,c" in str(excinfo.value)
+
+    @respx.mock
+    def test_non_utf8_bytes_raises_query_error(self):
+        # Bytes that aren't valid UTF-8 should produce a PicSureQueryError
+        # rather than leaking a raw UnicodeDecodeError.
+        body = b"\xff\xfe\x00\x00invalid utf-8"
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=body))
+        client = _make_client()
+        with pytest.raises(PicSureQueryError, match="malformed CSV"):
+            run_query(client, RESOURCE_UUID, _simple_clause(), "participant")
+
+    @respx.mock
+    def test_empty_response_still_returns_empty_dataframe(self):
+        # Regression guard: empty body is a legitimate "no rows" signal,
+        # not a parse error.
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
+        client = _make_client()
+        df = run_query(client, RESOURCE_UUID, _simple_clause(), "participant")
+        assert len(df) == 0
+
+    @respx.mock
+    def test_whitespace_only_response_returns_empty_dataframe(self):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"   \n"))
+        client = _make_client()
+        df = run_query(client, RESOURCE_UUID, _simple_clause(), "participant")
+        assert len(df) == 0
+
+
 class TestRunQueryCrossCount:
     @respx.mock
     def test_sends_cross_count_result_type(self):
@@ -279,6 +329,63 @@ class TestRunQueryCrossCount:
     def test_invalid_count_value_raises(self):
         respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b'{"\\\\p\\\\": "banana"}')
+        )
+        client = _make_client()
+        with pytest.raises(PicSureQueryError, match="Expected a count"):
+            run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")
+
+    @respx.mock
+    def test_integer_values_direct_hpds_shape(self):
+        # When HPDS is queried directly (no aggregate-obfuscation proxy),
+        # CountV3Processor.runCrossCounts returns Map<String, Integer>,
+        # serialized as integer values: {"\\path\\": 42}.
+        payload = b'{"\\\\phs000007\\\\": 42, "\\\\phs000013\\\\": 100}'
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=payload))
+        client = _make_client()
+        result = run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")
+
+        assert isinstance(result, dict)
+        assert set(result.keys()) == {"\\phs000007\\", "\\phs000013\\"}
+
+        first = result["\\phs000007\\"]
+        assert isinstance(first, CountResult)
+        assert first.value == 42
+        assert first.margin is None
+        assert first.cap is None
+        assert first.raw == "42"
+        assert first.obfuscated is False
+
+        second = result["\\phs000013\\"]
+        assert second.value == 100
+        assert second.obfuscated is False
+
+    @respx.mock
+    def test_mixed_integers_and_count_strings(self):
+        # A response mixing integers (direct HPDS) and count strings
+        # (aggregate-obfuscation proxy) should parse both correctly.
+        payload = (
+            '{"\\\\a\\\\": 42, "\\\\b\\\\": "100 \u00b13", "\\\\c\\\\": "< 10"}'
+        ).encode()
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=payload))
+        client = _make_client()
+        result = run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")
+
+        assert result["\\a\\"].value == 42
+        assert result["\\a\\"].obfuscated is False
+
+        assert result["\\b\\"].value == 100
+        assert result["\\b\\"].margin == 3
+
+        assert result["\\c\\"].value is None
+        assert result["\\c\\"].cap == 10
+
+    @respx.mock
+    def test_boolean_value_raises(self):
+        # True/False are technically `int` subclasses in Python; the guard
+        # ``not isinstance(v, bool)`` must route them through the string
+        # parser, which then fails as expected.
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b'{"\\\\x\\\\": true}')
         )
         client = _make_client()
         with pytest.raises(PicSureQueryError, match="Expected a count"):
@@ -368,6 +475,22 @@ class TestRunQueryValidation:
         client = _make_client()
         with pytest.raises(PicSureValidationError, match="count"):
             run_query(client, RESOURCE_UUID, _simple_clause(), "typo")
+
+    def test_plain_dict_query_raises_validation_error(self):
+        # A plain dict is not a Clause or ClauseGroup. We want an
+        # actionable PicSureValidationError, not an AttributeError from
+        # some internal accessor that assumes the API shape.
+        client = _make_client()
+        with pytest.raises(
+            PicSureValidationError,
+            match="Clause or ClauseGroup",
+        ):
+            run_query(
+                client,
+                RESOURCE_UUID,
+                {"keys": ["\\phs1\\sex\\"]},  # type: ignore[arg-type]
+                "count",
+            )
 
 
 class TestRunQueryErrors:

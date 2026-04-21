@@ -40,6 +40,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Docs CI workflow: build on PR, deploy to GitHub Pages on push to main.
 
 ### Changed
+- `Session.runQuery` docstring now documents that ``participant`` / ``timestamp``
+  DataFrame cells may contain tab-joined multi-values; callers should use
+  ``df[col].str.split("\t")`` when they need individual observations.
 - Query endpoint changed from `/picsure/query/sync` to `/picsure/v3/query/sync`.
 - `Clause.to_query_json()` / `ClauseGroup.to_query_json()` now emit the v3 `PhenotypicClause` / `PhenotypicSubquery` schema (`operator` / `phenotypicClauses` / `not` for groups; `phenotypicFilterType` / `conceptPath` / `values` / `min` / `max` / `not` for leaves). The previous wire format is no longer produced.
 - `Clause.to_query_json()` now raises `PicSureValidationError` for `SELECT` clauses. Use `Clause.select_paths()` / `ClauseGroup.select_paths()` to retrieve output paths instead.
@@ -68,6 +71,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   release.
 
 ### Fixed
+- `Session.runQuery(..., type="participant")` and `type="timestamp"` now surface
+  malformed-CSV responses as `PicSureQueryError` with a body preview (previously
+  leaked raw pandas `ParserError` / `EmptyDataError` / `UnicodeDecodeError`).
+- `Session.runQuery(..., type="cross_count")` explicitly handles the direct-HPDS
+  response shape (`{concept_path: integer}`), not only the aggregate-obfuscation
+  response shape (`{concept_path: count_string}`).
+- `Session.runQuery` now validates the query argument at body construction so
+  that passing a plain `dict` raises `PicSureValidationError` ("Query must be a
+  Clause or ClauseGroup") rather than a confusing `AttributeError` from an
+  internal accessor.
 - `Session.search` now raises `PicSureQueryError` when the server's paginated response indicates the result set was truncated (`last != True` or `content` length doesn't match `totalElements`). Previously the adapter silently returned the partial page.
 - PFB export against v3 PIC-SURE was silently broken: the previous implementation posted `DATAFRAME_PFB` to `/query/sync`, which v3 HPDS has no handler for. Unit tests passed only because `respx` served a canned 200 body at the wrong URL.
 - 4xx responses during PFB submission / status / result are now surfaced as `PicSureValidationError` / `PicSureQueryError` (previously the 4xx body bytes would be written to disk as if they were PFB).
