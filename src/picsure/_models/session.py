@@ -44,8 +44,10 @@ class Session:
         self._resource_uuid = resource_uuid
         self._consents: list[str] = list(consents) if consents else []
         self._total_concepts = total_concepts
-        self._dev_config = dev_config if dev_config is not None else DevConfig(
-            enabled=False, max_events=1
+        self._dev_config = (
+            dev_config
+            if dev_config is not None
+            else DevConfig(enabled=False, max_events=1)
         )
 
     @property

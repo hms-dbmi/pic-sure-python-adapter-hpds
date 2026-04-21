@@ -69,9 +69,7 @@ def test_retry_emits_two_events():
 
 @respx.mock
 def test_connection_error_emits_error_event_then_raises():
-    respx.get(f"{BASE_URL}/down").mock(
-        side_effect=httpx.ConnectError("refused")
-    )
+    respx.get(f"{BASE_URL}/down").mock(side_effect=httpx.ConnectError("refused"))
     cfg = DevConfig(enabled=True, max_events=10)
     client = PicSureClient(base_url=BASE_URL, token=TOKEN, dev_config=cfg)
 
@@ -84,9 +82,7 @@ def test_connection_error_emits_error_event_then_raises():
 
 @respx.mock
 def test_server_error_after_retries_emits_events_for_each_attempt():
-    respx.get(f"{BASE_URL}/bad").mock(
-        return_value=httpx.Response(500, text="boom")
-    )
+    respx.get(f"{BASE_URL}/bad").mock(return_value=httpx.Response(500, text="boom"))
     cfg = DevConfig(enabled=True, max_events=10)
     client = PicSureClient(base_url=BASE_URL, token=TOKEN, dev_config=cfg)
 
@@ -97,18 +93,14 @@ def test_server_error_after_retries_emits_events_for_each_attempt():
     http_events = [e for e in events if e.kind == "http"]
     assert [e.retry for e in http_events] == [0, 1]
     assert all(e.status == 500 for e in http_events)
-    assert any(
-        e.kind == "error" and e.error == "TransportServerError" for e in events
-    )
+    assert any(e.kind == "error" and e.error == "TransportServerError" for e in events)
 
 
 @respx.mock
 def test_auth_error_emits_error_event_before_raising():
     from picsure._transport.errors import TransportAuthenticationError
 
-    respx.get(f"{BASE_URL}/denied").mock(
-        return_value=httpx.Response(401, text="nope")
-    )
+    respx.get(f"{BASE_URL}/denied").mock(return_value=httpx.Response(401, text="nope"))
     cfg = DevConfig(enabled=True, max_events=10)
     client = PicSureClient(base_url=BASE_URL, token=TOKEN, dev_config=cfg)
 
@@ -117,8 +109,7 @@ def test_auth_error_emits_error_event_before_raising():
 
     events = cfg.buffer.snapshot()
     assert any(
-        e.kind == "error" and e.error == "TransportAuthenticationError"
-        for e in events
+        e.kind == "error" and e.error == "TransportAuthenticationError" for e in events
     )
 
 
@@ -142,9 +133,7 @@ def test_no_events_when_dev_config_is_none():
 @respx.mock
 def test_participant_query_body_not_logged():
     respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
-        return_value=httpx.Response(
-            200, content=b"patient_id,sex\nP1,M\n"
-        )
+        return_value=httpx.Response(200, content=b"patient_id,sex\nP1,M\n")
     )
     cfg = DevConfig(enabled=True, max_events=10)
     client = PicSureClient(base_url=BASE_URL, token=TOKEN, dev_config=cfg)

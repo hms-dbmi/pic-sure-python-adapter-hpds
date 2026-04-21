@@ -31,8 +31,16 @@ _STATS_COLS = [
 ]
 
 
-def _event(kind="http", name="/a", duration=10.0, retry=0, error=None,
-           bytes_in=100, bytes_out=200, status=200):
+def _event(
+    kind="http",
+    name="/a",
+    duration=10.0,
+    retry=0,
+    error=None,
+    bytes_in=100,
+    bytes_out=200,
+    status=200,
+):
     return Event(
         timestamp=datetime(2026, 4, 20, 12, 0, 0, tzinfo=timezone.utc),
         kind=kind,
@@ -68,8 +76,8 @@ def test_stats_to_df_empty_has_columns():
 def test_stats_to_df_aggregates_by_kind_and_name():
     events = [
         _event(kind="http", name="/a", duration=10.0, bytes_in=100, bytes_out=200),
-        _event(kind="http", name="/a", duration=20.0, bytes_in=50,  bytes_out=400),
-        _event(kind="http", name="/b", duration=5.0,  bytes_in=10,  bytes_out=20),
+        _event(kind="http", name="/a", duration=20.0, bytes_in=50, bytes_out=400),
+        _event(kind="http", name="/b", duration=5.0, bytes_in=10, bytes_out=20),
     ]
     df = stats_to_df(events)
     a = df[df["name"] == "/a"].iloc[0]
