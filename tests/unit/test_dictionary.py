@@ -50,6 +50,49 @@ class TestDictionaryEntry:
         assert entry.data_type == ""
         assert entry.study_id == ""
         assert entry.values == []
+        assert entry.min is None
+        assert entry.max is None
+        assert entry.allow_filtering is None
+        assert entry.meta is None
+        assert entry.study_acronym is None
+
+    def test_from_dict_continuous_fields_populated(self):
+        data = {
+            "conceptPath": "\\phs000007\\age\\",
+            "name": "age",
+            "type": "Continuous",
+            "min": 0.0,
+            "max": 100.0,
+            "allowFiltering": True,
+            "meta": {"k": "v"},
+            "studyAcronym": "FHS",
+            "dataset": "phs000007",
+        }
+        entry = DictionaryEntry.from_dict(data)
+        assert entry.min == 0.0
+        assert entry.max == 100.0
+        assert entry.allow_filtering is True
+        assert entry.meta == {"k": "v"}
+        assert entry.study_acronym == "FHS"
+        assert entry.data_type == "Continuous"
+        assert entry.study_id == "phs000007"
+
+    def test_from_dict_categorical_no_min_max(self):
+        data = {
+            "conceptPath": "\\phs000007\\sex\\",
+            "name": "sex",
+            "type": "Categorical",
+            "values": ["Male", "Female"],
+            "allowFiltering": True,
+            "studyAcronym": "FHS",
+            "dataset": "phs000007",
+        }
+        entry = DictionaryEntry.from_dict(data)
+        assert entry.min is None
+        assert entry.max is None
+        assert entry.allow_filtering is True
+        assert entry.study_acronym == "FHS"
+        assert entry.meta is None
 
     def test_from_dict_empty_values(self):
         data = {

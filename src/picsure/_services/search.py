@@ -30,6 +30,11 @@ _COLUMNS_WITH_VALUES = [
     "dataType",
     "studyId",
     "values",
+    "min",
+    "max",
+    "allowFiltering",
+    "meta",
+    "studyAcronym",
 ]
 
 _COLUMNS_WITHOUT_VALUES = [
@@ -39,6 +44,11 @@ _COLUMNS_WITHOUT_VALUES = [
     "description",
     "dataType",
     "studyId",
+    "min",
+    "max",
+    "allowFiltering",
+    "meta",
+    "studyAcronym",
 ]
 
 
@@ -150,7 +160,21 @@ def search(
             "Could not complete search. The server may be temporarily unavailable."
         ) from exc
 
-    entries = [DictionaryEntry.from_dict(r) for r in data.get("content", [])]
+    content = data.get("content", [])
+    total_elements = data.get("totalElements", len(content) if content else 0)
+    last = data.get("last")
+    # The "one big page" strategy assumes the single request returned every
+    # match. If the server paginated (``last`` missing or False) or the
+    # counts disagree, surface loudly — a stale ``total_concepts`` from
+    # connect-time or a server-side page-size cap would otherwise silently
+    # truncate results.
+    if last is not True or len(content) != total_elements:
+        raise PicSureQueryError(
+            f"Search returned a truncated page ({len(content)}/{total_elements} "
+            "entries). Reconnect to refresh the concept count."
+        )
+
+    entries = [DictionaryEntry.from_dict(r) for r in content]
     entries = _deduplicate(entries)
 
     columns = _COLUMNS_WITH_VALUES if include_values else _COLUMNS_WITHOUT_VALUES
@@ -165,14 +189,33 @@ def search(
 def fetch_facets(
     client: PicSureClient,
     consents: list[str] | None = None,
+    term: str = "",
+    facets: FacetSet | None = None,
 ) -> list[FacetCategory]:
-    """Fetch all available facet categories from the server.
+    """Fetch facet categories from the server.
 
     POSTs to ``/picsure/proxy/dictionary-api/facets`` with the same
     body shape as :func:`search`.  The response is a top-level array
     of facet categories (not wrapped in an object).
+
+    Args:
+        client: Authenticated HTTP client.
+        consents: Optional consent list for authorized deployments.
+        term: Optional search term. When provided, the returned counts
+            reflect only concepts matching the term.  When omitted (the
+            default), counts are global across the whole dictionary.
+        facets: Optional :class:`FacetSet` of current selections. When
+            provided, the returned counts reflect how many additional
+            concepts each option would match given the selections — the
+            shape the UI's facet sidebar uses to preview "adding this
+            filter narrows by N." When omitted, counts are unconditioned
+            on any selection.
+
+    Returns:
+        List of facet categories.  Counts are contextual when ``term``
+        and/or ``facets`` is supplied; global otherwise.
     """
-    body = _build_concepts_body(term="", facets=None, consents=consents)
+    body = _build_concepts_body(term=term, facets=facets, consents=consents)
 
     try:
         data = client.post_json(_FACETS_PATH, body=body)
@@ -204,6 +247,8 @@ _SHOW_ALL_FACETS_COLUMNS = [
 def show_all_facets(
     client: PicSureClient,
     consents: list[str] | None = None,
+    term: str = "",
+    facets: FacetSet | None = None,
 ) -> pd.DataFrame:
     """Fetch all facet categories and return as a flat DataFrame.
 
@@ -219,8 +264,11 @@ def show_all_facets(
     Some facet categories are hierarchical (e.g.
     Consortium_Curated_Facets).  Every option is flattened into its
     own row regardless of depth.
+
+    Counts are contextual to ``term``/``facets`` when provided; global
+    when both are omitted.  See :func:`fetch_facets` for details.
     """
-    categories = fetch_facets(client, consents=consents)
+    categories = fetch_facets(client, consents=consents, term=term, facets=facets)
     rows: list[dict[str, object]] = []
     for cat in categories:
         for opt in _walk_options(cat.options):
@@ -265,6 +313,9 @@ def _build_concepts_body(
 
 
 def _deduplicate(entries: list[DictionaryEntry]) -> list[DictionaryEntry]:
+    # Keyed on concept_path only; on BDC this is unique per concept, but if
+    # a future deployment reuses path fragments across datasets this may
+    # collapse distinct rows.
     seen: set[str] = set()
     result: list[DictionaryEntry] = []
     for entry in entries:
@@ -290,5 +341,10 @@ def _entries_to_dataframe(
         }
         if include_values:
             row["values"] = e.values
+        row["min"] = e.min
+        row["max"] = e.max
+        row["allowFiltering"] = e.allow_filtering
+        row["meta"] = e.meta
+        row["studyAcronym"] = e.study_acronym
         rows.append(row)
     return pd.DataFrame(rows)

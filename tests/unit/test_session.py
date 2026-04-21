@@ -295,6 +295,40 @@ class TestSessionFacets:
         assert sent["name"] == "phs000007"
         assert sent["categoryRef"]["name"] == "dataset_id"
 
+    @respx.mock
+    def test_facets_forwards_term(self, facets_response):
+        route = respx.post(_FACETS_URL).mock(
+            return_value=httpx.Response(200, json=facets_response)
+        )
+
+        session = _make_live_session()
+        session.facets(term="blood")
+
+        import json
+
+        body = json.loads(route.calls[0].request.content)
+        assert body["search"] == "blood"
+
+    @respx.mock
+    def test_facets_forwards_term_and_facets(self, facets_response):
+        # Two calls: first loads the FacetCategory list, second re-queries
+        # with the current term + selection.
+        route = respx.post(_FACETS_URL).mock(
+            return_value=httpx.Response(200, json=facets_response)
+        )
+
+        session = _make_live_session()
+        fs = session.facets()
+        fs.add("dataset_id", "phs000007")
+        session.facets(term="blood", facets=fs)
+
+        import json
+
+        body = json.loads(route.calls[-1].request.content)
+        assert body["search"] == "blood"
+        assert len(body["facets"]) == 1
+        assert body["facets"][0]["name"] == "phs000007"
+
 
 class TestSessionShowAllFacets:
     @respx.mock
@@ -316,6 +350,24 @@ class TestSessionShowAllFacets:
             "count",
         ]
         assert len(df) == 7
+
+    @respx.mock
+    def test_show_all_facets_forwards_term_and_facets(self, facets_response):
+        route = respx.post(_FACETS_URL).mock(
+            return_value=httpx.Response(200, json=facets_response)
+        )
+
+        session = _make_live_session()
+        fs = session.facets()
+        fs.add("dataset_id", "phs000007")
+        session.showAllFacets(term="blood", facets=fs)
+
+        import json
+
+        body = json.loads(route.calls[-1].request.content)
+        assert body["search"] == "blood"
+        assert len(body["facets"]) == 1
+        assert body["facets"][0]["name"] == "phs000007"
 
 
 class TestSessionRunQuery:

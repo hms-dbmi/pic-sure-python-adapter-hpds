@@ -12,7 +12,7 @@ from picsure._services.search import (
     show_all_facets,
 )
 from picsure._transport.client import PicSureClient
-from picsure.errors import PicSureConnectionError
+from picsure.errors import PicSureConnectionError, PicSureQueryError
 
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
@@ -53,7 +53,53 @@ class TestSearch:
             "dataType",
             "studyId",
             "values",
+            "min",
+            "max",
+            "allowFiltering",
+            "meta",
+            "studyAcronym",
         ]
+
+    @respx.mock
+    def test_continuous_fields_populated(self, search_response):
+        import pandas as pd
+
+        respx.post(_concepts_url(100)).mock(
+            return_value=httpx.Response(200, json=search_response)
+        )
+        df = search(_make_client(), term="age")
+        age_row = df[df["name"] == "age"].iloc[0]
+        assert age_row["min"] == 0.0
+        assert age_row["max"] == 100.0
+        assert bool(age_row["allowFiltering"]) is True
+        assert age_row["meta"] == {"units": "years"}
+        assert age_row["studyAcronym"] == "FHS"
+        # Categorical rows in same response carry NaN min/max.
+        assert pd.isna(df[df["name"] == "sex"].iloc[0]["min"])
+
+    @respx.mock
+    def test_categorical_rows_have_no_min_max(self, search_response):
+        import pandas as pd
+
+        respx.post(_concepts_url(100)).mock(
+            return_value=httpx.Response(200, json=search_response)
+        )
+        df = search(_make_client(), term="sex")
+        sex_row = df[df["name"] == "sex"].iloc[0]
+        # pandas coerces None into NaN when the column holds floats.
+        assert pd.isna(sex_row["min"])
+        assert pd.isna(sex_row["max"])
+        assert bool(sex_row["allowFiltering"]) is True
+        assert sex_row["studyAcronym"] == "FHS"
+
+    @respx.mock
+    def test_include_values_false_still_has_extra_columns(self, search_response):
+        respx.post(_concepts_url(100)).mock(
+            return_value=httpx.Response(200, json=search_response)
+        )
+        df = search(_make_client(), term="sex", include_values=False)
+        for col in ("min", "max", "allowFiltering", "meta", "studyAcronym"):
+            assert col in df.columns
 
     @respx.mock
     def test_maps_dataset_and_type_fields(self, search_response):
@@ -184,6 +230,7 @@ class TestSearch:
                 {"conceptPath": "\\other\\", "name": "v2", "display": "Different"},
             ],
             "totalElements": 3,
+            "last": True,
         }
         respx.post(_concepts_url(100)).mock(
             return_value=httpx.Response(200, json=duplicate_response)
@@ -195,7 +242,9 @@ class TestSearch:
     @respx.mock
     def test_zero_results_returns_empty_dataframe(self):
         respx.post(_concepts_url(100)).mock(
-            return_value=httpx.Response(200, json={"content": [], "totalElements": 0})
+            return_value=httpx.Response(
+                200, json={"content": [], "totalElements": 0, "last": True}
+            )
         )
         df = search(_make_client(), term="nonexistent")
         assert len(df) == 0
@@ -204,10 +253,71 @@ class TestSearch:
     @respx.mock
     def test_zero_results_prints_note(self, capsys):
         respx.post(_concepts_url(100)).mock(
-            return_value=httpx.Response(200, json={"content": [], "totalElements": 0})
+            return_value=httpx.Response(
+                200, json={"content": [], "totalElements": 0, "last": True}
+            )
         )
         search(_make_client(), term="nonexistent")
         assert "0 results" in capsys.readouterr().err
+
+    @respx.mock
+    def test_truncated_page_raises(self):
+        # Server says there are 5 total elements but returned only 1
+        # and flagged last=False. This indicates the "one big page"
+        # strategy underpaged; surface loudly rather than silently
+        # return a partial result.
+        truncated = {
+            "content": [{"conceptPath": "\\x\\", "name": "x"}],
+            "totalElements": 5,
+            "last": False,
+        }
+        respx.post(_concepts_url(100)).mock(
+            return_value=httpx.Response(200, json=truncated)
+        )
+        with pytest.raises(PicSureQueryError, match="truncated"):
+            search(_make_client(), term="x")
+
+    @respx.mock
+    def test_truncated_page_error_message_contains_counts(self):
+        truncated = {
+            "content": [{"conceptPath": "\\x\\", "name": "x"}],
+            "totalElements": 5,
+            "last": False,
+        }
+        respx.post(_concepts_url(100)).mock(
+            return_value=httpx.Response(200, json=truncated)
+        )
+        with pytest.raises(PicSureQueryError, match=r"1/5"):
+            search(_make_client(), term="x")
+
+    @respx.mock
+    def test_last_missing_but_counts_match_ok(self):
+        # If last is missing but totalElements matches content length,
+        # treat as truncated (strict policy).
+        response = {
+            "content": [{"conceptPath": "\\x\\", "name": "x"}],
+            "totalElements": 1,
+        }
+        respx.post(_concepts_url(100)).mock(
+            return_value=httpx.Response(200, json=response)
+        )
+        with pytest.raises(PicSureQueryError, match="truncated"):
+            search(_make_client(), term="x")
+
+    @respx.mock
+    def test_total_elements_mismatch_raises_even_when_last_true(self):
+        # last: True but totalElements doesn't match content length —
+        # still surface as truncated.
+        response = {
+            "content": [{"conceptPath": "\\x\\", "name": "x"}],
+            "totalElements": 3,
+            "last": True,
+        }
+        respx.post(_concepts_url(100)).mock(
+            return_value=httpx.Response(200, json=response)
+        )
+        with pytest.raises(PicSureQueryError, match="truncated"):
+            search(_make_client(), term="x")
 
     @respx.mock
     def test_server_error_raises_connection_error(self):
@@ -303,13 +413,55 @@ class TestFetchFacets:
         assert {c.value for c in parent.children} == {"Infected", "Non-infected"}
 
     @respx.mock
-    def test_body_shape(self, facets_response):
+    def test_body_shape_defaults_to_global_counts(self, facets_response):
         route = respx.post(FACETS_URL).mock(
             return_value=httpx.Response(200, json=facets_response)
         )
         fetch_facets(_make_client())
         body = json.loads(route.calls[0].request.content)
         assert body == {"search": "", "facets": []}
+
+    @respx.mock
+    def test_term_forwarded_in_body(self, facets_response):
+        route = respx.post(FACETS_URL).mock(
+            return_value=httpx.Response(200, json=facets_response)
+        )
+        fetch_facets(_make_client(), term="blood")
+        body = json.loads(route.calls[0].request.content)
+        assert body["search"] == "blood"
+        assert body["facets"] == []
+
+    @respx.mock
+    def test_facets_forwarded_in_body(self, facets_response):
+        route = respx.post(FACETS_URL).mock(
+            return_value=httpx.Response(200, json=facets_response)
+        )
+        from picsure._models.facet import Facet
+
+        categories = [
+            FacetCategory(
+                name="dataset_id",
+                display="Dataset",
+                description="First node of concept path",
+                options=[
+                    Facet(
+                        value="phs000007",
+                        count=54984,
+                        display="FHS (phs000007)",
+                        description="Framingham Cohort",
+                    )
+                ],
+            )
+        ]
+        fs = FacetSet(categories)
+        fs.add("dataset_id", "phs000007")
+
+        fetch_facets(_make_client(), term="blood", facets=fs)
+        body = json.loads(route.calls[0].request.content)
+        assert body["search"] == "blood"
+        assert len(body["facets"]) == 1
+        assert body["facets"][0]["name"] == "phs000007"
+        assert body["facets"][0]["category"] == "dataset_id"
 
     @respx.mock
     def test_consents_forwarded(self, facets_response):
@@ -400,3 +552,28 @@ class TestShowAllFacets:
         df = show_all_facets(_make_client())
         assert len(df) == 0
         assert list(df.columns) == _EXPECTED_COLUMNS
+
+    @respx.mock
+    def test_forwards_term_and_facets(self, facets_response):
+        route = respx.post(FACETS_URL).mock(
+            return_value=httpx.Response(200, json=facets_response)
+        )
+        from picsure._models.facet import Facet
+
+        categories = [
+            FacetCategory(
+                name="dataset_id",
+                display="Dataset",
+                description="First node of concept path",
+                options=[
+                    Facet(value="phs000007", count=54984, display="FHS"),
+                ],
+            )
+        ]
+        fs = FacetSet(categories)
+        fs.add("dataset_id", "phs000007")
+        show_all_facets(_make_client(), term="blood", facets=fs)
+        body = json.loads(route.calls[0].request.content)
+        assert body["search"] == "blood"
+        assert len(body["facets"]) == 1
+        assert body["facets"][0]["name"] == "phs000007"
