@@ -8,13 +8,23 @@ class TestPublicFacade:
     def test_picsure_error_is_importable(self):
         assert issubclass(picsure.PicSureError, Exception)
 
+    def test_picsure_error_subclasses_are_importable(self):
+        assert issubclass(picsure.PicSureAuthError, picsure.PicSureError)
+        assert issubclass(picsure.PicSureConnectionError, picsure.PicSureError)
+        assert issubclass(picsure.PicSureQueryError, picsure.PicSureError)
+        assert issubclass(picsure.PicSureValidationError, picsure.PicSureError)
+
     def test_session_is_importable(self):
         assert picsure.Session is not None
 
     def test_all_contains_expected_names(self):
         expected = {
             "connect",
+            "PicSureAuthError",
+            "PicSureConnectionError",
             "PicSureError",
+            "PicSureQueryError",
+            "PicSureValidationError",
             "Platform",
             "Session",
             "FacetSet",

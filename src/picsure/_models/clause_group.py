@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from picsure._models.clause import Clause, ClauseType
+from picsure.errors import PicSureValidationError
 
 
 class GroupOperator(Enum):
@@ -24,6 +25,11 @@ class ClauseGroup:
     Created by ``picsure.buildClauseGroup()``. Can contain both
     ``Clause`` and nested ``ClauseGroup`` objects for arbitrarily
     deep nesting.
+
+    **Wire format.** :meth:`to_query_json` emits a v3
+    ``PhenotypicSubquery`` (``operator`` / ``phenotypicClauses``) per
+    the ``/picsure/v3/query/sync`` contract. The previous wire format
+    is not supported.
     """
 
     clauses: list[Clause | ClauseGroup]
@@ -32,16 +38,21 @@ class ClauseGroup:
     def to_query_json(self) -> dict[str, object]:
         """Serialize this group as a v3 ``PhenotypicSubquery``.
 
-        SELECT clauses are stripped out — they are lifted to the
-        top-level ``select`` array by the query builder. If every
-        child is a SELECT, the resulting ``phenotypicClauses`` list
-        is empty; callers should check this via :meth:`has_phenotypic`
-        and pass ``None`` for ``phenotypicClause`` on empty groups.
+        Raises:
+            PicSureValidationError: If any nested child is a SELECT
+                clause. SELECT clauses do not participate in filtering
+                and must be kept outside of ``ClauseGroup`` so they can
+                be lifted into the top-level ``select`` array. Extract
+                SELECT paths via :meth:`select_paths` before calling
+                :meth:`to_query_json`.
         """
         pheno_children: list[dict[str, object]] = []
         for child in self.clauses:
             if isinstance(child, Clause) and child.type == ClauseType.SELECT:
-                continue
+                raise PicSureValidationError(
+                    "ClauseGroup cannot contain a SELECT clause; use "
+                    "Clause.select_paths() to extract SELECT concept paths."
+                )
             pheno_children.append(child.to_query_json())
         return {
             "operator": self.operator.value,

@@ -20,9 +20,7 @@ def _concepts_prefetch_url(host: str = BASE_URL) -> str:
 
 def _mock_concepts_prefetch(host: str = BASE_URL, total: int = 57) -> None:
     respx.post(_concepts_prefetch_url(host)).mock(
-        return_value=httpx.Response(
-            200, json={"content": [], "totalElements": total}
-        )
+        return_value=httpx.Response(200, json={"content": [], "totalElements": total})
     )
 
 
@@ -71,9 +69,7 @@ class TestConnectSuccess:
         assert session._resource_uuid is None
 
     @respx.mock
-    def test_prints_success_message(
-        self, profile_response, resources_response, capsys
-    ):
+    def test_prints_success_message(self, profile_response, resources_response, capsys):
         _mock_connect_flow(profile_response, resources_response)
         connect(platform=BASE_URL, token=TOKEN)
         captured = capsys.readouterr()
@@ -91,9 +87,7 @@ class TestConnectSuccess:
         assert "2026-06-15" in captured.out
 
     @respx.mock
-    def test_session_stores_total_concepts(
-        self, profile_response, resources_response
-    ):
+    def test_session_stores_total_concepts(self, profile_response, resources_response):
         _mock_connect_flow(profile_response, resources_response, total=487375)
         session = connect(platform=BASE_URL, token=TOKEN)
         assert session.total_concepts == 487375
@@ -195,9 +189,7 @@ class TestConnectResourceUuid:
         self, profile_response, resources_response, capsys
     ):
         _mock_connect_flow(profile_response, resources_response)
-        connect(
-            platform=BASE_URL, token=TOKEN, resource_uuid="resource-uuid-aaaa-1111"
-        )
+        connect(platform=BASE_URL, token=TOKEN, resource_uuid="resource-uuid-aaaa-1111")
         captured = capsys.readouterr()
         assert "Available resources" not in captured.out
 
@@ -207,13 +199,64 @@ class TestConnectValidation:
         with pytest.raises(PicSureValidationError):
             connect(platform="NotARealPlatform", token=TOKEN)
 
+    def test_empty_token_on_requires_auth_raises(self):
+        from picsure._transport.platforms import Platform
+
+        with pytest.raises(PicSureValidationError, match="requires a token"):
+            connect(platform=Platform.BDC_AUTHORIZED, token="")
+
+    def test_whitespace_token_on_requires_auth_raises(self):
+        from picsure._transport.platforms import Platform
+
+        with pytest.raises(PicSureValidationError, match="BDC Authorized"):
+            connect(platform=Platform.BDC_AUTHORIZED, token="   ")
+
+    def test_whitespace_token_on_custom_requires_auth_raises(self):
+        # Custom URLs default to requires_auth=True.
+        with pytest.raises(PicSureValidationError, match="requires a token"):
+            connect(platform=BASE_URL, token="  \t ")
+
+
+class TestConnect4xxMapping:
+    @respx.mock
+    def test_404_profile_raises_query_error(self):
+        from picsure.errors import PicSureQueryError
+
+        respx.get(f"{BASE_URL}/psama/user/me").mock(
+            return_value=httpx.Response(404, text="Not Found")
+        )
+        with pytest.raises(PicSureQueryError):
+            connect(platform=BASE_URL, token=TOKEN)
+
+    @respx.mock
+    def test_400_profile_raises_validation_error(self):
+        respx.get(f"{BASE_URL}/psama/user/me").mock(
+            return_value=httpx.Response(400, text="Bad request body")
+        )
+        with pytest.raises(PicSureValidationError) as exc_info:
+            connect(platform=BASE_URL, token=TOKEN)
+        msg = str(exc_info.value)
+        assert "400" in msg
+
+    @respx.mock
+    def test_429_profile_raises_connection_error_with_retry_after(self):
+        respx.get(f"{BASE_URL}/psama/user/me").mock(
+            return_value=httpx.Response(
+                429, text="slow down", headers={"Retry-After": "45"}
+            )
+        )
+        with pytest.raises(PicSureConnectionError) as exc_info:
+            connect(platform=BASE_URL, token=TOKEN)
+        msg = str(exc_info.value)
+        assert "45" in msg
+        assert "retry" in msg.lower()
+
 
 class TestConnectConsents:
     _TEMPLATE_URL = f"{BASE_URL}/psama/user/me/queryTemplate/"
     _CONSENT_PAYLOAD = {
         "queryTemplate": (
-            '{"categoryFilters":'
-            '{"\\\\_consents\\\\":["phs000007.c1","phs001013.c1"]}}'
+            '{"categoryFilters":{"\\\\_consents\\\\":["phs000007.c1","phs001013.c1"]}}'
         )
     }
 
@@ -245,9 +288,7 @@ class TestConnectConsents:
         assert session.consents == ["phs000007.c1", "phs001013.c1"]
 
     @respx.mock
-    def test_consents_forwarded_to_prefetch(
-        self, profile_response, resources_response
-    ):
+    def test_consents_forwarded_to_prefetch(self, profile_response, resources_response):
         respx.get(f"{BASE_URL}/psama/user/me").mock(
             return_value=httpx.Response(200, json=profile_response)
         )
@@ -258,9 +299,7 @@ class TestConnectConsents:
             return_value=httpx.Response(200, json=self._CONSENT_PAYLOAD)
         )
         prefetch_route = respx.post(_concepts_prefetch_url()).mock(
-            return_value=httpx.Response(
-                200, json={"content": [], "totalElements": 100}
-            )
+            return_value=httpx.Response(200, json={"content": [], "totalElements": 100})
         )
 
         connect(platform=BASE_URL, token=TOKEN, include_consents=True)
@@ -351,9 +390,7 @@ class TestConnectOpenAccess:
             return_value=httpx.Response(200, json=resources_response)
         )
         prefetch_route = respx.post(_concepts_prefetch_url(host)).mock(
-            return_value=httpx.Response(
-                200, json={"content": [], "totalElements": 0}
-            )
+            return_value=httpx.Response(200, json={"content": [], "totalElements": 0})
         )
 
         connect(platform=Platform.BDC_DEV_OPEN)
@@ -378,9 +415,7 @@ class TestConnectOpenAccess:
         assert "token expires" not in out.lower()
 
     @respx.mock
-    def test_requires_auth_false_override_on_custom_url(
-        self, resources_response
-    ):
+    def test_requires_auth_false_override_on_custom_url(self, resources_response):
         respx.get(f"{BASE_URL}/picsure/info/resources").mock(
             return_value=httpx.Response(200, json=resources_response)
         )

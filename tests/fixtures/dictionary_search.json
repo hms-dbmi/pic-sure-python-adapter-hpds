@@ -30,11 +30,14 @@
             "dataset": "phs000007",
             "type": "continuous",
             "values": [],
+            "min": 0.0,
+            "max": 100.0,
             "allowFiltering": true,
+            "meta": {"units": "years"},
             "studyAcronym": "FHS"
         }
     ],
-    "totalElements": 57,
+    "totalElements": 3,
     "totalPages": 1,
     "numberOfElements": 3,
     "size": 100,

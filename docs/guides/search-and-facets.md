@@ -43,8 +43,16 @@ filtering to variables from a specific study.
 session.showAllFacets()
 ```
 
-This returns a DataFrame with columns: `category`, `display`, `value`,
-`count`.
+This returns a DataFrame with six columns:
+
+| Column | Meaning |
+|---|---|
+| `category` | Category identifier (e.g. `dataset_id`) — pass this to `FacetSet.add`. |
+| `Category Display` | Human-readable category label (e.g. `Dataset`). |
+| `display` | Facet option's display label. |
+| `description` | Facet option's description, if any. |
+| `value` | Option identifier — pass this to `FacetSet.add`. |
+| `count` | Number of concepts matching this option. |
 
 ### Build a Facet Filter
 
@@ -54,10 +62,10 @@ facets = session.facets()
 
 # See current (empty) selections
 facets.view()
-# {'study_ids': [], 'data_type': [], ...}
+# {'dataset_id': [], 'data_type': [], ...}
 
 # Add a study filter
-facets.add("study_ids", "phs000007")
+facets.add("dataset_id", "phs000007")
 
 # Add multiple values at once
 facets.add("data_type", ["categorical", "continuous"])
@@ -70,7 +78,7 @@ filtered = session.search("blood pressure", facets=facets)
 
 ```python
 # Clear one category
-facets.clear("study_ids")
+facets.clear("dataset_id")
 
 # Clear all selections
 facets.clear()
@@ -84,5 +92,5 @@ listing the valid options:
 ```python
 facets.add("invalid_category", "value")
 # PicSureValidationError: 'invalid_category' is not a valid facet
-# category. Valid categories: data_type, study_ids.
+# category. Valid categories: data_type, dataset_id.
 ```

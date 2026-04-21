@@ -33,9 +33,6 @@ class TestPlatformEnum:
         assert Platform.BDC_DEV_OPEN.include_consents is False
         assert Platform.BDC_PREDEV_OPEN.include_consents is False
 
-    def test_aim_ahead_includes_consents(self):
-        assert Platform.AIM_AHEAD.include_consents is True
-
     def test_nhanes_does_not_include_consents(self):
         assert Platform.NHANES_AUTHORIZED.include_consents is False
         assert Platform.NHANES_OPEN.include_consents is False
@@ -44,7 +41,6 @@ class TestPlatformEnum:
         assert Platform.BDC_AUTHORIZED.requires_auth is True
         assert Platform.BDC_DEV_AUTHORIZED.requires_auth is True
         assert Platform.BDC_PREDEV_AUTHORIZED.requires_auth is True
-        assert Platform.AIM_AHEAD.requires_auth is True
         assert Platform.NHANES_AUTHORIZED.requires_auth is True
 
     def test_open_platforms_do_not_require_auth(self):
@@ -85,9 +81,7 @@ class TestResolvePlatform:
         assert info.include_consents is False
 
     def test_custom_url_include_consents_override(self):
-        info = resolve_platform(
-            "https://my-picsure.example.com", include_consents=True
-        )
+        info = resolve_platform("https://my-picsure.example.com", include_consents=True)
         assert info.include_consents is True
 
     def test_known_platform_propagates_requires_auth(self):
@@ -103,9 +97,7 @@ class TestResolvePlatform:
         assert info.requires_auth is True
 
     def test_custom_url_requires_auth_override(self):
-        info = resolve_platform(
-            "https://my-picsure.example.com", requires_auth=False
-        )
+        info = resolve_platform("https://my-picsure.example.com", requires_auth=False)
         assert info.requires_auth is False
 
     def test_custom_url_http(self):
@@ -127,10 +119,5 @@ class TestResolvePlatform:
 
     def test_nhanes_open_resolves(self):
         info = resolve_platform(Platform.NHANES_OPEN)
-        assert info.url.startswith("https://")
-        assert info.resource_uuid is not None
-
-    def test_aim_ahead_resolves(self):
-        info = resolve_platform(Platform.AIM_AHEAD)
         assert info.url.startswith("https://")
         assert info.resource_uuid is not None

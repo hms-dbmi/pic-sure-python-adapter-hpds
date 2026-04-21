@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from picsure.errors import PicSureValidationError
+
 
 class ClauseType(Enum):
     """Type of filter clause in a PIC-SURE query.
@@ -38,6 +40,10 @@ class Clause:
     Created by ``picsure.createClause()``. Can be passed directly to
     ``Session.runQuery()`` or combined with other clauses via
     ``picsure.buildClauseGroup()``.
+
+    **Wire format.** :meth:`to_query_json` emits a v3 ``PhenotypicFilter``
+    leaf (or an ``OR`` ``PhenotypicSubquery`` of leaves for multi-key
+    clauses) per the ``/picsure/v3/query/sync`` contract.
     """
 
     keys: list[str]
@@ -58,8 +64,6 @@ class Clause:
                 clauses don't participate in filtering; extract their
                 paths via :meth:`select_paths` instead.
         """
-        from picsure.errors import PicSureValidationError
-
         if self.type == ClauseType.SELECT:
             raise PicSureValidationError(
                 "SELECT clauses do not serialize as PhenotypicClauses. "

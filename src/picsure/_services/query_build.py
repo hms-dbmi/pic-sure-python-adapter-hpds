@@ -43,10 +43,12 @@ def createClause(  # noqa: N802
         ...     min=40.0,
         ... )
     """
-    if isinstance(keys, str):
-        keys = [keys]
-    if isinstance(categories, str):
-        categories = [categories]
+    keys = [keys] if isinstance(keys, str) else list(keys)
+    if categories is not None:
+        categories = [categories] if isinstance(categories, str) else list(categories)
+
+    if not keys:
+        raise PicSureValidationError("Clause must have at least one concept path.")
 
     if type == ClauseType.ANYRECORD:
         if categories is not None:
@@ -62,11 +64,30 @@ def createClause(  # noqa: N802
                 "the min/max arguments."
             )
 
-    if type == ClauseType.FILTER and categories is None and min is None and max is None:
+    if type == ClauseType.FILTER:
+        if categories is None and min is None and max is None:
+            raise PicSureValidationError(
+                "FILTER clauses require at least one of: categories, min, or max. "
+                "Use categories for categorical variables or min/max for "
+                "continuous variables."
+            )
+        if categories is not None and (min is not None or max is not None):
+            raise PicSureValidationError(
+                "FILTER clauses cannot have both categories and min/max."
+            )
+
+    if type == ClauseType.REQUIRE and (
+        categories is not None or min is not None or max is not None
+    ):
         raise PicSureValidationError(
-            "FILTER clauses require at least one of: categories, min, or max. "
-            "Use categories for categorical variables or min/max for "
-            "continuous variables."
+            "REQUIRE clauses cannot have categories, min, or max."
+        )
+
+    if type == ClauseType.SELECT and (
+        categories is not None or min is not None or max is not None
+    ):
+        raise PicSureValidationError(
+            "SELECT clauses cannot have categories, min, or max."
         )
 
     return Clause(

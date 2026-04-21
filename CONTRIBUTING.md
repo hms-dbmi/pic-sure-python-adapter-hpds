@@ -15,11 +15,15 @@ uv sync
 3. Run the checks:
 
 ```bash
-uv run ruff check src/ tests/      # lint
-uv run ruff format --check src/     # format check
-uv run mypy src/                    # type check
-uv run pytest tests/unit/ -v        # unit tests
+uv run ruff check src/ tests/            # lint
+uv run ruff format --check src/ tests/   # format check (both src and tests)
+uv run mypy src/                         # type check
+uv run pytest tests/unit/ -v             # unit tests
 ```
+
+These mirror the CI lint gate, which runs `ruff check` and `ruff format
+--check` over both `src/` and `tests/`. Skipping `tests/` locally will
+let contributor-written test files pass the local check but fail CI.
 
 ## Running Integration Tests
 

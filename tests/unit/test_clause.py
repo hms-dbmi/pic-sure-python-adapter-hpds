@@ -1,6 +1,7 @@
 import pytest
 
 from picsure._models.clause import Clause, ClauseType
+from picsure._services.query_build import createClause
 from picsure.errors import PicSureValidationError
 
 
@@ -168,3 +169,41 @@ class TestClauseSelectPaths:
     def test_require_returns_empty(self):
         clause = Clause(keys=["\\a\\"], type=ClauseType.REQUIRE)
         assert clause.select_paths() == []
+
+
+class TestCreateClauseDefensiveCopies:
+    def test_mutating_keys_list_after_construction_does_not_affect_clause(self):
+        keys = ["\\p1\\", "\\p2\\"]
+        clause = createClause(keys, type=ClauseType.SELECT)
+        keys.append("\\p3\\")
+        assert clause.keys == ["\\p1\\", "\\p2\\"]
+
+    def test_mutating_categories_list_after_construction_does_not_affect_clause(self):
+        categories = ["Male", "Female"]
+        clause = createClause(
+            "\\path\\",
+            type=ClauseType.FILTER,
+            categories=categories,
+        )
+        categories.append("Other")
+        assert clause.categories == ["Male", "Female"]
+
+    def test_mutating_keys_list_does_not_affect_clause_via_clear(self):
+        keys = ["\\p1\\", "\\p2\\"]
+        clause = createClause(
+            keys,
+            type=ClauseType.FILTER,
+            categories=["x"],
+        )
+        keys.clear()
+        assert clause.keys == ["\\p1\\", "\\p2\\"]
+
+    def test_mutating_categories_list_does_not_affect_clause_via_clear(self):
+        categories = ["Male"]
+        clause = createClause(
+            "\\path\\",
+            type=ClauseType.FILTER,
+            categories=categories,
+        )
+        categories.clear()
+        assert clause.categories == ["Male"]

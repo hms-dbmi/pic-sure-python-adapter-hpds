@@ -128,6 +128,89 @@ class TestCreateClauseValidation:
         with pytest.raises(PicSureValidationError, match="categories.*min.*max"):
             createClause("\\path\\", type=ClauseType.FILTER)
 
+    def test_filter_with_categories_and_min_raises(self):
+        with pytest.raises(PicSureValidationError, match="FILTER"):
+            createClause(
+                "\\path\\",
+                type=ClauseType.FILTER,
+                categories="Male",
+                min=40.0,
+            )
+
+    def test_filter_with_categories_and_max_raises(self):
+        with pytest.raises(PicSureValidationError, match="FILTER"):
+            createClause(
+                "\\path\\",
+                type=ClauseType.FILTER,
+                categories=["Male"],
+                max=100.0,
+            )
+
+    def test_filter_with_categories_and_min_message_mentions_both(self):
+        with pytest.raises(PicSureValidationError, match="categories and min/max"):
+            createClause(
+                "\\path\\",
+                type=ClauseType.FILTER,
+                categories="Male",
+                min=40.0,
+            )
+
+    def test_require_with_categories_raises(self):
+        with pytest.raises(PicSureValidationError, match="REQUIRE"):
+            createClause(
+                "\\path\\",
+                type=ClauseType.REQUIRE,
+                categories="Male",
+            )
+
+    def test_require_with_min_raises(self):
+        with pytest.raises(PicSureValidationError, match="REQUIRE"):
+            createClause(
+                "\\path\\",
+                type=ClauseType.REQUIRE,
+                min=10.0,
+            )
+
+    def test_require_with_max_raises(self):
+        with pytest.raises(PicSureValidationError, match="REQUIRE"):
+            createClause(
+                "\\path\\",
+                type=ClauseType.REQUIRE,
+                max=100.0,
+            )
+
+    def test_select_with_categories_raises(self):
+        with pytest.raises(PicSureValidationError, match="SELECT"):
+            createClause(
+                "\\path\\",
+                type=ClauseType.SELECT,
+                categories="Male",
+            )
+
+    def test_select_with_min_raises(self):
+        with pytest.raises(PicSureValidationError, match="SELECT"):
+            createClause(
+                "\\path\\",
+                type=ClauseType.SELECT,
+                min=10.0,
+            )
+
+    def test_select_with_max_raises(self):
+        with pytest.raises(PicSureValidationError, match="SELECT"):
+            createClause(
+                "\\path\\",
+                type=ClauseType.SELECT,
+                max=100.0,
+            )
+
+    def test_empty_keys_list_raises(self):
+        with pytest.raises(PicSureValidationError, match="at least one concept path"):
+            createClause([], type=ClauseType.FILTER, categories="x")
+
+    def test_empty_keys_list_on_select_raises(self):
+        with pytest.raises(PicSureValidationError, match="at least one concept path"):
+            createClause([], type=ClauseType.SELECT)
+
 
 class TestBuildClauseGroup:
     def test_and_group(self):

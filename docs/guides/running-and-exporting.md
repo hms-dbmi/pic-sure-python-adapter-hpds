@@ -11,11 +11,16 @@ Use `session.runQuery()` with your query and a result type:
 Get the number of matching participants:
 
 ```python
-count = session.runQuery(my_query, type="count")
-print(f"Found {count} matching participants")
+count_result = session.runQuery(my_query, type="count")
+if count_result.value is not None:
+    print(f"{count_result.value} participants match")
+else:
+    print(f"fewer than {count_result.cap} participants match (suppressed)")
 ```
 
-Returns an integer.
+Returns a `CountResult`. Access the numeric count via `.value` (which may be
+`None` on open-access deployments that suppress small counts — check `.cap`
+in that case).
 
 ### Participant Data
 
@@ -75,10 +80,11 @@ You can pass a single clause directly to `runQuery` — you don't have
 to wrap it in a group first:
 
 ```python
-sex = picsure.createClause(r"\phs1\sex\", type=ClauseType.FILTER, categories="Male")
+sex = picsure.createClause("\\phs1\\sex\\", type=ClauseType.FILTER, categories="Male")
 
 # This works — no buildClauseGroup needed for simple queries
-count = session.runQuery(sex, type="count")
+count_result = session.runQuery(sex, type="count")
+count = count_result.value  # None if suppressed; check count_result.cap
 ```
 
 ## Error Handling

@@ -38,6 +38,13 @@ One package replaces both the client and the adapter.
 | `query.getResults()` | `session.runQuery(query, type="participant")` |
 | `query.getResultsDataFrame()` | `session.runQuery(query, type="participant")` |
 
+### Return-type changes
+
+**Note:** `runQuery(..., type="count")` now returns a `CountResult`, not an
+`int`. Use `result.value` for the numeric count (which may be `None` on
+open-access deployments that suppress small counts — check `result.cap` in
+that case).
+
 ## Side-by-Side Examples
 
 ### Connecting
@@ -83,9 +90,9 @@ df = session.search("blood pressure")
 
 ```python
 query = resource.query()
-query.filter().add(r"\phs1\sex\", ["Male"])
-query.filter().add(r"\phs1\age\", min=40)
-query.require().add(r"\phs1\bmi\")
+query.filter().add("\\phs1\\sex\\", ["Male"])
+query.filter().add("\\phs1\\age\\", min=40)
+query.require().add("\\phs1\\bmi\\")
 ```
 
 **New:**
@@ -93,9 +100,9 @@ query.require().add(r"\phs1\bmi\")
 ```python
 from picsure import createClause, buildClauseGroup, ClauseType, GroupOperator
 
-sex = createClause(r"\phs1\sex\", type=ClauseType.FILTER, categories="Male")
-age = createClause(r"\phs1\age\", type=ClauseType.FILTER, min=40)
-bmi = createClause(r"\phs1\bmi\", type=ClauseType.REQUIRE)
+sex = createClause("\\phs1\\sex\\", type=ClauseType.FILTER, categories="Male")
+age = createClause("\\phs1\\age\\", type=ClauseType.FILTER, min=40)
+bmi = createClause("\\phs1\\bmi\\", type=ClauseType.REQUIRE)
 
 query = buildClauseGroup([sex, age, bmi], root=GroupOperator.AND)
 ```
@@ -112,7 +119,11 @@ df = query.getResultsDataFrame()
 **New:**
 
 ```python
-count = session.runQuery(query, type="count")
+count_result = session.runQuery(query, type="count")
+if count_result.value is not None:
+    print(f"{count_result.value} participants match")
+else:
+    print(f"fewer than {count_result.cap} participants match (suppressed)")
 df = session.runQuery(query, type="participant")
 ```
 

@@ -19,3 +19,5 @@ venv/
 .vscode/
 site/
 .worktrees/
+docs/superpowers
+docs/superpowers/
