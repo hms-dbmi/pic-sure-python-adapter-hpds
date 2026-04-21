@@ -5,7 +5,7 @@ import sys
 import pandas as pd
 
 from picsure._models.dictionary import DictionaryEntry
-from picsure._models.facet import FacetCategory, FacetSet
+from picsure._models.facet import Facet, FacetCategory, FacetSet
 from picsure._transport.client import PicSureClient
 from picsure._transport.errors import TransportError
 from picsure.errors import PicSureConnectionError
@@ -196,18 +196,14 @@ def show_all_facets(
     return pd.DataFrame(rows)
 
 
-def _walk_options(options: list[FacetCategory]) -> list[FacetCategory]:
+def _walk_options(options: list[Facet]) -> list[Facet]:
     """Yield every option and its descendants in depth-first order."""
-    result: list[FacetCategory] = []
-    stack: list[FacetCategory] = list(reversed(options))
+    result: list[Facet] = []
+    stack: list[Facet] = list(reversed(options))
     while stack:
         opt = stack.pop()
         result.append(opt)
-        # ``children`` is only defined on Facet, not FacetCategory; the
-        # type annotation above is approximate — we only call this on
-        # Facet lists.  Kept loose to avoid a circular import.
-        children = getattr(opt, "children", None) or []
-        stack.extend(reversed(children))
+        stack.extend(reversed(opt.children))
     return result
 
 
