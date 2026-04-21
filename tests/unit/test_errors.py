@@ -51,3 +51,49 @@ class TestErrorHierarchy:
             raise PicSureAuthError("token expired") from original
         except PicSureError as exc:
             assert exc.__cause__ is original
+
+
+class TestTransportErrors:
+    def test_transport_validation_error_round_trip(self):
+        from picsure._transport.errors import (
+            TransportError,
+            TransportValidationError,
+        )
+
+        exc = TransportValidationError(400, "Bad Request body")
+        assert isinstance(exc, TransportError)
+        assert exc.status_code == 400
+        assert exc.body == "Bad Request body"
+        assert "400" in str(exc)
+        assert "Bad Request body" in str(exc)
+
+    def test_transport_not_found_error_round_trip(self):
+        from picsure._transport.errors import (
+            TransportError,
+            TransportNotFoundError,
+        )
+
+        exc = TransportNotFoundError(404, "Resource missing")
+        assert isinstance(exc, TransportError)
+        assert exc.status_code == 404
+        assert exc.body == "Resource missing"
+        assert "404" in str(exc)
+
+    def test_transport_rate_limit_error_round_trip(self):
+        from picsure._transport.errors import (
+            TransportError,
+            TransportRateLimitError,
+        )
+
+        exc = TransportRateLimitError(429, "Too many requests", retry_after=30)
+        assert isinstance(exc, TransportError)
+        assert exc.status_code == 429
+        assert exc.body == "Too many requests"
+        assert exc.retry_after == 30
+        assert "429" in str(exc)
+
+    def test_transport_rate_limit_error_retry_after_optional(self):
+        from picsure._transport.errors import TransportRateLimitError
+
+        exc = TransportRateLimitError(429, "slow down", retry_after=None)
+        assert exc.retry_after is None

@@ -33,9 +33,6 @@ class TestPlatformEnum:
         assert Platform.BDC_DEV_OPEN.include_consents is False
         assert Platform.BDC_PREDEV_OPEN.include_consents is False
 
-    def test_aim_ahead_includes_consents(self):
-        assert Platform.AIM_AHEAD.include_consents is True
-
     def test_nhanes_does_not_include_consents(self):
         assert Platform.NHANES_AUTHORIZED.include_consents is False
         assert Platform.NHANES_OPEN.include_consents is False
@@ -44,7 +41,6 @@ class TestPlatformEnum:
         assert Platform.BDC_AUTHORIZED.requires_auth is True
         assert Platform.BDC_DEV_AUTHORIZED.requires_auth is True
         assert Platform.BDC_PREDEV_AUTHORIZED.requires_auth is True
-        assert Platform.AIM_AHEAD.requires_auth is True
         assert Platform.NHANES_AUTHORIZED.requires_auth is True
 
     def test_open_platforms_do_not_require_auth(self):
@@ -123,10 +119,5 @@ class TestResolvePlatform:
 
     def test_nhanes_open_resolves(self):
         info = resolve_platform(Platform.NHANES_OPEN)
-        assert info.url.startswith("https://")
-        assert info.resource_uuid is not None
-
-    def test_aim_ahead_resolves(self):
-        info = resolve_platform(Platform.AIM_AHEAD)
         assert info.url.startswith("https://")
         assert info.resource_uuid is not None

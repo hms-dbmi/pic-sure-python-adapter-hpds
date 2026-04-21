@@ -9,10 +9,18 @@ from picsure._transport.errors import (
     TransportAuthenticationError,
     TransportConnectionError,
     TransportError,
+    TransportNotFoundError,
+    TransportRateLimitError,
     TransportServerError,
+    TransportValidationError,
 )
 from picsure._transport.platforms import Platform, resolve_platform
-from picsure.errors import PicSureAuthError, PicSureConnectionError
+from picsure.errors import (
+    PicSureAuthError,
+    PicSureConnectionError,
+    PicSureQueryError,
+    PicSureValidationError,
+)
 
 _PSAMA_PROFILE_PATH = "/psama/user/me"
 _PICSURE_RESOURCES_PATH = "/picsure/info/resources"
@@ -76,6 +84,19 @@ def connect(
         requires_auth=requires_auth,
     )
     display_name = platform.label if isinstance(platform, Platform) else platform
+
+    # Fail fast on an empty / whitespace-only token when the platform
+    # requires auth.  Without this, PicSureClient would silently drop
+    # the token, the "request-source: Open" header would be sent, and
+    # the backend would later reject with a confusing "token invalid
+    # or expired" message.
+    if info.requires_auth and not token.strip():
+        raise PicSureValidationError(
+            f"Platform {display_name} requires a token but none was provided. "
+            "Pass token=<your PIC-SURE API token> to picsure.connect(), or "
+            "use an open-access platform (e.g. Platform.BDC_OPEN)."
+        )
+
     client = PicSureClient(base_url=info.url, token=token)
 
     if info.requires_auth:
@@ -129,11 +150,32 @@ def _fetch_profile(
             "Your token is invalid or expired. Generate a new one at "
             f"{base_url} and pass it to picsure.connect()."
         ) from exc
+    except TransportNotFoundError as exc:
+        raise PicSureQueryError(
+            f"Profile endpoint not found at {base_url}. The server may not "
+            "support this adapter version."
+        ) from exc
+    except TransportValidationError as exc:
+        raise PicSureValidationError(
+            f"Server rejected the profile request (HTTP {exc.status_code}): "
+            f"{exc.body[:200]}"
+        ) from exc
+    except TransportRateLimitError as exc:
+        raise PicSureConnectionError(_rate_limit_message(display_name, exc)) from exc
     except (TransportConnectionError, TransportServerError) as exc:
         raise PicSureConnectionError(
             f"Could not reach {display_name} ({base_url}). Check your internet "
             "connection, or try a different platform."
         ) from exc
+
+
+def _rate_limit_message(display_name: str, exc: TransportRateLimitError) -> str:
+    if exc.retry_after is not None:
+        return (
+            f"Rate limited by {display_name}; server said retry after "
+            f"{exc.retry_after} seconds."
+        )
+    return f"Rate limited by {display_name}. Please wait and try again."
 
 
 def _fetch_resources(

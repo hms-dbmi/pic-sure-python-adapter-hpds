@@ -21,21 +21,21 @@ from picsure import createClause, ClauseType
 
 # Categorical filter
 sex = createClause(
-    r"\phs1\pht1\phv1\sex\",
+    "\\phs1\\pht1\\phv1\\sex\\",
     type=ClauseType.FILTER,
     categories="Male",
 )
 
 # Multiple categorical values
 asthma = createClause(
-    r"\phs1\pht2\phv3\asthma\",
+    "\\phs1\\pht2\\phv3\\asthma\\",
     type=ClauseType.FILTER,
     categories=["Yes, recent", "Yes, since childhood"],
 )
 
 # Numeric range filter
 age = createClause(
-    r"\phs1\pht1\phv5\age\",
+    "\\phs1\\pht1\\phv5\\age\\",
     type=ClauseType.FILTER,
     min=40,
     max=80,
@@ -43,20 +43,20 @@ age = createClause(
 
 # Min only (no upper bound)
 age_over_40 = createClause(
-    r"\phs1\pht1\phv5\age\",
+    "\\phs1\\pht1\\phv5\\age\\",
     type=ClauseType.FILTER,
     min=40,
 )
 
 # Any record of a variable
 has_sleep_data = createClause(
-    r"\phs1\pht3\phv8\trouble_sleeping\",
+    "\\phs1\\pht3\\phv8\\trouble_sleeping\\",
     type=ClauseType.ANYRECORD,
 )
 
 # Select for output without filtering
 include_height = createClause(
-    r"\phs1\pht1\phv10\height\",
+    "\\phs1\\pht1\\phv10\\height\\",
     type=ClauseType.SELECT,
 )
 ```
@@ -108,12 +108,12 @@ COPD/asthma or sleep problems:
 import picsure
 from picsure import createClause, buildClauseGroup, ClauseType, GroupOperator
 
-sex_filter = createClause(r"\phs1\sex\", type=ClauseType.FILTER, categories="Male")
-age_filter = createClause(r"\phs1\age\", type=ClauseType.FILTER, min=40)
-copd_filter = createClause(r"\phs1\copd\", type=ClauseType.FILTER, categories="Yes")
-asthma_filter = createClause(r"\phs1\asthma\", type=ClauseType.FILTER, categories="Yes")
-sleep_filter = createClause(r"\phs1\trouble_sleeping\", type=ClauseType.ANYRECORD)
-insomnia_filter = createClause(r"\phs1\insomnia\", type=ClauseType.ANYRECORD)
+sex_filter = createClause("\\phs1\\sex\\", type=ClauseType.FILTER, categories="Male")
+age_filter = createClause("\\phs1\\age\\", type=ClauseType.FILTER, min=40)
+copd_filter = createClause("\\phs1\\copd\\", type=ClauseType.FILTER, categories="Yes")
+asthma_filter = createClause("\\phs1\\asthma\\", type=ClauseType.FILTER, categories="Yes")
+sleep_filter = createClause("\\phs1\\trouble_sleeping\\", type=ClauseType.ANYRECORD)
+insomnia_filter = createClause("\\phs1\\insomnia\\", type=ClauseType.ANYRECORD)
 
 copd_or_asthma = buildClauseGroup([copd_filter, asthma_filter], root=GroupOperator.OR)
 sleep_or_insomnia = buildClauseGroup([sleep_filter, insomnia_filter], root=GroupOperator.OR)
@@ -131,13 +131,13 @@ error messages:
 
 ```python
 # ANYRECORD with categories raises an error
-createClause(r"\path\", type=ClauseType.ANYRECORD, categories="Male")
+createClause("\\path\\", type=ClauseType.ANYRECORD, categories="Male")
 # PicSureValidationError: ANYRECORD clauses cannot have categories.
 # ANYRECORD matches the presence of any value for the variable.
 # Remove the categories argument.
 
 # FILTER without any criteria raises an error
-createClause(r"\path\", type=ClauseType.FILTER)
+createClause("\\path\\", type=ClauseType.FILTER)
 # PicSureValidationError: FILTER clauses require at least one of:
 # categories, min, or max.
 ```

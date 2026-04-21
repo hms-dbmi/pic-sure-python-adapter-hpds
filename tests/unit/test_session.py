@@ -2,6 +2,7 @@ from unittest.mock import MagicMock
 
 import httpx
 import pandas as pd
+import pytest
 import respx
 
 from picsure._models.resource import Resource
@@ -294,6 +295,40 @@ class TestSessionFacets:
         assert sent["name"] == "phs000007"
         assert sent["categoryRef"]["name"] == "dataset_id"
 
+    @respx.mock
+    def test_facets_forwards_term(self, facets_response):
+        route = respx.post(_FACETS_URL).mock(
+            return_value=httpx.Response(200, json=facets_response)
+        )
+
+        session = _make_live_session()
+        session.facets(term="blood")
+
+        import json
+
+        body = json.loads(route.calls[0].request.content)
+        assert body["search"] == "blood"
+
+    @respx.mock
+    def test_facets_forwards_term_and_facets(self, facets_response):
+        # Two calls: first loads the FacetCategory list, second re-queries
+        # with the current term + selection.
+        route = respx.post(_FACETS_URL).mock(
+            return_value=httpx.Response(200, json=facets_response)
+        )
+
+        session = _make_live_session()
+        fs = session.facets()
+        fs.add("dataset_id", "phs000007")
+        session.facets(term="blood", facets=fs)
+
+        import json
+
+        body = json.loads(route.calls[-1].request.content)
+        assert body["search"] == "blood"
+        assert len(body["facets"]) == 1
+        assert body["facets"][0]["name"] == "phs000007"
+
 
 class TestSessionShowAllFacets:
     @respx.mock
@@ -315,6 +350,24 @@ class TestSessionShowAllFacets:
             "count",
         ]
         assert len(df) == 7
+
+    @respx.mock
+    def test_show_all_facets_forwards_term_and_facets(self, facets_response):
+        route = respx.post(_FACETS_URL).mock(
+            return_value=httpx.Response(200, json=facets_response)
+        )
+
+        session = _make_live_session()
+        fs = session.facets()
+        fs.add("dataset_id", "phs000007")
+        session.showAllFacets(term="blood", facets=fs)
+
+        import json
+
+        body = json.loads(route.calls[-1].request.content)
+        assert body["search"] == "blood"
+        assert len(body["facets"]) == 1
+        assert body["facets"][0]["name"] == "phs000007"
 
 
 class TestSessionRunQuery:
@@ -367,15 +420,27 @@ class TestSessionRunQuery:
 class TestSessionExport:
     @respx.mock
     def test_export_pfb(self, tmp_path):
-        respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
+        # Session.exportPFB drives the async flow:
+        # submit -> poll status -> stream result.
+        query_id = "session-pfb-1"
+        respx.post(f"{BASE_URL}/picsure/v3/query").mock(
+            return_value=httpx.Response(200, json={"picsureResultId": query_id})
+        )
+        respx.post(f"{BASE_URL}/picsure/v3/query/{query_id}/status").mock(
+            return_value=httpx.Response(200, json={"status": "AVAILABLE"})
+        )
+        respx.post(f"{BASE_URL}/picsure/v3/query/{query_id}/result").mock(
             return_value=httpx.Response(200, content=b"pfb_data")
         )
+        from unittest.mock import patch
+
         from picsure._models.clause import Clause, ClauseType
 
         session = _make_live_session()
         clause = Clause(keys=["\\sex\\"], type=ClauseType.FILTER, categories=["Male"])
         output = tmp_path / "test.pfb"
-        session.exportPFB(clause, output)
+        with patch("picsure._services.export.time.sleep"):
+            session.exportPFB(clause, output)
 
         assert output.exists()
         assert output.read_bytes() == b"pfb_data"
@@ -397,3 +462,33 @@ class TestSessionExport:
 
         assert output.exists()
         assert "id\tname" in output.read_text()
+
+
+class TestSessionClose:
+    def test_close_calls_client_close(self):
+        session = _make_session()
+        session.close()
+        session._client.close.assert_called_once()
+
+    def test_close_is_idempotent(self):
+        session = _make_session()
+        session.close()
+        # A second close() must not raise.
+        session.close()
+
+    def test_context_manager_returns_session(self):
+        session = _make_session()
+        with session as s:
+            assert s is session
+
+    def test_context_manager_closes_on_exit(self):
+        session = _make_session()
+        with session:
+            pass
+        session._client.close.assert_called_once()
+
+    def test_context_manager_closes_on_exception(self):
+        session = _make_session()
+        with pytest.raises(RuntimeError), session:  # noqa: PT012
+            raise RuntimeError("boom")
+        session._client.close.assert_called_once()

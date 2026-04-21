@@ -90,9 +90,9 @@ df = session.search("blood pressure")
 
 ```python
 query = resource.query()
-query.filter().add(r"\phs1\sex\", ["Male"])
-query.filter().add(r"\phs1\age\", min=40)
-query.require().add(r"\phs1\bmi\")
+query.filter().add("\\phs1\\sex\\", ["Male"])
+query.filter().add("\\phs1\\age\\", min=40)
+query.require().add("\\phs1\\bmi\\")
 ```
 
 **New:**
@@ -100,9 +100,9 @@ query.require().add(r"\phs1\bmi\")
 ```python
 from picsure import createClause, buildClauseGroup, ClauseType, GroupOperator
 
-sex = createClause(r"\phs1\sex\", type=ClauseType.FILTER, categories="Male")
-age = createClause(r"\phs1\age\", type=ClauseType.FILTER, min=40)
-bmi = createClause(r"\phs1\bmi\", type=ClauseType.REQUIRE)
+sex = createClause("\\phs1\\sex\\", type=ClauseType.FILTER, categories="Male")
+age = createClause("\\phs1\\age\\", type=ClauseType.FILTER, min=40)
+bmi = createClause("\\phs1\\bmi\\", type=ClauseType.REQUIRE)
 
 query = buildClauseGroup([sex, age, bmi], root=GroupOperator.AND)
 ```

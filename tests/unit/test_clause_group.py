@@ -2,6 +2,7 @@ import pytest
 
 from picsure._models.clause import Clause, ClauseType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
+from picsure.errors import PicSureValidationError
 
 
 class TestGroupOperator:
@@ -148,23 +149,59 @@ class TestClauseGroupToQueryJson:
         grandchildren = children[1]["phenotypicClauses"]  # type: ignore[index]
         assert grandchildren[1]["operator"] == "OR"
 
-    def test_selects_stripped_from_phenotypic(self):
+    def test_mixed_group_with_select_raises(self):
         group = ClauseGroup(
             clauses=[_sex_clause(), _select_clause()],
             operator=GroupOperator.AND,
         )
-        result = group.to_query_json()
-        children = result["phenotypicClauses"]
-        assert len(children) == 1  # type: ignore[arg-type]
-        assert children[0]["conceptPath"] == "\\phs1\\sex\\"  # type: ignore[index]
+        with pytest.raises(PicSureValidationError, match="SELECT"):
+            group.to_query_json()
 
-    def test_all_select_group_yields_empty_children(self):
+    def test_mixed_group_error_mentions_select_paths(self):
+        group = ClauseGroup(
+            clauses=[_sex_clause(), _select_clause()],
+            operator=GroupOperator.AND,
+        )
+        with pytest.raises(PicSureValidationError, match="select_paths"):
+            group.to_query_json()
+
+    def test_all_select_group_raises(self):
         group = ClauseGroup(
             clauses=[_select_clause(), _select_clause()],
             operator=GroupOperator.AND,
         )
+        with pytest.raises(PicSureValidationError, match="SELECT"):
+            group.to_query_json()
+
+    def test_nested_group_with_deep_select_raises(self):
+        inner = ClauseGroup(
+            clauses=[_age_clause(), _select_clause()],
+            operator=GroupOperator.OR,
+        )
+        outer = ClauseGroup(
+            clauses=[_sex_clause(), inner],
+            operator=GroupOperator.AND,
+        )
+        with pytest.raises(PicSureValidationError, match="SELECT"):
+            outer.to_query_json()
+
+    def test_pure_phenotypic_group_still_serializes(self):
+        group = ClauseGroup(
+            clauses=[_sex_clause(), _age_clause()],
+            operator=GroupOperator.AND,
+        )
         result = group.to_query_json()
-        assert result["phenotypicClauses"] == []
+        children = result["phenotypicClauses"]
+        assert len(children) == 2  # type: ignore[arg-type]
+        assert children[0]["conceptPath"] == "\\phs1\\sex\\"  # type: ignore[index]
+
+    def test_pure_select_group_select_paths_still_works(self):
+        group = ClauseGroup(
+            clauses=[_select_clause(), _select_clause()],
+            operator=GroupOperator.AND,
+        )
+        assert group.select_paths() == ["\\phs1\\output\\", "\\phs1\\output\\"]
+        assert group.has_phenotypic() is False
 
 
 class TestClauseGroupSelectPaths:

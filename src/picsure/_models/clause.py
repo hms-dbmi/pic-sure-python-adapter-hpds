@@ -43,8 +43,7 @@ class Clause:
 
     **Wire format.** :meth:`to_query_json` emits a v3 ``PhenotypicFilter``
     leaf (or an ``OR`` ``PhenotypicSubquery`` of leaves for multi-key
-    clauses) per the ``/picsure/v3/query/sync`` contract. The previous
-    wire format is not supported.
+    clauses) per the ``/picsure/v3/query/sync`` contract.
     """
 
     keys: list[str]

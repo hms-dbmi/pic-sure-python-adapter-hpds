@@ -149,32 +149,82 @@ class Session:
             page_size=self._total_concepts,
         )
 
-    def facets(self) -> FacetSet:
+    def facets(
+        self,
+        term: str = "",
+        *,
+        facets: FacetSet | None = None,
+    ) -> FacetSet:
         """Fetch available facet categories and return a FacetSet.
 
-        The FacetSet starts with no selections. Use ``add()`` to select
-        values, then pass it to ``search()`` to narrow results.
+        The returned FacetSet starts with no selections. Use ``add()`` to
+        select values, then pass it to ``search()`` to narrow results.
+
+        Args:
+            term: Optional search term. When supplied, each returned
+                category's option counts reflect only concepts matching
+                the term.  When omitted (the default), counts are global.
+            facets: Optional current-selection :class:`FacetSet`. When
+                supplied, the returned counts reflect how many additional
+                concepts each option would match given the current
+                selections — matching the UI sidebar's behavior.
+
+        Returns:
+            A fresh :class:`FacetSet` whose available categories carry
+            contextual counts when ``term``/``facets`` are provided and
+            global counts otherwise.
 
         Example:
             >>> fs = session.facets()
-            >>> fs.add("study_ids", "phs000007")
+            >>> fs.add("dataset_id", "phs000007")
             >>> df = session.search("sex", facets=fs)
+            >>> # Recompute with contextual counts:
+            >>> refreshed = session.facets(term="sex", facets=fs)
         """
         from picsure._models.facet import FacetSet as _FacetSet
         from picsure._services.search import fetch_facets
 
-        available = fetch_facets(self._client, consents=self._consents)
+        available = fetch_facets(
+            self._client,
+            consents=self._consents,
+            term=term,
+            facets=facets,
+        )
         return _FacetSet(available)
 
-    def showAllFacets(self) -> pd.DataFrame:
+    def showAllFacets(  # noqa: N802
+        self,
+        term: str = "",
+        *,
+        facets: FacetSet | None = None,
+    ) -> pd.DataFrame:
         """Fetch and display all available facet categories as a DataFrame.
 
+        Returns every facet option including those with count 0. The UI
+        hides count=0 options; this method exposes them so notebook
+        callers can see which options matched nothing.
+
+        Args:
+            term: Optional search term; when provided, the returned
+                counts are contextual to concepts matching the term.
+            facets: Optional current-selection :class:`FacetSet`; when
+                provided, counts reflect what would remain if each option
+                were added to the current selection.
+
         Returns:
-            DataFrame with columns: category, display, value, count.
+            DataFrame with columns: ``category``, ``Category Display``,
+            ``display``, ``description``, ``value``, ``count``. Counts
+            are contextual when ``term``/``facets`` are supplied; global
+            otherwise.
         """
         from picsure._services.search import show_all_facets
 
-        return show_all_facets(self._client, consents=self._consents)
+        return show_all_facets(
+            self._client,
+            consents=self._consents,
+            term=term,
+            facets=facets,
+        )
 
     def runQuery(  # noqa: N802
         self,
@@ -265,6 +315,25 @@ class Session:
         from picsure._services.export import export_tsv
 
         export_tsv(data, path)
+
+    def close(self) -> None:
+        """Close the underlying HTTP client and release its connection pool.
+
+        Safe to call more than once. Called automatically when ``Session`` is
+        used as a context manager.
+        """
+        self._client.close()
+
+    def __enter__(self) -> Session:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: object,
+        exc_val: object,
+        exc_tb: object,
+    ) -> None:
+        self.close()
 
     def _default_resource_uuid(self) -> str:
         if self._resource_uuid is not None:
