@@ -158,13 +158,22 @@ class TestExportPFBTimeout:
         respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
         respx.post(STATUS_URL).mock(return_value=_status("PENDING"))
 
-        # monotonic: first call starts at 0, next call returns 700 (>= 600).
-        # time.sleep is patched to a no-op so the loop doesn't actually wait.
+        # Patching export.time.monotonic mutates the real time module, so
+        # PicSureClient._request (dev-mode timing) also consumes values.
+        # Feed a generator that yields 0.0 until export's elapsed check,
+        # then 700.0 (>= 600) to trip the timeout.
+        def _monotonic_values():
+            # Submit's _request(start), export's start, status' _request(start)
+            yield from (0.0, 0.0, 0.0)
+            # Export's elapsed check and anything after.
+            while True:
+                yield 700.0
+
         with (
             patch("picsure._services.export.time.sleep"),
             patch(
                 "picsure._services.export.time.monotonic",
-                side_effect=[0.0, 700.0],
+                side_effect=_monotonic_values(),
             ),
             pytest.raises(PicSureConnectionError, match="10 minutes"),
         ):

@@ -1,16 +1,27 @@
+from __future__ import annotations
+
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 import httpx
 
+from picsure._dev.events import Event
+from picsure._dev.redaction import redact_for_log
 from picsure._transport.errors import (
     TransportAuthenticationError,
     TransportConnectionError,
+    TransportError,
     TransportNotFoundError,
     TransportRateLimitError,
     TransportServerError,
     TransportValidationError,
 )
+
+if TYPE_CHECKING:
+    from picsure._dev.config import DevConfig
 
 _MAX_RETRIES = 1
 _TIMEOUT_SECONDS = 30.0
@@ -23,7 +34,12 @@ class PicSureClient:
     connection errors, and translation to internal transport exceptions.
     """
 
-    def __init__(self, base_url: str, token: str = "") -> None:
+    def __init__(
+        self,
+        base_url: str,
+        token: str = "",
+        dev_config: DevConfig | None = None,
+    ) -> None:
         # BDC's API gateway routes auth based on a "request-source" header:
         # "Authorized" when a bearer token is present, "Open" otherwise.
         # Without it, authorized endpoints (e.g. /picsure/v3/query/sync) can
@@ -40,6 +56,7 @@ class PicSureClient:
             headers=headers,
             timeout=_TIMEOUT_SECONDS,
         )
+        self._dev_config = dev_config
 
     def get_json(self, path: str) -> dict:  # type: ignore[type-arg]
         """Send GET request and return parsed JSON."""
@@ -120,12 +137,16 @@ class PicSureClient:
 
     def _request(self, method: str, path: str, **kwargs: object) -> httpx.Response:
         last_exc: Exception | None = None
+        raw_body = kwargs.get("json")
+        body = raw_body if isinstance(raw_body, dict) else None
 
         for attempt in range(_MAX_RETRIES + 1):
+            start = time.monotonic()
             try:
                 response = self._http.request(method, path, **kwargs)  # type: ignore[arg-type]
             except httpx.ConnectError as exc:
                 last_exc = exc
+                self._emit_error(method, path, attempt, start, type(exc).__name__)
                 # Connection errors are idempotent-safe: the request never
                 # reached the server, so retrying can't double-execute.
                 if attempt < _MAX_RETRIES:
@@ -133,6 +154,7 @@ class PicSureClient:
                 raise TransportConnectionError(str(exc)) from exc
             except httpx.TimeoutException as exc:
                 last_exc = exc
+                self._emit_error(method, path, attempt, start, type(exc).__name__)
                 # Timeouts may or may not have reached the server, but
                 # the convention in this client is to retry — see the
                 # original TransportConnectionError path.
@@ -140,16 +162,23 @@ class PicSureClient:
                     continue
                 raise TransportConnectionError(f"Request timed out: {exc}") from exc
 
+            self._emit_http(method, path, body, response, attempt, start)
+
             status = response.status_code
 
             if 400 <= status < 500:
-                _raise_for_status(status, response.text, response)
+                try:
+                    _raise_for_status(status, response.text, response)
+                except TransportError as exc:
+                    self._emit_error(method, path, attempt, start, type(exc).__name__)
+                    raise
 
             if status >= 500:
                 # POST is non-idempotent: a 5xx after the request reached
                 # the server may have partially executed.  Only retry GETs.
                 if method == "GET" and attempt < _MAX_RETRIES:
                     continue
+                self._emit_error(method, path, attempt, start, "TransportServerError")
                 raise TransportServerError(status, response.text)
 
             return response
@@ -161,6 +190,76 @@ class PicSureClient:
         # httpx.Client.close() is itself idempotent, but be explicit so
         # callers can rely on the Session-level contract.
         self._http.close()
+
+    # --- dev-mode helpers -------------------------------------------------
+
+    def _emit_http(
+        self,
+        method: str,
+        path: str,
+        body: dict | None,  # type: ignore[type-arg]
+        response: httpx.Response,
+        attempt: int,
+        start: float,
+    ) -> None:
+        cfg = self._dev_config
+        if cfg is None or not cfg.enabled:
+            return
+
+        duration_ms = (time.monotonic() - start) * 1000.0
+        bytes_in = (
+            len(response.request.content or b"")
+            if response.request
+            else _estimate_bytes(body)
+        )
+        bytes_out = len(response.content or b"")
+        metadata: dict[str, object] = {}
+
+        if redact_for_log(path, method, body) is None:
+            metadata["redacted"] = "participant"
+
+        cfg.emit(
+            Event(
+                timestamp=datetime.now(timezone.utc),
+                kind="http",
+                name=path,
+                duration_ms=duration_ms,
+                bytes_in=bytes_in,
+                bytes_out=bytes_out,
+                status=response.status_code,
+                retry=attempt,
+                error=None,
+                metadata=metadata,
+            )
+        )
+
+    def _emit_error(
+        self,
+        method: str,
+        path: str,
+        attempt: int,
+        start: float,
+        error_name: str,
+    ) -> None:
+        cfg = self._dev_config
+        if cfg is None or not cfg.enabled:
+            return
+
+        duration_ms = (time.monotonic() - start) * 1000.0
+        cfg.emit(
+            Event(
+                timestamp=datetime.now(timezone.utc),
+                kind="error",
+                name=path,
+                duration_ms=duration_ms,
+                bytes_in=None,
+                bytes_out=None,
+                status=None,
+                retry=attempt,
+                error=error_name,
+                metadata={"method": method},
+            )
+        )
 
 
 def _raise_for_status(status: int, body: str, response: httpx.Response) -> None:
@@ -199,4 +298,15 @@ def _parse_retry_after(response: httpx.Response) -> int | None:
     try:
         return int(raw.strip())
     except (TypeError, ValueError):
+        return None
+
+
+def _estimate_bytes(body: dict | None) -> int | None:  # type: ignore[type-arg]
+    if body is None:
+        return 0
+    import json as _json
+
+    try:
+        return len(_json.dumps(body).encode("utf-8"))
+    except Exception:  # pragma: no cover — extremely defensive
         return None

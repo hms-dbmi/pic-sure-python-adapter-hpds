@@ -4,6 +4,9 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from picsure._dev.config import DevConfig
+from picsure._dev.reporting import events_to_df, stats_to_df
+from picsure._dev.timing import timed
 from picsure._models.resource import Resource
 
 if TYPE_CHECKING:
@@ -32,6 +35,7 @@ class Session:
         resource_uuid: str | None = None,
         consents: list[str] | None = None,
         total_concepts: int = 0,
+        dev_config: DevConfig | None = None,
     ) -> None:
         self._client = client
         self._user_email = user_email
@@ -40,6 +44,9 @@ class Session:
         self._resource_uuid = resource_uuid
         self._consents: list[str] = list(consents) if consents else []
         self._total_concepts = total_concepts
+        self._dev_config = dev_config if dev_config is not None else DevConfig(
+            enabled=False, max_events=1
+        )
 
     @property
     def consents(self) -> list[str]:
@@ -117,6 +124,7 @@ class Session:
             f"'{name}' does not match any resource. Available resources: {valid}."
         )
 
+    @timed("session.search")
     def search(
         self,
         term: str = "",
@@ -149,6 +157,7 @@ class Session:
             page_size=self._total_concepts,
         )
 
+    @timed("session.facets")
     def facets(
         self,
         term: str = "",
@@ -192,6 +201,7 @@ class Session:
         )
         return _FacetSet(available)
 
+    @timed("session.showAllFacets")
     def showAllFacets(  # noqa: N802
         self,
         term: str = "",
@@ -226,6 +236,7 @@ class Session:
             facets=facets,
         )
 
+    @timed("session.runQuery")
     def runQuery(  # noqa: N802
         self,
         query: Query,
@@ -266,6 +277,7 @@ class Session:
             type,
         )
 
+    @timed("session.exportPFB")
     def exportPFB(  # noqa: N802
         self,
         query: Query,
@@ -286,6 +298,7 @@ class Session:
             path,
         )
 
+    @timed("session.exportCSV")
     def exportCSV(  # noqa: N802
         self,
         data: pd.DataFrame,
@@ -301,6 +314,7 @@ class Session:
 
         export_csv(data, path)
 
+    @timed("session.exportTSV")
     def exportTSV(  # noqa: N802
         self,
         data: pd.DataFrame,
@@ -334,6 +348,25 @@ class Session:
         exc_tb: object,
     ) -> None:
         self.close()
+
+    # --- dev-mode surface ---------------------------------------------------
+
+    @property
+    def dev_mode(self) -> bool:
+        """True if developer mode is enabled for this session."""
+        return self._dev_config.enabled
+
+    def dev_events(self) -> pd.DataFrame:
+        """Return the raw event log as a DataFrame (one row per event)."""
+        return events_to_df(self._dev_config.buffer.snapshot())
+
+    def dev_stats(self) -> pd.DataFrame:
+        """Return aggregated per-(kind, name) stats as a DataFrame."""
+        return stats_to_df(self._dev_config.buffer.snapshot())
+
+    def dev_clear(self) -> None:
+        """Empty the event buffer. No-op when dev mode is disabled."""
+        self._dev_config.buffer.clear()
 
     def _default_resource_uuid(self) -> str:
         if self._resource_uuid is not None:
