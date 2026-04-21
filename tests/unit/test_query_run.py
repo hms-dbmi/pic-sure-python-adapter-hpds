@@ -308,25 +308,19 @@ class TestRunQueryWithClauseGroup:
         assert len(pheno["phenotypicClauses"]) == 2
 
     @respx.mock
-    def test_select_clauses_lifted_to_top_level(self):
-        route = respx.post(QUERY_URL).mock(
-            return_value=httpx.Response(200, content=b"100")
-        )
+    def test_mixed_group_with_select_raises(self):
+        # Mixing SELECT clauses inside a phenotypic group is not supported.
+        # SELECTs should be kept outside the ClauseGroup (top-level of the
+        # query) so they can be lifted to the ``select`` array cleanly.
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"100"))
         out = Clause(keys=["\\out_a\\", "\\out_b\\"], type=ClauseType.SELECT)
         group = ClauseGroup(
             clauses=[_simple_clause(), out],
             operator=GroupOperator.AND,
         )
         client = _make_client()
-        run_query(client, RESOURCE_UUID, group, "count")
-
-        import json
-
-        body = json.loads(route.calls[0].request.content)
-        assert body["query"]["select"] == ["\\out_a\\", "\\out_b\\"]
-        pheno_children = body["query"]["phenotypicClause"]["phenotypicClauses"]
-        assert len(pheno_children) == 1
-        assert pheno_children[0]["conceptPath"] == "\\phs1\\sex\\"
+        with pytest.raises(PicSureValidationError, match="SELECT"):
+            run_query(client, RESOURCE_UUID, group, "count")
 
     @respx.mock
     def test_group_with_only_selects_yields_null_phenotypic(self):

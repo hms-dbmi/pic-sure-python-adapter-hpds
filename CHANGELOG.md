@@ -47,6 +47,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `Session.runQuery(..., type="cross_count")` now returns a `dict[str, CountResult]` keyed by concept path instead of a DataFrame.
 - `PicSureClient` now strips leading/trailing whitespace from the bearer token; a whitespace-only token is treated as anonymous (no `Authorization` header, `request-source: Open`).
 - `Session.exportPFB()` / `picsure._services.export.export_pfb` now use the async flow (`POST /picsure/v3/query` → poll `/query/{id}/status` → `POST /query/{id}/result`) rather than `/query/sync`. Response bytes are streamed directly to disk. Polling uses exponential backoff (1s, 2s, 4s, … capped at 60s per poll) and fails with `PicSureConnectionError` after 10 minutes of cumulative waiting. The output file is written atomically (`.part` staging file + rename on success).
+- `createClause` now raises `PicSureValidationError` for additional invalid combinations:
+  FILTER clauses with both `categories` and `min`/`max`; REQUIRE or SELECT clauses
+  with any of `categories`/`min`/`max`; empty keys lists. These were previously
+  silently accepted and the extra arguments discarded (or rejected downstream by
+  the server with a less actionable error).
+- `ClauseGroup.to_query_json()` now raises `PicSureValidationError` if any nested
+  child is a SELECT clause (previously it silently stripped them). This is
+  symmetric with `Clause.to_query_json()`, which has always raised on SELECT.
+  `ClauseGroup.select_paths()` and `build_query_body()` continue to handle SELECT
+  extraction at the top level; inline SELECTs inside a group are the error case.
+- `createClause` now defensively copies list arguments (`keys`, `categories`), so
+  mutating the caller's lists after construction does not affect the resulting
+  `Clause`.
+
+### Removed
+- Wire-format docstrings on `Clause` and `ClauseGroup` no longer advertise the
+  `not` / negation field. The adapter still emits `"not": False` on the wire, but
+  negation is not supported by the public API; support will return in a later
+  release.
 
 ### Fixed
 - `Session.search` now raises `PicSureQueryError` when the server's paginated response indicates the result set was truncated (`last != True` or `content` length doesn't match `totalElements`). Previously the adapter silently returned the partial page.
