@@ -1,3 +1,6 @@
+from collections.abc import Iterator
+from contextlib import contextmanager
+
 import httpx
 
 from picsure._transport.errors import (
@@ -56,6 +59,65 @@ class PicSureClient:
         response = self._request("POST", path, json=body)
         return response.content
 
+    @contextmanager
+    def post_raw_stream(
+        self,
+        path: str,
+        body: dict | None = None,  # type: ignore[type-arg]
+    ) -> Iterator[httpx.Response]:
+        """POST JSON body and stream the response without buffering it.
+
+        Yields an :class:`httpx.Response` with an un-read body.  Callers
+        iterate over ``response.iter_bytes()`` inside the ``with`` block;
+        the response is closed on exit.
+
+        Error handling matches :meth:`_request`: 4xx/5xx are translated
+        to transport exceptions *before* the context manager yields, so
+        callers don't need to re-check the status code.  The response
+        body for the error mapping is read eagerly (it's small), but the
+        success-path body is left as a live stream.
+        """
+        last_exc: Exception | None = None
+
+        for attempt in range(_MAX_RETRIES + 1):
+            stream_cm = self._http.stream("POST", path, json=body)
+            try:
+                response = stream_cm.__enter__()
+            except httpx.ConnectError as exc:
+                last_exc = exc
+                if attempt < _MAX_RETRIES:
+                    continue
+                raise TransportConnectionError(str(exc)) from exc
+            except httpx.TimeoutException as exc:
+                last_exc = exc
+                if attempt < _MAX_RETRIES:
+                    continue
+                raise TransportConnectionError(f"Request timed out: {exc}") from exc
+
+            status = response.status_code
+
+            if status >= 400:
+                # Read the (presumably small) error body so the mapper
+                # below can include a preview, then close the stream.
+                try:
+                    response.read()
+                    body_text = response.text
+                finally:
+                    stream_cm.__exit__(None, None, None)
+                if 400 <= status < 500:
+                    _raise_for_status(status, body_text, response)
+                # POST /stream is non-idempotent; do not retry on 5xx.
+                raise TransportServerError(status, body_text)
+
+            # Happy path: hand the live response to the caller.
+            try:
+                yield response
+            finally:
+                stream_cm.__exit__(None, None, None)
+            return
+
+        raise TransportConnectionError("Request failed after retries") from last_exc
+
     def _request(self, method: str, path: str, **kwargs: object) -> httpx.Response:
         last_exc: Exception | None = None
 
@@ -80,20 +142,8 @@ class PicSureClient:
 
             status = response.status_code
 
-            if status in (401, 403):
-                raise TransportAuthenticationError(status, response.text)
-
-            if status == 404:
-                raise TransportNotFoundError(status, response.text)
-
-            if status == 429:
-                raise TransportRateLimitError(
-                    status, response.text, retry_after=_parse_retry_after(response)
-                )
-
             if 400 <= status < 500:
-                # 400, 422, and any other 4xx fall into the validation bucket.
-                raise TransportValidationError(status, response.text)
+                _raise_for_status(status, response.text, response)
 
             if status >= 500:
                 # POST is non-idempotent: a 5xx after the request reached
@@ -111,6 +161,27 @@ class PicSureClient:
         # httpx.Client.close() is itself idempotent, but be explicit so
         # callers can rely on the Session-level contract.
         self._http.close()
+
+
+def _raise_for_status(status: int, body: str, response: httpx.Response) -> None:
+    """Map a 4xx status to the appropriate transport exception.
+
+    Shared between :meth:`PicSureClient._request` and the streaming path
+    so the two surfaces translate 4xx identically.  Callers are
+    responsible for handling 5xx themselves (the retry policy differs
+    between GET and POST).
+    """
+    if status in (401, 403):
+        raise TransportAuthenticationError(status, body)
+    if status == 404:
+        raise TransportNotFoundError(status, body)
+    if status == 429:
+        raise TransportRateLimitError(
+            status, body, retry_after=_parse_retry_after(response)
+        )
+    if 400 <= status < 500:
+        # 400, 422, and any other 4xx fall into the validation bucket.
+        raise TransportValidationError(status, body)
 
 
 def _parse_retry_after(response: httpx.Response) -> int | None:

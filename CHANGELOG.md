@@ -44,3 +44,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `Session.runQuery(..., type="count")` now returns a `CountResult` dataclass instead of a plain `int`. Access the integer count via `result.value`; check `result.cap` for suppressed small-count responses (`result.value` is `None` in that case) and `result.margin` for noisy responses.
 - `Session.runQuery(..., type="cross_count")` now returns a `dict[str, CountResult]` keyed by concept path instead of a DataFrame.
 - `PicSureClient` now strips leading/trailing whitespace from the bearer token; a whitespace-only token is treated as anonymous (no `Authorization` header, `request-source: Open`).
+- `Session.exportPFB()` / `picsure._services.export.export_pfb` now use the async flow (`POST /picsure/v3/query` → poll `/query/{id}/status` → `POST /query/{id}/result`) rather than `/query/sync`. Response bytes are streamed directly to disk. Polling uses exponential backoff (1s, 2s, 4s, … capped at 60s per poll) and fails with `PicSureConnectionError` after 10 minutes of cumulative waiting. The output file is written atomically (`.part` staging file + rename on success).
+
+### Fixed
+- PFB export against v3 PIC-SURE was silently broken: the previous implementation posted `DATAFRAME_PFB` to `/query/sync`, which v3 HPDS has no handler for. Unit tests passed only because `respx` served a canned 200 body at the wrong URL.
+- 4xx responses during PFB submission / status / result are now surfaced as `PicSureValidationError` / `PicSureQueryError` (previously the 4xx body bytes would be written to disk as if they were PFB).
+- `OSError` / `PermissionError` during disk writes in `export_pfb` are now wrapped in `PicSureConnectionError` with the target path in the message (previously leaked raw).

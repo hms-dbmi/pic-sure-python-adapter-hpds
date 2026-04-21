@@ -368,15 +368,27 @@ class TestSessionRunQuery:
 class TestSessionExport:
     @respx.mock
     def test_export_pfb(self, tmp_path):
-        respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
+        # Session.exportPFB drives the async flow:
+        # submit -> poll status -> stream result.
+        query_id = "session-pfb-1"
+        respx.post(f"{BASE_URL}/picsure/v3/query").mock(
+            return_value=httpx.Response(200, json={"picsureResultId": query_id})
+        )
+        respx.post(f"{BASE_URL}/picsure/v3/query/{query_id}/status").mock(
+            return_value=httpx.Response(200, json={"status": "AVAILABLE"})
+        )
+        respx.post(f"{BASE_URL}/picsure/v3/query/{query_id}/result").mock(
             return_value=httpx.Response(200, content=b"pfb_data")
         )
+        from unittest.mock import patch
+
         from picsure._models.clause import Clause, ClauseType
 
         session = _make_live_session()
         clause = Clause(keys=["\\sex\\"], type=ClauseType.FILTER, categories=["Male"])
         output = tmp_path / "test.pfb"
-        session.exportPFB(clause, output)
+        with patch("picsure._services.export.time.sleep"):
+            session.exportPFB(clause, output)
 
         assert output.exists()
         assert output.read_bytes() == b"pfb_data"
