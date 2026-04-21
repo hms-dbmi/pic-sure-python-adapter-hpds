@@ -26,10 +26,10 @@ results = session.search("blood pressure")
 
 # Build a query
 sex = picsure.createClause(
-    r"\phs1\sex\", type=ClauseType.FILTER, categories="Male"
+    "\\phs1\\sex\\", type=ClauseType.FILTER, categories="Male"
 )
 age = picsure.createClause(
-    r"\phs1\age\", type=ClauseType.FILTER, min=40
+    "\\phs1\\age\\", type=ClauseType.FILTER, min=40
 )
 query = picsure.buildClauseGroup([sex, age], root=GroupOperator.AND)
 

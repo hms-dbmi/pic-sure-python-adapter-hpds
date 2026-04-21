@@ -31,6 +31,22 @@ The `platform` parameter accepts named platforms (`"BDC Authorized"`,
 `"BDC Open"`, `"Demo"`) or a custom URL for other
 PIC-SURE instances.
 
+### Explicit Cleanup (Recommended)
+
+`Session` is a context manager. In scripts or long-running processes,
+use `with` so the underlying HTTP connection pool is released promptly:
+
+```python
+with picsure.connect(platform="BDC Authorized", token="your-api-token") as session:
+    df = session.search("blood pressure")
+    # connection released on exit
+```
+
+This is not required in short-lived notebook cells where the kernel
+shuts down soon after; it is recommended when the script runs
+repeatedly or lives inside a long-running process. You can also call
+`session.close()` directly.
+
 ## Step 2: Search the Data Dictionary
 
 ```python
@@ -50,7 +66,7 @@ session.showAllFacets()
 
 # Create a facet filter
 facets = session.facets()
-facets.add("study_ids", "phs000007")
+facets.add("dataset_id", "phs000007")
 
 # Search with facets
 fhs_results = session.search("blood pressure", facets=facets)
@@ -63,13 +79,13 @@ from picsure import ClauseType, GroupOperator
 
 # Create individual clauses
 sex_filter = picsure.createClause(
-    r"\phs1\pht1\phv1\sex\",
+    "\\phs1\\pht1\\phv1\\sex\\",
     type=ClauseType.FILTER,
     categories="Male",
 )
 
 age_filter = picsure.createClause(
-    r"\phs1\pht1\phv5\age\",
+    "\\phs1\\pht1\\phv5\\age\\",
     type=ClauseType.FILTER,
     min=40,
 )

@@ -9,7 +9,13 @@ from picsure._models.session import Session
 from picsure._services.connect import connect
 from picsure._services.query_build import buildClauseGroup, createClause
 from picsure._transport.platforms import Platform
-from picsure.errors import PicSureError
+from picsure.errors import (
+    PicSureAuthError,
+    PicSureConnectionError,
+    PicSureError,
+    PicSureQueryError,
+    PicSureValidationError,
+)
 
 __all__ = [
     "buildClauseGroup",
@@ -21,7 +27,11 @@ __all__ = [
     "CountResult",
     "FacetSet",
     "GroupOperator",
+    "PicSureAuthError",
+    "PicSureConnectionError",
     "PicSureError",
+    "PicSureQueryError",
+    "PicSureValidationError",
     "Platform",
     "Query",
     "Session",

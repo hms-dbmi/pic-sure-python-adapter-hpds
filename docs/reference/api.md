@@ -7,6 +7,12 @@ Complete reference for all public functions, classes, and types in the
 
 ::: picsure.connect
 
+### Platform
+
+::: picsure.Platform
+    options:
+      members: true
+
 ## Query Construction
 
 ::: picsure.createClause
@@ -54,11 +60,24 @@ Complete reference for all public functions, classes, and types in the
         - view
         - clear
 
+### CountResult
+
+::: picsure.CountResult
+    options:
+      members:
+        - value
+        - margin
+        - cap
+        - raw
+        - obfuscated
+
 ## Session
 
 ::: picsure.Session
     options:
       members:
+        - consents
+        - total_concepts
         - search
         - facets
         - showAllFacets
@@ -69,7 +88,18 @@ Complete reference for all public functions, classes, and types in the
         - getResourceID
         - setResourceID
         - setResourceIDByName
+        - close
+        - __enter__
+        - __exit__
 
 ## Errors
 
 ::: picsure.PicSureError
+
+::: picsure.PicSureAuthError
+
+::: picsure.PicSureConnectionError
+
+::: picsure.PicSureQueryError
+
+::: picsure.PicSureValidationError

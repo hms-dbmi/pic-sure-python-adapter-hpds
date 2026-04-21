@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- `picsure.PicSureAuthError`, `picsure.PicSureConnectionError`, `picsure.PicSureQueryError`, and `picsure.PicSureValidationError` are now re-exported from the top-level package, so `from picsure import PicSureQueryError` works (previously required `from picsure.errors import ...`).
 - `Session.facets(term="", *, facets=None)` and `Session.showAllFacets(term="", *, facets=None)` now accept optional search term and facet selections. Counts returned are contextual to the provided search when term/facets are supplied; passing no arguments preserves the previous "global counts" behaviour.
 - `DictionaryEntry` exposes `min`, `max`, `allow_filtering`, `meta`, and `study_acronym` fields. The corresponding columns (`min`, `max`, `allowFiltering`, `meta`, `studyAcronym`) are added to the `Session.search` DataFrame result.
 - `picsure.connect()` to authenticate and connect to a PIC-SURE instance.
@@ -63,6 +64,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `createClause` now defensively copies list arguments (`keys`, `categories`), so
   mutating the caller's lists after construction does not affect the resulting
   `Clause`.
+- Dependency ranges tightened to upper-bounded majors (`httpx>=0.27,<1`, `pandas>=2,<3`) to avoid silent breakage on major releases.
+- `CONTRIBUTING.md` lint instructions now cover both `src/` and `tests/`, matching the CI gate.
 
 ### Removed
 - Wire-format docstrings on `Clause` and `ClauseGroup` no longer advertise the
@@ -85,3 +88,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - PFB export against v3 PIC-SURE was silently broken: the previous implementation posted `DATAFRAME_PFB` to `/query/sync`, which v3 HPDS has no handler for. Unit tests passed only because `respx` served a canned 200 body at the wrong URL.
 - 4xx responses during PFB submission / status / result are now surfaced as `PicSureValidationError` / `PicSureQueryError` (previously the 4xx body bytes would be written to disk as if they were PFB).
 - `OSError` / `PermissionError` during disk writes in `export_pfb` are now wrapped in `PicSureConnectionError` with the target path in the message (previously leaked raw).
+- Getting-started and search-and-facets guide examples used ``"study_ids"`` as the facet category; the server returns ``"dataset_id"``. Guides updated to match. Users copy-pasting the earlier examples would have seen ``PicSureValidationError``.
+- ``showAllFacets`` DataFrame column list in the user guide was outdated. Now correctly documents the six columns (``category``, ``Category Display``, ``display``, ``description``, ``value``, ``count``).
+- Raw-string code snippets ending in a backslash (e.g. ``r"\phs1\sex\"``) were unterminated string literals and would ``SyntaxError`` on copy-paste. Replaced with doubled-backslash non-raw strings across ``README.md`` and the guides.
+- API reference now documents `Platform`, `CountResult`, the `PicSureError` subclasses, and `Session.consents` / `Session.total_concepts` properties, which were exported but missing from the reference.
