@@ -161,7 +161,8 @@ def _resolve_query_type(query_type: QueryType | str) -> str:
         )
     if key not in _VALID_QUERY_TYPES:
         raise PicSureValidationError(
-            f"'{query_type}' is not a valid query type. Valid types: {valid}."
+            f"'{query_type}' is not a valid query type. Pass a QueryType "
+            f"member or one of: {valid}."
         )
     return _VALID_QUERY_TYPES[key]
 
