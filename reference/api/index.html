@@ -4764,7 +4764,7 @@ were added to the current selection.</p>
 
 <a href="#picsure.Session.runQuery" class="headerlink" title="Permanent link">&para;</a></h3>
 <div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">runQuery</span><span class="p">(</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">query</span><span class="p">:</span> <span class="n">Query</span><span class="p">,</span> <span class="nb">type</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;count&quot;</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">query</span><span class="p">:</span> <span class="n">Query</span><span class="p">,</span> <span class="nb">type</span><span class="p">:</span> <span class="n">QueryType</span> <span class="o">|</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;count&quot;</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CountResult</span> <span class="o">|</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">CountResult</span><span class="p">]</span> <span class="o">|</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span>
 </code></pre></div>
 
@@ -4810,11 +4810,12 @@ were added to the current selection.</p>
                 <code>type</code>
             </td>
             <td>
-                  <code><span title="str">str</span></code>
+                  <code><span title="picsure._models.query_type.QueryType">QueryType</span> | <span title="str">str</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Result type — one of:</p>
+                <p>Result type. Pass either a :class:<code>QueryType</code> member
+(e.g. <code>QueryType.COUNT</code>) or one of the strings:</p>
 <ul>
 <li><code>"count"</code> → :class:<code>CountResult</code> with <code>value</code> /
   <code>margin</code> / <code>cap</code> fields, preserving server-side
