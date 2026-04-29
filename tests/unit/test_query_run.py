@@ -541,3 +541,29 @@ class TestQueryTypeMemberInput:
             match=r"not a valid query type.*count",
         ):
             _resolve_query_type(42)  # type: ignore[arg-type]
+
+
+class TestRunQueryWithQueryTypeMember:
+    @respx.mock
+    def test_count_query_with_member_sets_wire_format(self):
+        # Mirrors the existing TestRunQueryCount style — proves a QueryType
+        # member flows end-to-end through run_query and produces the same
+        # wire body as the equivalent string.
+        route = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"42"),
+        )
+
+        client = _make_client()
+        result = run_query(
+            client,
+            RESOURCE_UUID,
+            _simple_clause(),
+            QueryType.COUNT,
+        )
+
+        assert isinstance(result, CountResult)
+        assert result.value == 42
+
+        import json
+        body = json.loads(route.calls[0].request.content)
+        assert body["query"]["expectedResultType"] == "COUNT"

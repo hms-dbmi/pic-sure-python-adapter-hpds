@@ -42,7 +42,7 @@ def run_query(
     client: PicSureClient,
     resource_uuid: str,
     query: Query,
-    query_type: str,
+    query_type: QueryType | str,
 ) -> CountResult | dict[str, CountResult] | pd.DataFrame:
     """Execute a query against PIC-SURE and return the result.
 
@@ -50,7 +50,9 @@ def run_query(
         client: Authenticated HTTP client.
         resource_uuid: The resource to query.
         query: A Clause or ClauseGroup built with createClause/buildClauseGroup.
-        query_type: One of "count", "participant", "timestamp", or "cross_count".
+        query_type: A :class:`QueryType` member (e.g. ``QueryType.COUNT``)
+            or one of the strings ``"count"``, ``"participant"``,
+            ``"timestamp"``, ``"cross_count"``.
 
     Returns:
         - ``count``        → :class:`CountResult`
