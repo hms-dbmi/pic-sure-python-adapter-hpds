@@ -7,6 +7,7 @@ from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure._models.count_result import CountResult
 from picsure._models.facet import FacetSet
 from picsure._models.query import Query
+from picsure._models.query_type import QueryType
 from picsure._models.session import Session
 from picsure._services.connect import connect
 from picsure._services.query_build import buildClauseGroup, createClause
@@ -50,5 +51,6 @@ __all__ = [
     "PicSureValidationError",
     "Platform",
     "Query",
+    "QueryType",
     "Session",
 ]

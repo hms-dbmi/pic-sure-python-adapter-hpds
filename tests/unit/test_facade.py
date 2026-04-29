@@ -35,6 +35,7 @@ class TestPublicFacade:
             "Clause",
             "ClauseGroup",
             "Query",
+            "QueryType",
         }
         assert expected.issubset(set(picsure.__all__))
 
@@ -56,6 +57,13 @@ class TestPublicFacade:
 
     def test_group_operator_is_importable(self):
         assert picsure.GroupOperator is not None
+
+    def test_query_type_is_importable(self):
+        assert picsure.QueryType is not None
+
+    def test_query_type_re_exported_at_top_level(self):
+        from picsure._models.query_type import QueryType as Internal
+        assert picsure.QueryType is Internal
 
     def test_query_is_importable(self):
         assert picsure.Query is not None
