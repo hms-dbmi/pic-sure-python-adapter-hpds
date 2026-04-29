@@ -10,6 +10,7 @@ from picsure._models.clause import Clause, ClauseType
 from picsure._models.clause_group import ClauseGroup
 from picsure._models.count_result import CountResult
 from picsure._models.query import Query
+from picsure._models.query_type import QueryType
 from picsure._transport.client import PicSureClient
 from picsure._transport.errors import (
     TransportError,
@@ -145,8 +146,17 @@ def _phenotypic_clause(query: Query) -> dict[str, object] | None:
     return query.to_query_json()
 
 
-def _resolve_query_type(query_type: str) -> str:
-    key = query_type.lower().strip()
+def _resolve_query_type(query_type: QueryType | str) -> str:
+    if isinstance(query_type, QueryType):
+        key = query_type.value
+    elif isinstance(query_type, str):
+        key = query_type.lower().strip()
+    else:
+        valid = ", ".join(_VALID_QUERY_TYPES.keys())
+        raise PicSureValidationError(
+            f"'{query_type}' is not a valid query type. Pass a QueryType "
+            f"member or one of: {valid}."
+        )
     if key not in _VALID_QUERY_TYPES:
         valid = ", ".join(_VALID_QUERY_TYPES.keys())
         raise PicSureValidationError(

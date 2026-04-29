@@ -5,7 +5,8 @@ import respx
 from picsure._models.clause import Clause, ClauseType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure._models.count_result import CountResult
-from picsure._services.query_run import run_query
+from picsure._models.query_type import QueryType
+from picsure._services.query_run import _resolve_query_type, run_query
 from picsure._transport.client import PicSureClient
 from picsure.errors import (
     PicSureConnectionError,
@@ -509,3 +510,35 @@ class TestRunQueryErrors:
         client = _make_client()
         with pytest.raises(PicSureConnectionError):
             run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+
+
+class TestQueryTypeMemberInput:
+    def test_count_member_resolves_to_wire_format(self):
+        assert _resolve_query_type(QueryType.COUNT) == "COUNT"
+
+    def test_participant_member_resolves_to_wire_format(self):
+        assert _resolve_query_type(QueryType.PARTICIPANT) == "DATAFRAME"
+
+    def test_timestamp_member_resolves_to_wire_format(self):
+        assert _resolve_query_type(QueryType.TIMESTAMP) == "DATAFRAME_TIMESERIES"
+
+    def test_cross_count_member_resolves_to_wire_format(self):
+        assert _resolve_query_type(QueryType.CROSS_COUNT) == "CROSS_COUNT"
+
+    def test_string_input_still_works(self):
+        # Backwards compat — string path is untouched.
+        assert _resolve_query_type("count") == "COUNT"
+
+    def test_string_input_case_insensitive(self):
+        assert _resolve_query_type("COUNT") == "COUNT"
+
+    def test_string_input_strips_whitespace(self):
+        assert _resolve_query_type("  count  ") == "COUNT"
+
+    def test_non_member_non_string_raises(self):
+        with pytest.raises(PicSureValidationError, match="not a valid query type"):
+            _resolve_query_type(42)  # type: ignore[arg-type]
+
+    def test_non_member_non_string_lists_valid(self):
+        with pytest.raises(PicSureValidationError, match="count"):
+            _resolve_query_type(42)  # type: ignore[arg-type]
