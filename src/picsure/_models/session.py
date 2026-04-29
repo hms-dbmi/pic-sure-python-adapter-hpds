@@ -7,6 +7,7 @@ import pandas as pd
 from picsure._dev.config import DevConfig
 from picsure._dev.reporting import events_to_df, stats_to_df
 from picsure._dev.timing import timed
+from picsure._models.query_type import QueryType
 from picsure._models.resource import Resource
 
 if TYPE_CHECKING:
@@ -242,13 +243,14 @@ class Session:
     def runQuery(  # noqa: N802
         self,
         query: Query,
-        type: str = "count",  # noqa: A002
+        type: QueryType | str = "count",  # noqa: A002
     ) -> CountResult | dict[str, CountResult] | pd.DataFrame:
         """Execute a query and return the result.
 
         Args:
             query: A Clause or ClauseGroup built with createClause/buildClauseGroup.
-            type: Result type — one of:
+            type: Result type. Pass either a :class:`QueryType` member
+                (e.g. ``QueryType.COUNT``) or one of the strings:
 
                 - ``"count"`` → :class:`CountResult` with ``value`` /
                   ``margin`` / ``cap`` fields, preserving server-side

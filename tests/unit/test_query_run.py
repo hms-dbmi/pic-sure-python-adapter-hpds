@@ -6,6 +6,8 @@ from picsure._models.clause import Clause, ClauseType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure._models.count_result import CountResult
 from picsure._models.query_type import QueryType
+from picsure._models.resource import Resource
+from picsure._models.session import Session
 from picsure._services.query_run import _resolve_query_type, run_query
 from picsure._transport.client import PicSureClient
 from picsure.errors import (
@@ -567,3 +569,29 @@ class TestRunQueryWithQueryTypeMember:
         import json
         body = json.loads(route.calls[0].request.content)
         assert body["query"]["expectedResultType"] == "COUNT"
+
+
+class TestSessionRunQueryWithMember:
+    @respx.mock
+    def test_session_run_query_accepts_query_type_member(self):
+        # Confirms the member form flows through Session.runQuery, not
+        # just the lower-level run_query function.
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"7"),
+        )
+
+        client = _make_client()
+        session = Session(
+            client=client,
+            user_email="test@example.com",
+            token_expiration="N/A",
+            resources=[
+                Resource(uuid=RESOURCE_UUID, name="R", description="d"),
+            ],
+            resource_uuid=RESOURCE_UUID,
+        )
+
+        result = session.runQuery(_simple_clause(), type=QueryType.COUNT)
+
+        assert isinstance(result, CountResult)
+        assert result.value == 7
