@@ -567,6 +567,7 @@ class TestRunQueryWithQueryTypeMember:
         assert result.value == 42
 
         import json
+
         body = json.loads(route.calls[0].request.content)
         assert body["query"]["expectedResultType"] == "COUNT"
 

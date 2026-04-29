@@ -20,7 +20,7 @@ class QueryType(Enum):
       concept path.
     """
 
-    COUNT       = "count"
+    COUNT = "count"
     PARTICIPANT = "participant"
-    TIMESTAMP   = "timestamp"
+    TIMESTAMP = "timestamp"
     CROSS_COUNT = "cross_count"

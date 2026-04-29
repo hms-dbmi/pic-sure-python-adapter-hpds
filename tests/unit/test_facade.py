@@ -63,6 +63,7 @@ class TestPublicFacade:
 
     def test_query_type_re_exported_at_top_level(self):
         from picsure._models.query_type import QueryType as Internal
+
         assert picsure.QueryType is Internal
 
     def test_query_is_importable(self):
