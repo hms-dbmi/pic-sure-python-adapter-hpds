@@ -536,9 +536,8 @@ class TestQueryTypeMemberInput:
         assert _resolve_query_type("  count  ") == "COUNT"
 
     def test_non_member_non_string_raises(self):
-        with pytest.raises(PicSureValidationError, match="not a valid query type"):
-            _resolve_query_type(42)  # type: ignore[arg-type]
-
-    def test_non_member_non_string_lists_valid(self):
-        with pytest.raises(PicSureValidationError, match="count"):
+        with pytest.raises(
+            PicSureValidationError,
+            match=r"not a valid query type.*count",
+        ):
             _resolve_query_type(42)  # type: ignore[arg-type]
