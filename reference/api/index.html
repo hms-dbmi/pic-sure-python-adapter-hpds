@@ -4284,7 +4284,8 @@ and for callers that want to re-format the value themselves.</p>
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">consents</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">total_concepts</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">dev_config</span><span class="p">:</span> <span class="n">DevConfig</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="p">)</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">use_legacy_query_path</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="p">)</span>
 </code></pre></div>
 
     <div class="doc doc-contents first">
@@ -4922,6 +4923,10 @@ df = session.runQuery(my_query, type="participant")</p>
     <div class="doc doc-contents ">
 
         <p>Execute a query and write the result as a PFB file.</p>
+<p>Not supported on open-access deployments (platforms with both
+<code>requires_auth=False</code> and <code>include_consents=False</code>): the PFB
+async flow is exposed only on the authorized v3 endpoints, which
+the BDC API gateway rejects without a token.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -4970,6 +4975,30 @@ df = session.runQuery(my_query, type="participant")</p>
             </td>
             <td>
                 <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="PicSureValidationError (picsure.errors.PicSureValidationError)" href="#picsure.PicSureValidationError">PicSureValidationError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the session was connected to an
+open-access platform.</p>
+              </div>
             </td>
           </tr>
       </tbody>
