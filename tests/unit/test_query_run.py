@@ -20,6 +20,7 @@ BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
 RESOURCE_UUID = "resource-uuid-aaaa-1111"
 QUERY_URL = f"{BASE_URL}/picsure/v3/query/sync"
+LEGACY_QUERY_URL = f"{BASE_URL}/picsure/query/sync"
 
 
 def _make_client() -> PicSureClient:
@@ -596,3 +597,127 @@ class TestSessionRunQueryWithMember:
 
         assert isinstance(result, CountResult)
         assert result.value == 7
+
+
+class TestRunQueryLegacyPath:
+    @respx.mock
+    def test_default_uses_v3_path(self):
+        v3 = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"1"),
+        )
+        legacy = respx.post(LEGACY_QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"99"),
+        )
+        client = _make_client()
+
+        result = run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+
+        assert isinstance(result, CountResult)
+        assert result.value == 1
+        assert v3.call_count == 1
+        assert legacy.call_count == 0
+
+    @respx.mock
+    def test_flag_routes_to_legacy_path(self):
+        # BDC's API gateway 401s open-access requests on the v3 sync
+        # endpoint.  Open-only deployments must use the legacy path.
+        v3 = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(401, text="Unauthorized"),
+        )
+        legacy = respx.post(LEGACY_QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"42"),
+        )
+        client = _make_client()
+
+        result = run_query(
+            client,
+            RESOURCE_UUID,
+            _simple_clause(),
+            "count",
+            use_legacy_query_path=True,
+        )
+
+        assert isinstance(result, CountResult)
+        assert result.value == 42
+        assert v3.call_count == 0
+        assert legacy.call_count == 1
+
+    @respx.mock
+    def test_legacy_path_preserves_body_shape(self):
+        # The legacy endpoint accepts the same v3-shaped body; we should
+        # not start emitting a different shape just because we're routing
+        # to /picsure/query/sync.
+        route = respx.post(LEGACY_QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"7"),
+        )
+        client = _make_client()
+        run_query(
+            client,
+            RESOURCE_UUID,
+            _simple_clause(),
+            "count",
+            use_legacy_query_path=True,
+        )
+
+        import json
+
+        body = json.loads(route.calls[0].request.content)
+        assert body["resourceUUID"] == RESOURCE_UUID
+        query = body["query"]
+        assert query["expectedResultType"] == "COUNT"
+        assert "authorizationFilters" not in query
+        assert query["picsureId"] is None
+        assert query["id"] is None
+
+    @respx.mock
+    def test_session_with_legacy_flag_routes_to_legacy(self):
+        legacy = respx.post(LEGACY_QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"3"),
+        )
+        v3 = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(401, text="Unauthorized"),
+        )
+        client = _make_client()
+        session = Session(
+            client=client,
+            user_email="anonymous",
+            token_expiration="N/A",
+            resources=[
+                Resource(uuid=RESOURCE_UUID, name="R", description="d"),
+            ],
+            resource_uuid=RESOURCE_UUID,
+            use_legacy_query_path=True,
+        )
+
+        result = session.runQuery(_simple_clause(), type=QueryType.COUNT)
+
+        assert isinstance(result, CountResult)
+        assert result.value == 3
+        assert legacy.call_count == 1
+        assert v3.call_count == 0
+
+    @respx.mock
+    def test_session_without_legacy_flag_routes_to_v3(self):
+        v3 = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"5"),
+        )
+        legacy = respx.post(LEGACY_QUERY_URL).mock(
+            return_value=httpx.Response(401, text="Unauthorized"),
+        )
+        client = _make_client()
+        session = Session(
+            client=client,
+            user_email="test@example.com",
+            token_expiration="N/A",
+            resources=[
+                Resource(uuid=RESOURCE_UUID, name="R", description="d"),
+            ],
+            resource_uuid=RESOURCE_UUID,
+        )
+
+        result = session.runQuery(_simple_clause(), type=QueryType.COUNT)
+
+        assert isinstance(result, CountResult)
+        assert result.value == 5
+        assert v3.call_count == 1
+        assert legacy.call_count == 0

@@ -37,6 +37,7 @@ class Session:
         consents: list[str] | None = None,
         total_concepts: int = 0,
         dev_config: DevConfig | None = None,
+        use_legacy_query_path: bool = False,
     ) -> None:
         self._client = client
         self._user_email = user_email
@@ -45,6 +46,7 @@ class Session:
         self._resource_uuid = resource_uuid
         self._consents: list[str] = list(consents) if consents else []
         self._total_concepts = total_concepts
+        self._use_legacy_query_path = use_legacy_query_path
         self._dev_config = (
             dev_config
             if dev_config is not None
@@ -279,6 +281,7 @@ class Session:
             self._default_resource_uuid(),
             query,
             type,
+            use_legacy_query_path=self._use_legacy_query_path,
         )
 
     @timed("session.exportPFB")
@@ -289,10 +292,28 @@ class Session:
     ) -> None:
         """Execute a query and write the result as a PFB file.
 
+        Not supported on open-access deployments (platforms with both
+        ``requires_auth=False`` and ``include_consents=False``): the PFB
+        async flow is exposed only on the authorized v3 endpoints, which
+        the BDC API gateway rejects without a token.
+
         Args:
             query: A Clause or ClauseGroup.
             path: File path to write the PFB data to.
+
+        Raises:
+            PicSureValidationError: If the session was connected to an
+                open-access platform.
         """
+        if self._use_legacy_query_path:
+            from picsure.errors import PicSureValidationError
+
+            raise PicSureValidationError(
+                "PFB export is not supported on open-access platforms. "
+                "Connect with an authorized platform (e.g. "
+                "Platform.BDC_AUTHORIZED) and a valid token to export PFB."
+            )
+
         from picsure._services.export import export_pfb
 
         export_pfb(

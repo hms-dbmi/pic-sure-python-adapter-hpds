@@ -424,3 +424,98 @@ class TestConnectOpenAccess:
         session = connect(platform=BASE_URL, requires_auth=False)
 
         assert session._user_email == "anonymous"
+
+
+class TestConnectLegacyQueryPath:
+    @respx.mock
+    def test_bdc_open_uses_legacy_query_path(self, resources_response):
+        # BDC's API gateway 401s open-access requests on /picsure/v3/query/sync.
+        # connect() must flip the session over to /picsure/query/sync whenever
+        # neither auth nor consents are required.
+        from picsure._transport.platforms import Platform
+
+        host = Platform.BDC_DEV_OPEN.url
+        respx.get(f"{host}/picsure/info/resources").mock(
+            return_value=httpx.Response(200, json=resources_response)
+        )
+        _mock_concepts_prefetch(host=host, total=100)
+
+        session = connect(platform=Platform.BDC_DEV_OPEN)
+
+        assert session._use_legacy_query_path is True
+
+    @respx.mock
+    def test_authorized_platform_uses_v3_query_path(
+        self, profile_response, resources_response
+    ):
+        from picsure._transport.platforms import Platform
+
+        host = Platform.BDC_DEV_AUTHORIZED.url
+        _mock_connect_flow(profile_response, resources_response, host=host)
+        respx.get(f"{host}/psama/user/me/queryTemplate/").mock(
+            return_value=httpx.Response(200, json={})
+        )
+
+        session = connect(platform=Platform.BDC_DEV_AUTHORIZED, token=TOKEN)
+
+        # BDC Authorized requires both auth AND consents; it stays on v3.
+        assert session._use_legacy_query_path is False
+
+    @respx.mock
+    def test_nhanes_open_uses_legacy_query_path(self, resources_response):
+        # Nhanes Open has requires_auth=False AND include_consents=False —
+        # same routing as BDC Open.
+        from picsure._transport.platforms import Platform
+
+        host = Platform.NHANES_OPEN.url.rstrip("/")
+        respx.get(f"{host}/picsure/info/resources").mock(
+            return_value=httpx.Response(200, json=resources_response)
+        )
+        _mock_concepts_prefetch(host=host, total=10)
+
+        session = connect(platform=Platform.NHANES_OPEN)
+
+        assert session._use_legacy_query_path is True
+
+    @respx.mock
+    def test_custom_url_default_uses_v3_query_path(
+        self, profile_response, resources_response
+    ):
+        # Custom URLs default to requires_auth=True, so legacy routing
+        # stays off.
+        _mock_connect_flow(profile_response, resources_response)
+
+        session = connect(platform=BASE_URL, token=TOKEN)
+
+        assert session._use_legacy_query_path is False
+
+    @respx.mock
+    def test_custom_url_open_override_uses_legacy_query_path(self, resources_response):
+        # Custom URL with requires_auth=False AND no consents — flag flips on.
+        respx.get(f"{BASE_URL}/picsure/info/resources").mock(
+            return_value=httpx.Response(200, json=resources_response)
+        )
+        _mock_concepts_prefetch(host=BASE_URL, total=10)
+
+        session = connect(platform=BASE_URL, requires_auth=False)
+
+        assert session._use_legacy_query_path is True
+
+    @respx.mock
+    def test_consents_only_keeps_v3_query_path(
+        self, profile_response, resources_response
+    ):
+        # If the deployment requires consents (even with auth on), it's
+        # an authorized backend — stay on v3.
+        _mock_connect_flow(profile_response, resources_response)
+        respx.get(f"{BASE_URL}/psama/user/me/queryTemplate/").mock(
+            return_value=httpx.Response(200, json={})
+        )
+
+        session = connect(
+            platform=BASE_URL,
+            token=TOKEN,
+            include_consents=True,
+        )
+
+        assert session._use_legacy_query_path is False

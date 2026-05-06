@@ -169,6 +169,13 @@ def connect(
             )
         )
 
+    # BDC's API gateway gates the v3 sync query endpoint as
+    # authorized-only.  Open-only deployments (no auth, no consents)
+    # must hit the legacy /picsure/query/sync path or every runQuery
+    # call will 401.  Authorized and consent-gated deployments stay on
+    # v3 since that's where their backend exposes the query API.
+    use_legacy_query_path = not info.requires_auth and not info.include_consents
+
     return Session(
         client=client,
         user_email=email,
@@ -178,6 +185,7 @@ def connect(
         consents=consents,
         total_concepts=total_concepts,
         dev_config=dev_config,
+        use_legacy_query_path=use_legacy_query_path,
     )
 
 

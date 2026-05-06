@@ -445,6 +445,35 @@ class TestSessionExport:
         assert output.exists()
         assert output.read_bytes() == b"pfb_data"
 
+    def test_export_pfb_rejects_open_session(self, tmp_path):
+        # Open-access deployments don't expose the authorized v3 async
+        # flow that PFB export depends on. Surface that as a clear
+        # validation error instead of letting the request 401 deep in
+        # the async polling loop.
+        from picsure._models.clause import Clause, ClauseType
+        from picsure.errors import PicSureValidationError
+
+        client = MagicMock()
+        session = Session(
+            client=client,
+            user_email="anonymous",
+            token_expiration="N/A",
+            resources=[Resource(uuid="uuid-1", name="open-hpds", description="")],
+            resource_uuid="uuid-1",
+            use_legacy_query_path=True,
+        )
+        clause = Clause(keys=["\\sex\\"], type=ClauseType.FILTER, categories=["Male"])
+        output = tmp_path / "test.pfb"
+
+        with pytest.raises(PicSureValidationError, match="open-access"):
+            session.exportPFB(clause, output)
+
+        # The submit endpoint must not have been hit — the guard fires
+        # before any HTTP traffic.
+        assert client.post_json.call_count == 0
+        assert client.post_raw_stream.call_count == 0
+        assert not output.exists()
+
     def test_export_csv(self, tmp_path):
         session = _make_session()
         df = pd.DataFrame({"id": [1, 2], "name": ["A", "B"]})

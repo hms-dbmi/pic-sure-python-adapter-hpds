@@ -25,6 +25,10 @@ from picsure.errors import (
 )
 
 _PICSURE_QUERY_SYNC_PATH = "/picsure/v3/query/sync"
+# BDC's API gateway gates the v3 sync endpoint as authorized-only and
+# rejects open-access requests with 401 even when "request-source: Open"
+# is set.  Open-only deployments must use the legacy path instead.
+_PICSURE_QUERY_SYNC_PATH_LEGACY = "/picsure/query/sync"
 
 _VALID_QUERY_TYPES: dict[str, str] = {
     "count": "COUNT",
@@ -43,6 +47,8 @@ def run_query(
     resource_uuid: str,
     query: Query,
     query_type: QueryType | str,
+    *,
+    use_legacy_query_path: bool = False,
 ) -> CountResult | dict[str, CountResult] | pd.DataFrame:
     """Execute a query against PIC-SURE and return the result.
 
@@ -53,6 +59,11 @@ def run_query(
         query_type: A :class:`QueryType` member (e.g. ``QueryType.COUNT``)
             or one of the strings ``"count"``, ``"participant"``,
             ``"timestamp"``, ``"cross_count"``.
+        use_legacy_query_path: When ``True``, send the request to the
+            legacy ``/picsure/query/sync`` endpoint instead of the v3
+            path.  Open-only deployments (no auth, no consents) must
+            use the legacy path because the BDC API gateway rejects
+            open-access traffic on the v3 endpoint with HTTP 401.
 
     Returns:
         - ``count``        → :class:`CountResult`
@@ -73,9 +84,14 @@ def run_query(
     """
     resolved_type = _resolve_query_type(query_type)
     body = build_query_body(query, resource_uuid, resolved_type)
+    path = (
+        _PICSURE_QUERY_SYNC_PATH_LEGACY
+        if use_legacy_query_path
+        else _PICSURE_QUERY_SYNC_PATH
+    )
 
     try:
-        raw = client.post_raw(_PICSURE_QUERY_SYNC_PATH, body=body)
+        raw = client.post_raw(path, body=body)
     except TransportValidationError as exc:
         raise PicSureValidationError(
             f"Server rejected the query (HTTP {exc.status_code}): {exc.body[:200]}"
