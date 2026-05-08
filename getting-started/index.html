@@ -884,7 +884,7 @@ repeatedly or lives inside a long-running process. You can also call
 <a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="c1"># Combine into a group</span>
 <a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="n">query</span> <span class="o">=</span> <span class="n">picsure</span><span class="o">.</span><span class="n">buildClauseGroup</span><span class="p">(</span>
 <a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a>    <span class="p">[</span><span class="n">sex_filter</span><span class="p">,</span> <span class="n">age_filter</span><span class="p">],</span>
-<a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a>    <span class="n">root</span><span class="o">=</span><span class="n">GroupOperator</span><span class="o">.</span><span class="n">AND</span><span class="p">,</span>
+<a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a>    <span class="n">operator</span><span class="o">=</span><span class="n">GroupOperator</span><span class="o">.</span><span class="n">AND</span><span class="p">,</span>
 <a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="p">)</span>
 </code></pre></div>
 <p>Queries can be nested arbitrarily deep. See the

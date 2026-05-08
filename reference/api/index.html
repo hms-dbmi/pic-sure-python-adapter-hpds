@@ -3252,7 +3252,7 @@ age = createClause(
 <a href="#picsure.buildClauseGroup" class="headerlink" title="Permanent link">&para;</a></h2>
 <div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">buildClauseGroup</span><span class="p">(</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">clauses</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Clause</span> <span class="o">|</span> <span class="n">ClauseGroup</span><span class="p">],</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">root</span><span class="p">:</span> <span class="n">GroupOperator</span> <span class="o">=</span> <span class="n">GroupOperator</span><span class="o">.</span><span class="n">AND</span><span class="p">,</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">operator</span><span class="p">:</span> <span class="n">GroupOperator</span> <span class="o">=</span> <span class="n">GroupOperator</span><span class="o">.</span><span class="n">AND</span><span class="p">,</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ClauseGroup</span>
 </code></pre></div>
 
@@ -3300,7 +3300,7 @@ age = createClause(
           </tr>
           <tr class="doc-section-item">
             <td>
-                <code>root</code>
+                <code>operator</code>
             </td>
             <td>
                   <code><a class="autorefs autorefs-internal" title="GroupOperator (picsure._models.clause_group.GroupOperator)" href="#picsure.GroupOperator">GroupOperator</a></code>
@@ -3399,7 +3399,7 @@ age = createClause(
 <p>from picsure import buildClauseGroup, GroupOperator
 group = buildClauseGroup(
 ...     [sex_filter, age_filter],
-...     root=GroupOperator.AND,
+...     operator=GroupOperator.AND,
 ... )</p>
 </blockquote>
 </blockquote>
