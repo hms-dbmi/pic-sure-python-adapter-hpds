@@ -4,10 +4,23 @@ from typing import TYPE_CHECKING
 
 from picsure._models.clause import Clause, ClauseType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
-from picsure.errors import PicSureQueryError, PicSureValidationError
+from picsure._transport.errors import (
+    TransportAuthenticationError,
+    TransportError,
+    TransportNotFoundError,
+    TransportRateLimitError,
+    TransportValidationError,
+)
+from picsure.errors import (
+    PicSureAuthError,
+    PicSureConnectionError,
+    PicSureQueryError,
+    PicSureValidationError,
+)
 
 if TYPE_CHECKING:
     from picsure._models.query import Query
+    from picsure._transport.client import PicSureClient
 
 
 _FILTER_TYPE_TO_CLAUSE: dict[str, ClauseType] = {
@@ -135,3 +148,113 @@ def _to_query(
     return ClauseGroup(
         clauses=[*selects, phenotypic], operator=GroupOperator.AND
     )
+
+
+_PICSURE_QUERY_METADATA_PATH = "/picsure/v3/query/{query_id}/metadata"
+_PICSURE_QUERY_METADATA_PATH_LEGACY = "/picsure/query/{query_id}/metadata"
+
+
+def load_query(
+    client: PicSureClient,
+    query_id: str,
+    *,
+    use_legacy_query_path: bool = False,
+) -> Clause | ClauseGroup:
+    """Load a previously-saved query by ID and rebuild it as a Query.
+
+    Args:
+        client: Authenticated HTTP client.
+        query_id: The UUID string of a previous query.
+        use_legacy_query_path: When ``True``, use ``/picsure/query/...``
+            instead of ``/picsure/v3/query/...``.  Open-only deployments
+            need the legacy path.
+
+    Returns:
+        A :class:`Clause` or :class:`ClauseGroup` that can be passed
+        directly to :meth:`Session.runQuery`, :meth:`Session.exportPFB`,
+        or composed with :func:`buildClauseGroup`.
+
+    Raises:
+        PicSureValidationError: If the ID is blank, the query was not
+            found, or the saved query uses features this adapter cannot
+            yet represent (NOT clauses, genomic filters).
+        PicSureAuthError: On 401 / 403.
+        PicSureConnectionError: On network failures or 5xx.
+        PicSureQueryError: If the response shape is malformed.
+    """
+    if not query_id or not query_id.strip():
+        raise PicSureValidationError(
+            "A non-empty query ID is required to load a saved query."
+        )
+    template = (
+        _PICSURE_QUERY_METADATA_PATH_LEGACY
+        if use_legacy_query_path
+        else _PICSURE_QUERY_METADATA_PATH
+    )
+    path = template.format(query_id=query_id.strip())
+
+    try:
+        response = client.get_json(path)
+    except TransportNotFoundError as exc:
+        raise PicSureValidationError(
+            f"No saved query found with ID '{query_id}' (HTTP {exc.status_code})."
+        ) from exc
+    except TransportAuthenticationError as exc:
+        raise PicSureAuthError(
+            f"Authentication failed loading saved query "
+            f"(HTTP {exc.status_code}): {exc.body[:200]}"
+        ) from exc
+    except TransportValidationError as exc:
+        raise PicSureValidationError(
+            f"Server rejected the load-query request "
+            f"(HTTP {exc.status_code}): {exc.body[:200]}"
+        ) from exc
+    except TransportRateLimitError as exc:
+        if exc.retry_after is not None:
+            msg = f"Rate limited; server said retry after {exc.retry_after} seconds."
+        else:
+            msg = "Rate limited. Please wait and try again."
+        raise PicSureConnectionError(msg) from exc
+    except TransportError as exc:
+        raise PicSureConnectionError(
+            "Could not load the saved query. The server may be temporarily "
+            "unavailable."
+        ) from exc
+
+    return _build_query_from_response(response)
+
+
+def _build_query_from_response(response: object) -> Clause | ClauseGroup:
+    if not isinstance(response, dict):
+        raise PicSureQueryError(
+            f"Expected a JSON object from the metadata endpoint, got "
+            f"{type(response).__name__}."
+        )
+    metadata = response.get("resultMetadata")
+    if not isinstance(metadata, dict):
+        raise PicSureQueryError(
+            "Metadata response is missing 'resultMetadata' object."
+        )
+    query_json = metadata.get("queryJson")
+    if not isinstance(query_json, dict):
+        raise PicSureQueryError(
+            "Metadata response is missing 'resultMetadata.queryJson' object."
+        )
+    inner = query_json.get("query")
+    if not isinstance(inner, dict):
+        raise PicSureQueryError(
+            "Metadata response is missing 'resultMetadata.queryJson.query' "
+            "object."
+        )
+    genomic = inner.get("genomicFilters")
+    if isinstance(genomic, list) and genomic:
+        raise PicSureValidationError(
+            "This adapter cannot yet represent genomic filters; the saved "
+            "query was likely built with the UI."
+        )
+    raw_select = inner.get("select")
+    select_paths: list[str] = (
+        [str(p) for p in raw_select] if isinstance(raw_select, list) else []
+    )
+    phenotypic_node = inner.get("phenotypicClause")
+    return _to_query(select_paths, phenotypic_node)
