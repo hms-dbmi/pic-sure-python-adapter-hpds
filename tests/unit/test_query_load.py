@@ -180,3 +180,75 @@ class TestParsePhenotypicSubquery:
         node = {"foo": "bar"}
         with pytest.raises(PicSureQueryError):
             _parse_phenotypic(node)
+
+
+from picsure._services.query_load import _to_query
+
+
+class TestToQuery:
+    def _filter(self, path: str, val: str) -> dict:  # type: ignore[type-arg]
+        return {
+            "phenotypicFilterType": "FILTER",
+            "conceptPath": path,
+            "values": [val],
+            "not": False,
+        }
+
+    def test_phenotypic_only(self):
+        result = _to_query([], self._filter("\\phs1\\sex\\", "Male"))
+        assert isinstance(result, Clause)
+        assert result.type == ClauseType.FILTER
+
+    def test_single_select_only(self):
+        result = _to_query(["\\phs1\\out\\"], None)
+        assert isinstance(result, Clause)
+        assert result.type == ClauseType.SELECT
+        assert result.keys == ["\\phs1\\out\\"]
+
+    def test_multiple_selects_only(self):
+        result = _to_query(
+            ["\\phs1\\out_a\\", "\\phs1\\out_b\\"], None
+        )
+        assert isinstance(result, ClauseGroup)
+        assert result.operator == GroupOperator.AND
+        assert len(result.clauses) == 2
+        for c in result.clauses:
+            assert isinstance(c, Clause)
+            assert c.type == ClauseType.SELECT
+
+    def test_selects_plus_phenotypic_returns_and_group(self):
+        result = _to_query(
+            ["\\phs1\\out\\"], self._filter("\\phs1\\sex\\", "Male")
+        )
+        assert isinstance(result, ClauseGroup)
+        assert result.operator == GroupOperator.AND
+        assert len(result.clauses) == 2  # one SELECT + the phenotypic clause
+        types = sorted(
+            c.type.name for c in result.clauses if isinstance(c, Clause)
+        )
+        assert types == ["FILTER", "SELECT"]
+
+    def test_selects_plus_phenotypic_round_trips_through_to_query_json(self):
+        # The reconstructed group must be passable to runQuery — i.e. its
+        # phenotypic_only() must serialize without error.
+        result = _to_query(
+            ["\\phs1\\out\\"],
+            {
+                "operator": "AND",
+                "phenotypicClauses": [
+                    self._filter("\\phs1\\sex\\", "Male"),
+                    self._filter("\\phs1\\copd\\", "Yes"),
+                ],
+                "not": False,
+            },
+        )
+        assert isinstance(result, ClauseGroup)
+        assert result.select_paths() == ["\\phs1\\out\\"]
+        stripped = result.phenotypic_only()
+        assert stripped is not None
+        json_body = stripped.to_query_json()
+        assert json_body["operator"] == "AND"
+
+    def test_empty_query_raises(self):
+        with pytest.raises(PicSureQueryError, match="empty"):
+            _to_query([], None)

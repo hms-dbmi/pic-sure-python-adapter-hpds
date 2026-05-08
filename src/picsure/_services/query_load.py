@@ -105,3 +105,33 @@ def _parse_subquery(node: dict[str, object]) -> ClauseGroup:
         clauses=children,
         operator=GroupOperator(raw_op),
     )
+
+
+def _to_query(
+    select_paths: list[str],
+    phenotypic_node: object | None,
+) -> Clause | ClauseGroup:
+    """Combine the saved SELECT paths and phenotypic tree into a single Query."""
+    selects: list[Clause | ClauseGroup] = [
+        Clause(keys=[p], type=ClauseType.SELECT) for p in select_paths
+    ]
+    phenotypic: Clause | ClauseGroup | None = (
+        _parse_phenotypic(phenotypic_node)
+        if phenotypic_node is not None
+        else None
+    )
+
+    if phenotypic is None and not selects:
+        raise PicSureQueryError(
+            "Server returned an empty saved query: no select paths and no "
+            "phenotypic clause."
+        )
+    if phenotypic is None:
+        if len(selects) == 1:
+            return selects[0]
+        return ClauseGroup(clauses=selects, operator=GroupOperator.AND)
+    if not selects:
+        return phenotypic
+    return ClauseGroup(
+        clauses=[*selects, phenotypic], operator=GroupOperator.AND
+    )
