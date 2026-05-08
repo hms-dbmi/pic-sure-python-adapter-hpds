@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 from picsure._models.clause import Clause, ClauseType
@@ -240,6 +241,14 @@ def _build_query_from_response(response: object) -> Clause | ClauseGroup:
             "Metadata response is missing 'resultMetadata.queryJson' object."
         )
     inner = query_json.get("query")
+    if isinstance(inner, str):
+        try:
+            inner = json.loads(inner)
+        except json.JSONDecodeError as exc:
+            raise PicSureQueryError(
+                "Metadata response 'resultMetadata.queryJson.query' was a "
+                f"string but could not be decoded as JSON: {inner[:200]!r}"
+            ) from exc
     if not isinstance(inner, dict):
         raise PicSureQueryError(
             "Metadata response is missing 'resultMetadata.queryJson.query' "

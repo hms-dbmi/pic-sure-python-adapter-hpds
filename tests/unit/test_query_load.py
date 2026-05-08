@@ -273,11 +273,18 @@ def _make_client() -> PicSureClient:
     return PicSureClient(base_url=BASE_URL, token=TOKEN)
 
 
-def _envelope(query_body: dict, *, include_at_type: bool = True) -> dict:  # type: ignore[type-arg]
+def _envelope(
+    query_body: dict,
+    *,
+    include_at_type: bool = True,
+    inner_query_as_string: bool = False,
+) -> dict:  # type: ignore[type-arg]
+    import json as _json
+
     inner = {
         "resourceUUID": "resource-uuid-aaaa",
         "resourceCredentials": {"BEARER_TOKEN": "tok"},
-        "query": query_body,
+        "query": _json.dumps(query_body) if inner_query_as_string else query_body,
     }
     if include_at_type:
         inner["@type"] = "GeneralQueryRequest"
@@ -332,6 +339,31 @@ class TestLoadQueryHappyPath:
                 "picsureId": None,
                 "id": None,
             }
+        )
+        respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
+        result = load_query(_make_client(), QUERY_ID)
+        assert isinstance(result, ClauseGroup)
+        assert result.select_paths() == ["\\phs1\\out\\"]
+
+    @respx.mock
+    def test_inner_query_arrives_as_json_string(self):
+        # The backend stores the entire QueryRequest as a JSON string and
+        # only parses the outer envelope; the inner ``query`` field comes
+        # back as a string that we must decode ourselves.  Real BDC saved
+        # queries hit this path.
+        body = _envelope(
+            {
+                "select": ["\\phs1\\out\\"],
+                "phenotypicClause": _filter_leaf("\\phs1\\sex\\", "Male"),
+                "genomicFilters": [],
+                "authorizationFilters": [
+                    {"conceptPath": "\\_consents\\", "values": ["c1"]}
+                ],
+                "expectedResultType": "DATAFRAME",
+                "picsureId": None,
+                "id": None,
+            },
+            inner_query_as_string=True,
         )
         respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
         result = load_query(_make_client(), QUERY_ID)
@@ -468,4 +500,20 @@ class TestLoadQueryErrors:
         )
         respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
         with pytest.raises(PicSureQueryError, match="empty"):
+            load_query(_make_client(), QUERY_ID)
+
+    @respx.mock
+    def test_inner_query_string_with_invalid_json_raises_query_error(self):
+        body = {
+            "resultMetadata": {
+                "queryJson": {
+                    "@type": "GeneralQueryRequest",
+                    "resourceUUID": "r",
+                    "resourceCredentials": {},
+                    "query": "{not valid json",
+                },
+            }
+        }
+        respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
+        with pytest.raises(PicSureQueryError, match="JSON"):
             load_query(_make_client(), QUERY_ID)
