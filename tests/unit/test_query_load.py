@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 import pytest
 
 from picsure._models.clause import Clause, ClauseType

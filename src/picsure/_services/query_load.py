@@ -19,7 +19,6 @@ from picsure.errors import (
 )
 
 if TYPE_CHECKING:
-    from picsure._models.query import Query
     from picsure._transport.client import PicSureClient
 
 
