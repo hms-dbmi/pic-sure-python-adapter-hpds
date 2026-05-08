@@ -93,7 +93,7 @@ age_filter = picsure.createClause(
 # Combine into a group
 query = picsure.buildClauseGroup(
     [sex_filter, age_filter],
-    root=GroupOperator.AND,
+    operator=GroupOperator.AND,
 )
 ```
 

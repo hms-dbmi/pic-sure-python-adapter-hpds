@@ -216,7 +216,7 @@ class TestBuildClauseGroup:
     def test_and_group(self):
         c1 = createClause("\\p1\\", type=ClauseType.FILTER, categories="A")
         c2 = createClause("\\p2\\", type=ClauseType.FILTER, categories="B")
-        group = buildClauseGroup([c1, c2], root=GroupOperator.AND)
+        group = buildClauseGroup([c1, c2], operator=GroupOperator.AND)
         assert isinstance(group, ClauseGroup)
         assert group.operator == GroupOperator.AND
         assert len(group.clauses) == 2
@@ -224,10 +224,10 @@ class TestBuildClauseGroup:
     def test_or_group(self):
         c1 = createClause("\\p1\\", type=ClauseType.FILTER, categories="A")
         c2 = createClause("\\p2\\", type=ClauseType.FILTER, categories="B")
-        group = buildClauseGroup([c1, c2], root=GroupOperator.OR)
+        group = buildClauseGroup([c1, c2], operator=GroupOperator.OR)
         assert group.operator == GroupOperator.OR
 
-    def test_default_root_is_and(self):
+    def test_default_operator_is_and(self):
         c1 = createClause("\\p1\\", type=ClauseType.FILTER, categories="A")
         group = buildClauseGroup([c1])
         assert group.operator == GroupOperator.AND
@@ -235,9 +235,9 @@ class TestBuildClauseGroup:
     def test_nested_groups(self):
         c1 = createClause("\\p1\\", type=ClauseType.FILTER, categories="A")
         c2 = createClause("\\p2\\", type=ClauseType.FILTER, categories="B")
-        inner = buildClauseGroup([c1, c2], root=GroupOperator.OR)
+        inner = buildClauseGroup([c1, c2], operator=GroupOperator.OR)
         c3 = createClause("\\p3\\", type=ClauseType.FILTER, min=40.0)
-        outer = buildClauseGroup([c3, inner], root=GroupOperator.AND)
+        outer = buildClauseGroup([c3, inner], operator=GroupOperator.AND)
         assert len(outer.clauses) == 2
         assert isinstance(outer.clauses[1], ClauseGroup)
 
@@ -251,8 +251,8 @@ class TestBuildClauseGroup:
         copd = createClause("\\copd\\", type=ClauseType.FILTER, categories="Yes")
         asthma = createClause("\\asthma\\", type=ClauseType.ANYRECORD)
 
-        copd_or_asthma = buildClauseGroup([copd, asthma], root=GroupOperator.OR)
-        full = buildClauseGroup([sex, age, copd_or_asthma], root=GroupOperator.AND)
+        copd_or_asthma = buildClauseGroup([copd, asthma], operator=GroupOperator.OR)
+        full = buildClauseGroup([sex, age, copd_or_asthma], operator=GroupOperator.AND)
 
         result = full.to_query_json()
         assert result["operator"] == "AND"

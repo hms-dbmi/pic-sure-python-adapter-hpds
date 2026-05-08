@@ -31,7 +31,7 @@ results = session.search("blood pressure")
 # Build a query
 sex = picsure.createClause("\\phs1\\sex\\", type=ClauseType.FILTER, categories="Male")
 age = picsure.createClause("\\phs1\\age\\", type=ClauseType.FILTER, min=40)
-query = picsure.buildClauseGroup([sex, age], root=GroupOperator.AND)
+query = picsure.buildClauseGroup([sex, age], operator=GroupOperator.AND)
 
 # Run and export
 count_result = session.runQuery(query, type="count")

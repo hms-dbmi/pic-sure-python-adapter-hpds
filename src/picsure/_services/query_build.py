@@ -101,13 +101,13 @@ def createClause(  # noqa: N802
 
 def buildClauseGroup(  # noqa: N802
     clauses: list[Clause | ClauseGroup],
-    root: GroupOperator = GroupOperator.AND,
+    operator: GroupOperator = GroupOperator.AND,
 ) -> ClauseGroup:
     """Create a group of clauses combined with AND or OR.
 
     Args:
         clauses: List of Clause or ClauseGroup objects to combine.
-        root: Logical operator — ``GroupOperator.AND`` (default) or
+        operator: Logical operator — ``GroupOperator.AND`` (default) or
             ``GroupOperator.OR``.
 
     Returns:
@@ -121,10 +121,10 @@ def buildClauseGroup(  # noqa: N802
         >>> from picsure import buildClauseGroup, GroupOperator
         >>> group = buildClauseGroup(
         ...     [sex_filter, age_filter],
-        ...     root=GroupOperator.AND,
+        ...     operator=GroupOperator.AND,
         ... )
     """
     if not clauses:
         raise PicSureValidationError("A clause group must contain at least one clause.")
 
-    return ClauseGroup(clauses=clauses, operator=root)
+    return ClauseGroup(clauses=clauses, operator=operator)

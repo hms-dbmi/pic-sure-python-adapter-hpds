@@ -71,13 +71,13 @@ from picsure import buildClauseGroup, GroupOperator
 # AND: all conditions must be true
 males_over_40 = buildClauseGroup(
     [sex, age_over_40],
-    root=GroupOperator.AND,
+    operator=GroupOperator.AND,
 )
 
 # OR: at least one condition must be true
 copd_or_asthma = buildClauseGroup(
     [copd, asthma],
-    root=GroupOperator.OR,
+    operator=GroupOperator.OR,
 )
 ```
 
@@ -89,7 +89,7 @@ Groups can contain other groups for complex logic:
 # Find males over 40 with COPD or asthma
 full_query = buildClauseGroup(
     [males_over_40, copd_or_asthma],
-    root=GroupOperator.AND,
+    operator=GroupOperator.AND,
 )
 ```
 
@@ -115,12 +115,12 @@ asthma_filter = createClause("\\phs1\\asthma\\", type=ClauseType.FILTER, categor
 sleep_filter = createClause("\\phs1\\trouble_sleeping\\", type=ClauseType.ANYRECORD)
 insomnia_filter = createClause("\\phs1\\insomnia\\", type=ClauseType.ANYRECORD)
 
-copd_or_asthma = buildClauseGroup([copd_filter, asthma_filter], root=GroupOperator.OR)
-sleep_or_insomnia = buildClauseGroup([sleep_filter, insomnia_filter], root=GroupOperator.OR)
+copd_or_asthma = buildClauseGroup([copd_filter, asthma_filter], operator=GroupOperator.OR)
+sleep_or_insomnia = buildClauseGroup([sleep_filter, insomnia_filter], operator=GroupOperator.OR)
 
 full_query = buildClauseGroup(
     [sex_filter, age_filter, copd_or_asthma, sleep_or_insomnia],
-    root=GroupOperator.AND,
+    operator=GroupOperator.AND,
 )
 ```
 

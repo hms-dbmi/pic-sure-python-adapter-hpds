@@ -104,7 +104,7 @@ sex = createClause("\\phs1\\sex\\", type=ClauseType.FILTER, categories="Male")
 age = createClause("\\phs1\\age\\", type=ClauseType.FILTER, min=40)
 bmi = createClause("\\phs1\\bmi\\", type=ClauseType.REQUIRE)
 
-query = buildClauseGroup([sex, age, bmi], root=GroupOperator.AND)
+query = buildClauseGroup([sex, age, bmi], operator=GroupOperator.AND)
 ```
 
 ### Running a Query
