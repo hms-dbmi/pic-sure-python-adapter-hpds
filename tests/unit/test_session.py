@@ -5,8 +5,10 @@ import pandas as pd
 import pytest
 import respx
 
+from picsure._models.clause import Clause, ClauseType
 from picsure._models.resource import Resource
 from picsure._models.session import Session
+from picsure._transport.client import PicSureClient
 
 
 def _make_session(
@@ -203,6 +205,57 @@ def _make_live_session(
         token_expiration="2026-12-31T00:00:00Z",
         resources=resources,
     )
+
+
+def _client() -> PicSureClient:
+    return PicSureClient(base_url=BASE_URL, token=TOKEN)
+
+
+def _session_with_resources(
+    client: PicSureClient,
+    *,
+    resources: list[Resource],
+    resource_uuid: str | None = None,
+    use_legacy_query_path: bool = False,
+) -> Session:
+    return Session(
+        client=client,
+        user_email="x@y.com",
+        token_expiration="2030-01-01",
+        resources=resources,
+        resource_uuid=resource_uuid,
+        use_legacy_query_path=use_legacy_query_path,
+    )
+
+
+def _metadata_envelope(
+    *,
+    select: list[str],
+    phenotypic: dict | None,
+) -> dict:  # type: ignore[type-arg]
+    return {
+        "status": "COMPLETED",
+        "resourceID": "resource-uuid-aaaa",
+        "picsureResultId": "abc-123",
+        "resourceResultId": "result-1",
+        "startTime": 1715000000000,
+        "resultMetadata": {
+            "queryJson": {
+                "@type": "GeneralQueryRequest",
+                "resourceUUID": "resource-uuid-aaaa",
+                "resourceCredentials": {},
+                "query": {
+                    "select": select,
+                    "phenotypicClause": phenotypic,
+                    "genomicFilters": [],
+                    "expectedResultType": "COUNT",
+                    "picsureId": None,
+                    "id": None,
+                },
+            },
+            "queryResultMetadata": "",
+        },
+    }
 
 
 _CONCEPTS_URL = (
@@ -521,3 +574,76 @@ class TestSessionClose:
         with pytest.raises(RuntimeError), session:  # noqa: PT012
             raise RuntimeError("boom")
         session._client.close.assert_called_once()
+
+
+class TestSessionLoadQueryByID:
+    @respx.mock
+    def test_delegates_to_v3_endpoint_by_default(self):
+        client = _client()
+        session = _session_with_resources(
+            client,
+            resources=[Resource(uuid="r-1", name="hpds", description="x")],
+            resource_uuid="r-1",
+        )
+        body = _metadata_envelope(
+            select=[],
+            phenotypic={
+                "phenotypicFilterType": "FILTER",
+                "conceptPath": "\\phs1\\sex\\",
+                "values": ["Male"],
+                "not": False,
+            },
+        )
+        route = respx.get(
+            f"{BASE_URL}/picsure/v3/query/abc-123/metadata"
+        ).mock(return_value=httpx.Response(200, json=body))
+        result = session.loadQueryByID("abc-123")
+        assert route.called
+        assert isinstance(result, Clause)
+        assert result.type == ClauseType.FILTER
+
+    @respx.mock
+    def test_uses_legacy_path_when_session_flag_set(self):
+        client = _client()
+        session = _session_with_resources(
+            client,
+            resources=[Resource(uuid="r-1", name="hpds", description="x")],
+            resource_uuid="r-1",
+            use_legacy_query_path=True,
+        )
+        body = _metadata_envelope(
+            select=[],
+            phenotypic={
+                "phenotypicFilterType": "FILTER",
+                "conceptPath": "\\phs1\\sex\\",
+                "values": ["Male"],
+                "not": False,
+            },
+        )
+        legacy = respx.get(
+            f"{BASE_URL}/picsure/query/abc-123/metadata"
+        ).mock(return_value=httpx.Response(200, json=body))
+        result = session.loadQueryByID("abc-123")
+        assert legacy.called
+        assert isinstance(result, Clause)
+
+    @respx.mock
+    def test_works_without_resource_uuid_set(self):
+        # The metadata endpoint is not scoped to a resource; loadQueryByID
+        # must not require setResourceID first.
+        client = _client()
+        session = _session_with_resources(client, resources=[])
+        body = _metadata_envelope(
+            select=[],
+            phenotypic={
+                "phenotypicFilterType": "FILTER",
+                "conceptPath": "\\phs1\\sex\\",
+                "values": ["Male"],
+                "not": False,
+            },
+        )
+        respx.get(f"{BASE_URL}/picsure/v3/query/abc-123/metadata").mock(
+            return_value=httpx.Response(200, json=body)
+        )
+        result = session.loadQueryByID("abc-123")
+        assert isinstance(result, Clause)
