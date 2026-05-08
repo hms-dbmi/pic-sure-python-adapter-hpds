@@ -159,9 +159,10 @@ def _phenotypic_clause(query: Query) -> dict[str, object] | None:
         if query.type == ClauseType.SELECT:
             return None
         return query.to_query_json()
-    if not query.has_phenotypic():
+    stripped = query.phenotypic_only()
+    if stripped is None:
         return None
-    return query.to_query_json()
+    return stripped.to_query_json()
 
 
 def _resolve_query_type(query_type: QueryType | str) -> str:

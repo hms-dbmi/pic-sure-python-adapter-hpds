@@ -419,19 +419,29 @@ class TestRunQueryWithClauseGroup:
         assert len(pheno["phenotypicClauses"]) == 2
 
     @respx.mock
-    def test_mixed_group_with_select_raises(self):
-        # Mixing SELECT clauses inside a phenotypic group is not supported.
-        # SELECTs should be kept outside the ClauseGroup (top-level of the
-        # query) so they can be lifted to the ``select`` array cleanly.
-        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"100"))
+    def test_mixed_group_with_select_lifts_selects(self):
+        # A ClauseGroup whose direct children include both a SELECT clause and
+        # a phenotypic clause is now accepted: SELECTs are lifted to the
+        # top-level ``select`` array and the phenotypic content is serialized
+        # normally.  This is the shape ``loadQueryByID`` produces.
+        route = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"100")
+        )
         out = Clause(keys=["\\out_a\\", "\\out_b\\"], type=ClauseType.SELECT)
         group = ClauseGroup(
             clauses=[_simple_clause(), out],
             operator=GroupOperator.AND,
         )
         client = _make_client()
-        with pytest.raises(PicSureValidationError, match="SELECT"):
-            run_query(client, RESOURCE_UUID, group, "count")
+        run_query(client, RESOURCE_UUID, group, "count")
+
+        import json
+
+        body = json.loads(route.calls[0].request.content)
+        assert body["query"]["select"] == ["\\out_a\\", "\\out_b\\"]
+        pheno = body["query"]["phenotypicClause"]
+        assert pheno is not None
+        assert len(pheno["phenotypicClauses"]) == 1
 
     @respx.mock
     def test_group_with_only_selects_yields_null_phenotypic(self):
@@ -721,3 +731,65 @@ class TestRunQueryLegacyPath:
         assert result.value == 5
         assert v3.call_count == 1
         assert legacy.call_count == 0
+
+
+class TestRunQueryAcceptsMixedTopLevelGroup:
+    """A ClauseGroup whose direct children include both SELECT clauses and a
+    phenotypic subtree must be serializable.  ``loadQueryByID`` produces this
+    shape when a saved query had both ``select`` and ``phenotypicClause``.
+    """
+
+    @respx.mock
+    def test_select_lifted_phenotypic_serialized(self):
+        select_a = Clause(keys=["\\phs1\\out_a\\"], type=ClauseType.SELECT)
+        select_b = Clause(keys=["\\phs1\\out_b\\"], type=ClauseType.SELECT)
+        sex = Clause(
+            keys=["\\phs1\\sex\\"], type=ClauseType.FILTER, categories=["Male"]
+        )
+        age = Clause(keys=["\\phs1\\age\\"], type=ClauseType.FILTER, min=40.0)
+        pheno_group = ClauseGroup(
+            clauses=[sex, age], operator=GroupOperator.AND
+        )
+        top = ClauseGroup(
+            clauses=[select_a, select_b, pheno_group],
+            operator=GroupOperator.AND,
+        )
+        route = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"42")
+        )
+        client = _make_client()
+        run_query(client, RESOURCE_UUID, top, "count")
+
+        import json
+
+        body = json.loads(route.calls[0].request.content)
+        assert body["query"]["select"] == ["\\phs1\\out_a\\", "\\phs1\\out_b\\"]
+        pheno = body["query"]["phenotypicClause"]
+        assert pheno["operator"] == "AND"
+        # The top group has SELECTs stripped, leaving one child: the nested
+        # pheno_group (which itself has 2 clauses).
+        assert len(pheno["phenotypicClauses"]) == 1
+        nested = pheno["phenotypicClauses"][0]
+        assert nested["operator"] == "AND"
+        assert len(nested["phenotypicClauses"]) == 2
+        assert nested["phenotypicClauses"][0]["conceptPath"] == "\\phs1\\sex\\"
+
+    @respx.mock
+    def test_select_only_top_level_group_omits_phenotypic(self):
+        select_a = Clause(keys=["\\phs1\\out_a\\"], type=ClauseType.SELECT)
+        select_b = Clause(keys=["\\phs1\\out_b\\"], type=ClauseType.SELECT)
+        top = ClauseGroup(
+            clauses=[select_a, select_b], operator=GroupOperator.AND
+        )
+        route = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"")
+        )
+        client = _make_client()
+        # DATAFRAME endpoint returns empty CSV → empty DataFrame, not an error.
+        run_query(client, RESOURCE_UUID, top, "participant")
+
+        import json
+
+        body = json.loads(route.calls[0].request.content)
+        assert body["query"]["select"] == ["\\phs1\\out_a\\", "\\phs1\\out_b\\"]
+        assert body["query"]["phenotypicClause"] is None
