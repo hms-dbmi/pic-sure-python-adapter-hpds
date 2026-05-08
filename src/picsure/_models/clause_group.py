@@ -76,3 +76,28 @@ class ClauseGroup:
             elif child.has_phenotypic():
                 return True
         return False
+
+    def phenotypic_only(self) -> ClauseGroup | None:
+        """Return a copy of this group with all SELECT clauses stripped.
+
+        SELECT clauses don't participate in filtering and are lifted to the
+        top-level ``select`` array by ``runQuery``.  This helper is used by
+        the query-run plumbing to produce a SELECT-free ``ClauseGroup``
+        before serializing the phenotypic tree.
+
+        Returns:
+            A new ``ClauseGroup`` with SELECTs removed recursively, or
+            ``None`` if nothing phenotypic remains.
+        """
+        kept: list[Clause | ClauseGroup] = []
+        for child in self.clauses:
+            if isinstance(child, Clause):
+                if child.type != ClauseType.SELECT:
+                    kept.append(child)
+            else:
+                stripped = child.phenotypic_only()
+                if stripped is not None:
+                    kept.append(stripped)
+        if not kept:
+            return None
+        return ClauseGroup(clauses=kept, operator=self.operator)
