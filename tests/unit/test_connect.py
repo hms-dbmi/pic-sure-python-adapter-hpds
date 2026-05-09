@@ -1,17 +1,41 @@
+import base64
+import json
+from datetime import datetime, timezone
+
 import httpx
 import pytest
 import respx
 
 from picsure._models.session import Session
-from picsure._services.connect import connect
+from picsure._services.connect import _token_expiration_from_jwt, connect
 from picsure.errors import (
     PicSureAuthError,
     PicSureConnectionError,
     PicSureValidationError,
 )
 
+
+def _make_jwt(exp: int | float | None) -> str:
+    """Build an unsigned JWT with the given exp claim (epoch seconds)."""
+
+    def _b64(payload: dict) -> str:
+        return (
+            base64.urlsafe_b64encode(json.dumps(payload).encode())
+            .rstrip(b"=")
+            .decode()
+        )
+
+    header = _b64({"alg": "none", "typ": "JWT"})
+    body: dict = {"sub": "test-user"}
+    if exp is not None:
+        body["exp"] = exp
+    return f"{header}.{_b64(body)}.sig"
+
+
 BASE_URL = "https://test.example.com"
-TOKEN = "test-token-abc123"
+# 2026-06-15T00:00:00Z = 1781568000 epoch seconds.
+_JWT_EXP = int(datetime(2026, 6, 15, tzinfo=timezone.utc).timestamp())
+TOKEN = _make_jwt(_JWT_EXP)
 
 
 def _concepts_prefetch_url(host: str = BASE_URL) -> str:
@@ -519,3 +543,25 @@ class TestConnectLegacyQueryPath:
         )
 
         assert session._use_legacy_query_path is False
+
+
+class TestTokenExpirationFromJwt:
+    def test_extracts_exp_claim(self):
+        token = _make_jwt(_JWT_EXP)
+        assert _token_expiration_from_jwt(token) == "2026-06-15T00:00:00Z"
+
+    def test_strips_whitespace(self):
+        token = _make_jwt(_JWT_EXP)
+        assert _token_expiration_from_jwt(f"  {token}\n") == "2026-06-15T00:00:00Z"
+
+    def test_missing_exp_returns_unknown(self):
+        assert _token_expiration_from_jwt(_make_jwt(None)) == "unknown"
+
+    def test_non_jwt_returns_unknown(self):
+        assert _token_expiration_from_jwt("not-a-jwt") == "unknown"
+
+    def test_garbage_payload_returns_unknown(self):
+        assert _token_expiration_from_jwt("aaa.@@@.bbb") == "unknown"
+
+    def test_non_numeric_exp_returns_unknown(self):
+        assert _token_expiration_from_jwt(_make_jwt("tomorrow")) == "unknown"  # type: ignore[arg-type]

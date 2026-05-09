@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 import logging
 import sys
 from datetime import datetime, timezone
@@ -121,7 +123,10 @@ def connect(
     if info.requires_auth:
         profile = _fetch_profile(client, display_name, info.url)
         email = str(profile.get("email", "unknown"))
-        expiration = str(profile.get("expirationDate", "unknown"))
+        # PSAMA's /user/me returns UserForDisplay (uuid, email, privileges,
+        # token, queryScopes, acceptedTOS) — it does not expose token
+        # expiry.  The token itself is a JWT, so read its `exp` claim.
+        expiration = _token_expiration_from_jwt(token)
     else:
         email = _ANONYMOUS_EMAIL
         expiration = _ANONYMOUS_EXPIRATION
@@ -186,6 +191,34 @@ def connect(
         total_concepts=total_concepts,
         dev_config=dev_config,
         use_legacy_query_path=use_legacy_query_path,
+    )
+
+
+def _token_expiration_from_jwt(token: str) -> str:
+    """Extract the ``exp`` claim from a JWT and format it as UTC ISO.
+
+    The signature is intentionally not verified — the server enforces
+    token validity; we only display the expiry to the user.  Returns
+    ``"unknown"`` if the token is not a parseable JWT or has no
+    numeric ``exp`` claim.
+    """
+    try:
+        payload_b64 = token.strip().split(".")[1]
+    except IndexError:
+        return "unknown"
+
+    padding = "=" * (-len(payload_b64) % 4)
+    try:
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64 + padding))
+    except (ValueError, TypeError):
+        return "unknown"
+
+    exp = payload.get("exp") if isinstance(payload, dict) else None
+    if not isinstance(exp, (int, float)) or isinstance(exp, bool):
+        return "unknown"
+
+    return datetime.fromtimestamp(exp, tz=timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
     )
 
 
