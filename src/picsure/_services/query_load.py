@@ -150,24 +150,25 @@ def _to_query(
     )
 
 
-_PICSURE_QUERY_METADATA_PATH = "/picsure/v3/query/{query_id}/metadata"
-_PICSURE_QUERY_METADATA_PATH_LEGACY = "/picsure/query/{query_id}/metadata"
+# Always use the legacy /picsure/query/{id}/metadata path.  The v3
+# /picsure/v3/query/{id}/metadata endpoint has a known issue on BDC, so
+# we pin reads to legacy regardless of how the session was connected.
+_PICSURE_QUERY_METADATA_PATH = "/picsure/query/{query_id}/metadata"
 
 
 def load_query(
     client: PicSureClient,
     query_id: str,
-    *,
-    use_legacy_query_path: bool = False,
 ) -> Clause | ClauseGroup:
     """Load a previously-saved query by ID and rebuild it as a Query.
+
+    Always uses ``/picsure/query/{id}/metadata`` (legacy) — the v3
+    metadata endpoint is currently broken on BDC, so we read via legacy
+    for every deployment.
 
     Args:
         client: Authenticated HTTP client.
         query_id: The UUID string of a previous query.
-        use_legacy_query_path: When ``True``, use ``/picsure/query/...``
-            instead of ``/picsure/v3/query/...``.  Open-only deployments
-            need the legacy path.
 
     Returns:
         A :class:`Clause` or :class:`ClauseGroup` that can be passed
@@ -186,12 +187,7 @@ def load_query(
         raise PicSureValidationError(
             "A non-empty query ID is required to load a saved query."
         )
-    template = (
-        _PICSURE_QUERY_METADATA_PATH_LEGACY
-        if use_legacy_query_path
-        else _PICSURE_QUERY_METADATA_PATH
-    )
-    path = template.format(query_id=query_id.strip())
+    path = _PICSURE_QUERY_METADATA_PATH.format(query_id=query_id.strip())
 
     try:
         response = client.get_json(path)

@@ -265,8 +265,8 @@ from picsure.errors import PicSureAuthError, PicSureConnectionError
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
 QUERY_ID = "11111111-2222-3333-4444-555555555555"
-META_URL = f"{BASE_URL}/picsure/v3/query/{QUERY_ID}/metadata"
-LEGACY_META_URL = f"{BASE_URL}/picsure/query/{QUERY_ID}/metadata"
+META_URL = f"{BASE_URL}/picsure/query/{QUERY_ID}/metadata"
+V3_META_URL = f"{BASE_URL}/picsure/v3/query/{QUERY_ID}/metadata"
 
 
 def _make_client() -> PicSureClient:
@@ -371,7 +371,10 @@ class TestLoadQueryHappyPath:
         assert result.select_paths() == ["\\phs1\\out\\"]
 
     @respx.mock
-    def test_legacy_path_used_when_flag_set(self):
+    def test_always_uses_legacy_path(self):
+        # The v3 metadata endpoint is broken on BDC; loadQueryByID pins
+        # reads to the legacy path for every deployment, regardless of
+        # how the session was connected.
         body = _envelope(
             {
                 "select": [],
@@ -382,11 +385,13 @@ class TestLoadQueryHappyPath:
                 "id": None,
             }
         )
-        legacy = respx.get(LEGACY_META_URL).mock(
+        legacy = respx.get(META_URL).mock(
             return_value=httpx.Response(200, json=body)
         )
-        v3 = respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
-        load_query(_make_client(), QUERY_ID, use_legacy_query_path=True)
+        v3 = respx.get(V3_META_URL).mock(
+            return_value=httpx.Response(200, json=body)
+        )
+        load_query(_make_client(), QUERY_ID)
         assert legacy.called
         assert not v3.called
 

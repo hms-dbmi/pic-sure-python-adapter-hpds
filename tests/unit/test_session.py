@@ -578,7 +578,10 @@ class TestSessionClose:
 
 class TestSessionLoadQueryByID:
     @respx.mock
-    def test_delegates_to_v3_endpoint_by_default(self):
+    def test_always_hits_legacy_metadata_endpoint(self):
+        # The v3 metadata endpoint is broken on BDC; loadQueryByID pins
+        # reads to the legacy path regardless of how the session was
+        # connected (authorized v3 sessions still hit legacy here).
         client = _client()
         session = _session_with_resources(
             client,
@@ -594,22 +597,28 @@ class TestSessionLoadQueryByID:
                 "not": False,
             },
         )
-        route = respx.get(
+        legacy = respx.get(
+            f"{BASE_URL}/picsure/query/abc-123/metadata"
+        ).mock(return_value=httpx.Response(200, json=body))
+        v3 = respx.get(
             f"{BASE_URL}/picsure/v3/query/abc-123/metadata"
         ).mock(return_value=httpx.Response(200, json=body))
         result = session.loadQueryByID("abc-123")
-        assert route.called
+        assert legacy.called
+        assert not v3.called
         assert isinstance(result, Clause)
         assert result.type == ClauseType.FILTER
 
     @respx.mock
-    def test_uses_legacy_path_when_session_flag_set(self):
+    def test_legacy_path_used_even_when_session_is_authorized_v3(self):
+        # Sanity check the inverse: even if the session would normally
+        # use the v3 sync endpoint, loadQueryByID still hits legacy.
         client = _client()
         session = _session_with_resources(
             client,
             resources=[Resource(uuid="r-1", name="hpds", description="x")],
             resource_uuid="r-1",
-            use_legacy_query_path=True,
+            use_legacy_query_path=False,
         )
         body = _metadata_envelope(
             select=[],
@@ -642,7 +651,7 @@ class TestSessionLoadQueryByID:
                 "not": False,
             },
         )
-        respx.get(f"{BASE_URL}/picsure/v3/query/abc-123/metadata").mock(
+        respx.get(f"{BASE_URL}/picsure/query/abc-123/metadata").mock(
             return_value=httpx.Response(200, json=body)
         )
         result = session.loadQueryByID("abc-123")

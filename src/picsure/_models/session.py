@@ -380,11 +380,7 @@ class Session:
         """
         from picsure._services.query_load import load_query
 
-        return load_query(
-            self._client,
-            query_id,
-            use_legacy_query_path=self._use_legacy_query_path,
-        )
+        return load_query(self._client, query_id)
 
     def close(self) -> None:
         """Close the underlying HTTP client and release its connection pool.
