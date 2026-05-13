@@ -756,10 +756,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#picsure.createClause" class="md-nav__link">
+  <a href="#picsure.createSubQuery" class="md-nav__link">
     <span class="md-ellipsis">
       
-        createClause
+        createSubQuery
       
     </span>
   </a>
@@ -767,10 +767,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#picsure.buildClauseGroup" class="md-nav__link">
+  <a href="#picsure.buildQuery" class="md-nav__link">
     <span class="md-ellipsis">
       
-        buildClauseGroup
+        buildQuery
       
     </span>
   </a>
@@ -1709,10 +1709,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#picsure.createClause" class="md-nav__link">
+  <a href="#picsure.createSubQuery" class="md-nav__link">
     <span class="md-ellipsis">
       
-        createClause
+        createSubQuery
       
     </span>
   </a>
@@ -1720,10 +1720,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#picsure.buildClauseGroup" class="md-nav__link">
+  <a href="#picsure.buildQuery" class="md-nav__link">
     <span class="md-ellipsis">
       
-        buildClauseGroup
+        buildQuery
       
     </span>
   </a>
@@ -3057,12 +3057,12 @@ platform, or pass a custom URL string for unlisted deployments.</p>
 <div class="doc doc-object doc-function">
 
 
-<h2 id="picsure.createClause" class="doc doc-heading">
-            <span class="doc doc-object-name doc-function-name">createClause</span>
+<h2 id="picsure.createSubQuery" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">createSubQuery</span>
 
 
-<a href="#picsure.createClause" class="headerlink" title="Permanent link">&para;</a></h2>
-<div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">createClause</span><span class="p">(</span>
+<a href="#picsure.createSubQuery" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">createSubQuery</span><span class="p">(</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">keys</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="nb">type</span><span class="p">:</span> <span class="n">ClauseType</span><span class="p">,</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">categories</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -3193,7 +3193,7 @@ to match the presence of any value.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>A Clause that can be used in <code>buildClauseGroup()</code> or</p>
+                <p>A Clause that can be used in <code>buildQuery()</code> or</p>
               </div>
             </td>
           </tr>
@@ -3244,13 +3244,13 @@ to match the presence of any value.</p>
   <blockquote>
 <blockquote>
 <blockquote>
-<p>from picsure import createClause, ClauseType
-sex = createClause(
+<p>from picsure import createSubQuery, ClauseType
+sex = createSubQuery(
 ...     r"\phs1\pht1\phv1\sex\",
 ...     type=ClauseType.FILTER,
 ...     categories="Male",
 ... )
-age = createClause(
+age = createSubQuery(
 ...     r"\phs1\pht1\phv5\age\",
 ...     type=ClauseType.FILTER,
 ...     min=40.0,
@@ -3267,12 +3267,12 @@ age = createClause(
 <div class="doc doc-object doc-function">
 
 
-<h2 id="picsure.buildClauseGroup" class="doc doc-heading">
-            <span class="doc doc-object-name doc-function-name">buildClauseGroup</span>
+<h2 id="picsure.buildQuery" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">buildQuery</span>
 
 
-<a href="#picsure.buildClauseGroup" class="headerlink" title="Permanent link">&para;</a></h2>
-<div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">buildClauseGroup</span><span class="p">(</span>
+<a href="#picsure.buildQuery" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">buildQuery</span><span class="p">(</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">clauses</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Clause</span> <span class="o">|</span> <span class="n">ClauseGroup</span><span class="p">],</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">operator</span><span class="p">:</span> <span class="n">GroupOperator</span> <span class="o">=</span> <span class="n">GroupOperator</span><span class="o">.</span><span class="n">AND</span><span class="p">,</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ClauseGroup</span>
@@ -3418,8 +3418,8 @@ age = createClause(
   <blockquote>
 <blockquote>
 <blockquote>
-<p>from picsure import buildClauseGroup, GroupOperator
-group = buildClauseGroup(
+<p>from picsure import buildQuery, GroupOperator
+group = buildQuery(
 ...     [sex_filter, age_filter],
 ...     operator=GroupOperator.AND,
 ... )</p>
@@ -3452,7 +3452,7 @@ group = buildClauseGroup(
 
 
         <p>Type of filter clause in a PIC-SURE query.</p>
-<p>Use these constants with <code>picsure.createClause()</code>:</p>
+<p>Use these constants with <code>picsure.createSubQuery()</code>:</p>
 <ul>
 <li><code>FILTER</code> — filter by categorical values or numeric range</li>
 <li><code>ANYRECORD</code> — match records where the concept path <em>or any
@@ -3711,9 +3711,9 @@ group = buildClauseGroup(
 
 
         <p>A single filter clause in a PIC-SURE query.</p>
-<p>Created by <code>picsure.createClause()</code>. Can be passed directly to
+<p>Created by <code>picsure.createSubQuery()</code>. Can be passed directly to
 <code>Session.runQuery()</code> or combined with other clauses via
-<code>picsure.buildClauseGroup()</code>.</p>
+<code>picsure.buildQuery()</code>.</p>
 <p><strong>Wire format.</strong> :meth:<code>to_query_json</code> emits a v3 <code>PhenotypicFilter</code>
 leaf (or an <code>OR</code> <code>PhenotypicSubquery</code> of leaves for multi-key
 clauses) per the <code>/picsure/v3/query/sync</code> contract.</p>
@@ -3820,7 +3820,7 @@ paths via :meth:<code>select_paths</code> instead.</p>
 
 
         <p>A group of clauses combined with AND or OR.</p>
-<p>Created by <code>picsure.buildClauseGroup()</code>. Can contain both
+<p>Created by <code>picsure.buildQuery()</code>. Can contain both
 <code>Clause</code> and nested <code>ClauseGroup</code> objects for arbitrarily
 deep nesting.</p>
 <p><strong>Wire format.</strong> :meth:<code>to_query_json</code> emits a v3
@@ -4698,7 +4698,7 @@ were added to the current selection.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>A Clause or ClauseGroup built with createClause/buildClauseGroup.</p>
+                <p>A Clause or ClauseGroup built with createSubQuery/buildQuery.</p>
               </div>
             </td>
             <td>
@@ -5064,7 +5064,7 @@ df = session.runQueryByID("XXXXX-ID", type="participant")</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>exportAsPFB, or composed with buildClauseGroup.</p>
+                <p>exportAsPFB, or composed with buildQuery.</p>
               </div>
             </td>
           </tr>
