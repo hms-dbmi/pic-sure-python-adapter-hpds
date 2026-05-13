@@ -798,18 +798,18 @@ facets to narrow results.</p>
 <h2 id="basic-search">Basic Search<a class="headerlink" href="#basic-search" title="Permanent link">&para;</a></h2>
 <p>Search for variables by keyword. Results are returned as a pandas
 DataFrame.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">results</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">&quot;blood pressure&quot;</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">results</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">dictionarySearch</span><span class="p">(</span><span class="s2">&quot;blood pressure&quot;</span><span class="p">)</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Found </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">results</span><span class="p">)</span><span class="si">}</span><span class="s2"> variables&quot;</span><span class="p">)</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">results</span><span class="o">.</span><span class="n">head</span><span class="p">()</span>
 </code></pre></div>
 <h3 id="search-with-no-term">Search with No Term<a class="headerlink" href="#search-with-no-term" title="Permanent link">&para;</a></h3>
 <p>Pass an empty string (or no argument) to return all variables:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">all_vars</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">search</span><span class="p">()</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">all_vars</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">dictionarySearch</span><span class="p">()</span>
 </code></pre></div>
 <h3 id="exclude-values">Exclude Values<a class="headerlink" href="#exclude-values" title="Permanent link">&para;</a></h3>
 <p>For faster searches on large dictionaries, set <code>include_values=False</code>
 to omit the <code>values</code> column:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">results</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="n">include_values</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">results</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">dictionarySearch</span><span class="p">(</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="n">include_values</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="facet-filtering">Facet Filtering<a class="headerlink" href="#facet-filtering" title="Permanent link">&para;</a></h2>
 <p>Facets let you narrow search results by category — for example,
@@ -868,7 +868,7 @@ filtering to variables from a specific study.</p>
 <a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="n">facets</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;data_type&quot;</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;categorical&quot;</span><span class="p">,</span> <span class="s2">&quot;continuous&quot;</span><span class="p">])</span>
 <a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>
 <a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="c1"># Use in search</span>
-<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="n">filtered</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">&quot;blood pressure&quot;</span><span class="p">,</span> <span class="n">facets</span><span class="o">=</span><span class="n">facets</span><span class="p">)</span>
+<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="n">filtered</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">dictionarySearch</span><span class="p">(</span><span class="s2">&quot;blood pressure&quot;</span><span class="p">,</span> <span class="n">facets</span><span class="o">=</span><span class="n">facets</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="clear-facet-selections">Clear Facet Selections<a class="headerlink" href="#clear-facet-selections" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Clear one category</span>
