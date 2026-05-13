@@ -82,7 +82,9 @@ Complete reference for all public functions, classes, and types in the
         - facets
         - showAllFacets
         - runQuery
-        - exportPFB
+        - runQueryByID
+        - loadQueryByID
+        - exportAsPFB
         - exportCSV
         - exportTSV
         - getResourceID

@@ -284,8 +284,8 @@ class Session:
             use_legacy_query_path=self._use_legacy_query_path,
         )
 
-    @timed("session.exportPFB")
-    def exportPFB(  # noqa: N802
+    @timed("session.exportAsPFB")
+    def exportAsPFB(  # noqa: N802
         self,
         query: Query,
         path: str | Path,
@@ -355,6 +355,42 @@ class Session:
 
         export_tsv(data, path)
 
+    @timed("session.runQueryByID")
+    def runQueryByID(  # noqa: N802
+        self,
+        query_id: str,
+        type: QueryType | str = "count",  # noqa: A002
+    ) -> CountResult | dict[str, CountResult] | pd.DataFrame:
+        """Load a saved query by ID and execute it in one call.
+
+        Convenience wrapper around :meth:`loadQueryByID` + :meth:`runQuery`.
+
+        Args:
+            query_id: The UUID string of a previous PIC-SURE query.
+            type: Result type, as accepted by :meth:`runQuery` —
+                ``"count"`` (default), ``"cross_count"``, ``"participant"``,
+                or ``"timestamp"`` (or the equivalent :class:`QueryType`
+                member).
+
+        Returns:
+            A :class:`CountResult`, ``dict[str, CountResult]``, or
+            :class:`pandas.DataFrame` depending on ``type``.
+
+        Raises:
+            PicSureValidationError: If the ID is blank, the saved query
+                cannot be loaded, or the query type is invalid.
+            PicSureAuthError / PicSureConnectionError / PicSureQueryError:
+                As raised by the underlying load and execute calls.
+
+        Example:
+            >>> count = session.runQueryByID(
+            ...     "11111111-2222-3333-4444-555555555555", type="count"
+            ... )
+            >>> df = session.runQueryByID("XXXXX-ID", type="participant")
+        """
+        query = self.loadQueryByID(query_id)
+        return self.runQuery(query, type)
+
     @timed("session.loadQueryByID")
     def loadQueryByID(self, query_id: str) -> Query:  # noqa: N802
         """Load a previously-saved PIC-SURE query by its query ID.
@@ -364,7 +400,7 @@ class Session:
 
         Returns:
             A Clause or ClauseGroup that can be passed back into runQuery,
-            exportPFB, or composed with buildClauseGroup.
+            exportAsPFB, or composed with buildClauseGroup.
 
         Raises:
             PicSureValidationError: If the ID is empty, the query was not

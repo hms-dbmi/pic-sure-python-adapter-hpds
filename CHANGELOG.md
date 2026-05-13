@@ -30,7 +30,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `CountResult` dataclass exposing `value`, `margin`, `cap`, `raw`, and an `obfuscated` property for count query responses.
 - Input validation with actionable error messages for invalid clause configurations.
 - `Session.runQuery()` to execute queries and return a `CountResult`, a `dict[str, CountResult]` (cross-count), or a `DataFrame` (participant / timestamp).
-- `Session.exportPFB()` to export query results as PFB files.
+- `Session.runQueryByID(query_id, type="count")` to load a saved query by ID and execute it in one call, returning the same result types as `runQuery`.
+- `Session.exportAsPFB()` to export query results as PFB files.
 - `Session.exportCSV()` and `Session.exportTSV()` to save DataFrames to disk.
 - `PicSureClient.post_raw()` for non-JSON response handling.
 - Query type validation with actionable error messages ("count", "participant", "timestamp").
@@ -50,7 +51,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `Session.runQuery(..., type="count")` now returns a `CountResult` dataclass instead of a plain `int`. Access the integer count via `result.value`; check `result.cap` for suppressed small-count responses (`result.value` is `None` in that case) and `result.margin` for noisy responses.
 - `Session.runQuery(..., type="cross_count")` now returns a `dict[str, CountResult]` keyed by concept path instead of a DataFrame.
 - `PicSureClient` now strips leading/trailing whitespace from the bearer token; a whitespace-only token is treated as anonymous (no `Authorization` header, `request-source: Open`).
-- `Session.exportPFB()` / `picsure._services.export.export_pfb` now use the async flow (`POST /picsure/v3/query` → poll `/query/{id}/status` → `POST /query/{id}/result`) rather than `/query/sync`. Response bytes are streamed directly to disk. Polling uses exponential backoff (1s, 2s, 4s, … capped at 60s per poll) and fails with `PicSureConnectionError` after 10 minutes of cumulative waiting. The output file is written atomically (`.part` staging file + rename on success).
+- `Session.exportAsPFB()` / `picsure._services.export.export_pfb` now use the async flow (`POST /picsure/v3/query` → poll `/query/{id}/status` → `POST /query/{id}/result`) rather than `/query/sync`. Response bytes are streamed directly to disk. Polling uses exponential backoff (1s, 2s, 4s, … capped at 60s per poll) and fails with `PicSureConnectionError` after 10 minutes of cumulative waiting. The output file is written atomically (`.part` staging file + rename on success).
 - `createClause` now raises `PicSureValidationError` for additional invalid combinations:
   FILTER clauses with both `categories` and `min`/`max`; REQUIRE or SELECT clauses
   with any of `categories`/`min`/`max`; empty keys lists. These were previously

@@ -473,7 +473,7 @@ class TestSessionRunQuery:
 class TestSessionExport:
     @respx.mock
     def test_export_pfb(self, tmp_path):
-        # Session.exportPFB drives the async flow:
+        # Session.exportAsPFB drives the async flow:
         # submit -> poll status -> stream result.
         query_id = "session-pfb-1"
         respx.post(f"{BASE_URL}/picsure/v3/query").mock(
@@ -493,7 +493,7 @@ class TestSessionExport:
         clause = Clause(keys=["\\sex\\"], type=ClauseType.FILTER, categories=["Male"])
         output = tmp_path / "test.pfb"
         with patch("picsure._services.export.time.sleep"):
-            session.exportPFB(clause, output)
+            session.exportAsPFB(clause, output)
 
         assert output.exists()
         assert output.read_bytes() == b"pfb_data"
@@ -519,7 +519,7 @@ class TestSessionExport:
         output = tmp_path / "test.pfb"
 
         with pytest.raises(PicSureValidationError, match="open-access"):
-            session.exportPFB(clause, output)
+            session.exportAsPFB(clause, output)
 
         # The submit endpoint must not have been hit — the guard fires
         # before any HTTP traffic.
@@ -656,3 +656,107 @@ class TestSessionLoadQueryByID:
         )
         result = session.loadQueryByID("abc-123")
         assert isinstance(result, Clause)
+
+
+class TestSessionRunQueryByID:
+    @respx.mock
+    def test_run_query_by_id_count(self):
+        # runQueryByID should load the saved query from /metadata, then
+        # execute it against /v3/query/sync and return a CountResult.
+        from picsure._models.count_result import CountResult
+
+        client = _client()
+        session = _session_with_resources(
+            client,
+            resources=[Resource(uuid="r-1", name="hpds", description="x")],
+            resource_uuid="r-1",
+        )
+        body = _metadata_envelope(
+            select=[],
+            phenotypic={
+                "phenotypicFilterType": "FILTER",
+                "conceptPath": "\\phs1\\sex\\",
+                "values": ["Male"],
+                "not": False,
+            },
+        )
+        metadata = respx.get(
+            f"{BASE_URL}/picsure/query/abc-123/metadata"
+        ).mock(return_value=httpx.Response(200, json=body))
+        sync = respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
+            return_value=httpx.Response(200, content=b"42")
+        )
+
+        result = session.runQueryByID("abc-123", type="count")
+
+        assert metadata.called
+        assert sync.called
+        assert isinstance(result, CountResult)
+        assert result.value == 42
+
+    @respx.mock
+    def test_run_query_by_id_participant(self, participant_response):
+        client = _client()
+        session = _session_with_resources(
+            client,
+            resources=[Resource(uuid="r-1", name="hpds", description="x")],
+            resource_uuid="r-1",
+        )
+        body = _metadata_envelope(
+            select=["\\phs1\\age\\"],
+            phenotypic={
+                "phenotypicFilterType": "FILTER",
+                "conceptPath": "\\phs1\\sex\\",
+                "values": ["Male"],
+                "not": False,
+            },
+        )
+        respx.get(f"{BASE_URL}/picsure/query/abc-123/metadata").mock(
+            return_value=httpx.Response(200, json=body)
+        )
+        respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
+            return_value=httpx.Response(200, content=participant_response)
+        )
+
+        df = session.runQueryByID("abc-123", type="participant")
+
+        assert isinstance(df, pd.DataFrame)
+        assert len(df) == 5
+
+    @respx.mock
+    def test_run_query_by_id_default_type_is_count(self):
+        from picsure._models.count_result import CountResult
+
+        client = _client()
+        session = _session_with_resources(
+            client,
+            resources=[Resource(uuid="r-1", name="hpds", description="x")],
+            resource_uuid="r-1",
+        )
+        body = _metadata_envelope(
+            select=[],
+            phenotypic={
+                "phenotypicFilterType": "FILTER",
+                "conceptPath": "\\phs1\\sex\\",
+                "values": ["Male"],
+                "not": False,
+            },
+        )
+        respx.get(f"{BASE_URL}/picsure/query/abc-123/metadata").mock(
+            return_value=httpx.Response(200, json=body)
+        )
+        respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
+            return_value=httpx.Response(200, content=b"7")
+        )
+
+        result = session.runQueryByID("abc-123")
+
+        assert isinstance(result, CountResult)
+        assert result.value == 7
+
+    def test_run_query_by_id_rejects_blank_id(self):
+        from picsure.errors import PicSureValidationError
+
+        session = _make_live_session()
+        with pytest.raises(PicSureValidationError, match="non-empty query ID"):
+            session.runQueryByID("   ", type="count")

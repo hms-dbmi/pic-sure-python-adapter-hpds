@@ -142,7 +142,7 @@ session.exportCSV(df, "output.csv")
 # or
 session.exportTSV(df, "output.tsv")
 # or
-session.exportPFB(query, "output.pfb")
+session.exportAsPFB(query, "output.pfb")
 ```
 
 ## What Changed

@@ -125,7 +125,7 @@ session.exportCSV(df, "my_cohort.csv")
 session.exportTSV(df, "my_cohort.tsv")
 
 # Export as PFB (requires pip install picsure[pfb])
-session.exportPFB(query, "my_cohort.pfb")
+session.exportAsPFB(query, "my_cohort.pfb")
 ```
 
 ## Next Steps

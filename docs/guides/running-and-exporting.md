@@ -65,7 +65,7 @@ PFB export runs the query server-side and writes the result directly
 to a file:
 
 ```python
-session.exportPFB(my_query, "my_cohort.pfb")
+session.exportAsPFB(my_query, "my_cohort.pfb")
 ```
 
 !!! note
