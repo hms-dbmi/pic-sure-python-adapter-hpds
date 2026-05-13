@@ -9,7 +9,7 @@ Search for variables by keyword. Results are returned as a pandas
 DataFrame.
 
 ```python
-results = session.dictionarySearch("blood pressure")
+results = session.searchDictionary("blood pressure")
 print(f"Found {len(results)} variables")
 results.head()
 ```
@@ -19,7 +19,7 @@ results.head()
 Pass an empty string (or no argument) to return all variables:
 
 ```python
-all_vars = session.dictionarySearch()
+all_vars = session.searchDictionary()
 ```
 
 ### Exclude Values
@@ -28,7 +28,7 @@ For faster searches on large dictionaries, set `include_values=False`
 to omit the `values` column:
 
 ```python
-results = session.dictionarySearch("age", include_values=False)
+results = session.searchDictionary("age", include_values=False)
 ```
 
 ## Facet Filtering
@@ -71,7 +71,7 @@ facets.add("dataset_id", "phs000007")
 facets.add("data_type", ["categorical", "continuous"])
 
 # Use in search
-filtered = session.dictionarySearch("blood pressure", facets=facets)
+filtered = session.searchDictionary("blood pressure", facets=facets)
 ```
 
 ### Clear Facet Selections

@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Added
 - `picsure.PicSureAuthError`, `picsure.PicSureConnectionError`, `picsure.PicSureQueryError`, and `picsure.PicSureValidationError` are now re-exported from the top-level package, so `from picsure import PicSureQueryError` works (previously required `from picsure.errors import ...`).
 - `Session.facets(term="", *, facets=None)` and `Session.showAllFacets(term="", *, facets=None)` now accept optional search term and facet selections. Counts returned are contextual to the provided search when term/facets are supplied; passing no arguments preserves the previous "global counts" behaviour.
-- `DictionaryEntry` exposes `min`, `max`, `allow_filtering`, `meta`, and `study_acronym` fields. The corresponding columns (`min`, `max`, `allowFiltering`, `meta`, `studyAcronym`) are added to the `Session.dictionarySearch` DataFrame result.
+- `DictionaryEntry` exposes `min`, `max`, `allow_filtering`, `meta`, and `study_acronym` fields. The corresponding columns (`min`, `max`, `allowFiltering`, `meta`, `studyAcronym`) are added to the `Session.searchDictionary` DataFrame result.
 - `picsure.connect()` to authenticate and connect to a PIC-SURE instance.
 - `Session.getResourceID()` to list available resources as a DataFrame.
 - Platform name resolution for BDC Authorized, BDC Open, and Demo.
@@ -17,7 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Unit test suite with mocked HTTP via respx.
 - Integration test scaffold gated by `PICSURE_INTEGRATION` env var.
 - GitHub Actions CI with Python 3.10/3.11/3.12 matrix.
-- `Session.dictionarySearch()` to search the data dictionary with optional facet filtering.
+- `Session.searchDictionary()` to search the data dictionary with optional facet filtering.
 - `Session.facets()` to retrieve available facet categories as a `FacetSet`.
 - `Session.showAllFacets()` to display all facet categories and values as a DataFrame.
 - `FacetSet` for building facet selections with validation.
@@ -85,7 +85,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   that passing a plain `dict` raises `PicSureValidationError` ("Query must be a
   Clause or ClauseGroup") rather than a confusing `AttributeError` from an
   internal accessor.
-- `Session.dictionarySearch` now raises `PicSureQueryError` when the server's paginated response indicates the result set was truncated (`last != True` or `content` length doesn't match `totalElements`). Previously the adapter silently returned the partial page.
+- `Session.searchDictionary` now raises `PicSureQueryError` when the server's paginated response indicates the result set was truncated (`last != True` or `content` length doesn't match `totalElements`). Previously the adapter silently returned the partial page.
 - PFB export against v3 PIC-SURE was silently broken: the previous implementation posted `DATAFRAME_PFB` to `/query/sync`, which v3 HPDS has no handler for. Unit tests passed only because `respx` served a canned 200 body at the wrong URL.
 - 4xx responses during PFB submission / status / result are now surfaced as `PicSureValidationError` / `PicSureQueryError` (previously the 4xx body bytes would be written to disk as if they were PFB).
 - `OSError` / `PermissionError` during disk writes in `export_pfb` are now wrapped in `PicSureConnectionError` with the target path in the message (previously leaked raw).

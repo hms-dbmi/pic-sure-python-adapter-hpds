@@ -28,7 +28,7 @@ One package replaces both the client and the adapter.
 | `PicSureClient.Client(url, token)` | `picsure.connect(platform, token)` |
 | `PicSureHpdsLib.Adapter(conn)` | *(not needed — `connect` returns a Session directly)* |
 | `adapter.useResource(uuid)` | `session.setResourceID(uuid)` |
-| `resource.dictionary().find("sex")` | `session.dictionarySearch("sex")` |
+| `resource.dictionary().find("sex")` | `session.searchDictionary("sex")` |
 | `resource.query()` | `picsure.createClause(...)` |
 | `query.filter().add(path, values)` | `picsure.createClause(path, type=ClauseType.FILTER, categories=values)` |
 | `query.require().add(path)` | `picsure.createClause(path, type=ClauseType.REQUIRE)` |
@@ -81,7 +81,7 @@ results.DataFrame()
 **New:**
 
 ```python
-df = session.dictionarySearch("blood pressure")
+df = session.searchDictionary("blood pressure")
 ```
 
 ### Building a Query

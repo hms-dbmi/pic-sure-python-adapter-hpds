@@ -8,7 +8,7 @@ from picsure._models.facet import FacetCategory, FacetSet
 from picsure._services.search import (
     fetch_facets,
     fetch_total_concepts,
-    search,
+    searchDictionary,
     show_all_facets,
 )
 from picsure._transport.client import PicSureClient
@@ -34,7 +34,7 @@ class TestSearch:
         respx.post(_concepts_url(100)).mock(
             return_value=httpx.Response(200, json=search_response)
         )
-        df = search(_make_client(), term="sex")
+        df = searchDictionary(_make_client(), term="sex")
         assert len(df) == 3
         assert "conceptPath" in df.columns
         assert "name" in df.columns
@@ -44,7 +44,7 @@ class TestSearch:
         respx.post(_concepts_url(100)).mock(
             return_value=httpx.Response(200, json=search_response)
         )
-        df = search(_make_client(), term="sex")
+        df = searchDictionary(_make_client(), term="sex")
         assert list(df.columns) == [
             "conceptPath",
             "name",
@@ -67,7 +67,7 @@ class TestSearch:
         respx.post(_concepts_url(100)).mock(
             return_value=httpx.Response(200, json=search_response)
         )
-        df = search(_make_client(), term="age")
+        df = searchDictionary(_make_client(), term="age")
         age_row = df[df["name"] == "age"].iloc[0]
         assert age_row["min"] == 0.0
         assert age_row["max"] == 100.0
@@ -84,7 +84,7 @@ class TestSearch:
         respx.post(_concepts_url(100)).mock(
             return_value=httpx.Response(200, json=search_response)
         )
-        df = search(_make_client(), term="sex")
+        df = searchDictionary(_make_client(), term="sex")
         sex_row = df[df["name"] == "sex"].iloc[0]
         # pandas coerces None into NaN when the column holds floats.
         assert pd.isna(sex_row["min"])
@@ -97,7 +97,7 @@ class TestSearch:
         respx.post(_concepts_url(100)).mock(
             return_value=httpx.Response(200, json=search_response)
         )
-        df = search(_make_client(), term="sex", include_values=False)
+        df = searchDictionary(_make_client(), term="sex", include_values=False)
         for col in ("min", "max", "allowFiltering", "meta", "studyAcronym"):
             assert col in df.columns
 
@@ -106,7 +106,7 @@ class TestSearch:
         respx.post(_concepts_url(100)).mock(
             return_value=httpx.Response(200, json=search_response)
         )
-        df = search(_make_client(), term="sex")
+        df = searchDictionary(_make_client(), term="sex")
         assert df.iloc[0]["studyId"] == "phs000007"
         assert df.iloc[0]["dataType"] == "categorical"
         assert df.iloc[2]["dataType"] == "continuous"
@@ -116,7 +116,7 @@ class TestSearch:
         respx.post(_concepts_url(100)).mock(
             return_value=httpx.Response(200, json=search_response)
         )
-        df = search(_make_client(), term="sex", include_values=False)
+        df = searchDictionary(_make_client(), term="sex", include_values=False)
         assert "values" not in df.columns
         assert "conceptPath" in df.columns
 
@@ -125,7 +125,7 @@ class TestSearch:
         route = respx.post(_concepts_url(100)).mock(
             return_value=httpx.Response(200, json=search_response)
         )
-        search(_make_client(), term="blood pressure")
+        searchDictionary(_make_client(), term="blood pressure")
         body = json.loads(route.calls[0].request.content)
         assert body == {"search": "blood pressure", "facets": []}
 
@@ -154,7 +154,7 @@ class TestSearch:
         facets = FacetSet(categories)
         facets.add("dataset_id", "phs000007")
 
-        search(_make_client(), term="sex", facets=facets)
+        searchDictionary(_make_client(), term="sex", facets=facets)
         body = json.loads(route.calls[0].request.content)
         assert body["facets"] == [
             {
@@ -179,7 +179,7 @@ class TestSearch:
         route = respx.post(_concepts_url(100)).mock(
             return_value=httpx.Response(200, json=search_response)
         )
-        search(
+        searchDictionary(
             _make_client(),
             term="age",
             consents=["phs000007.c1", "phs001013.c1"],
@@ -192,7 +192,7 @@ class TestSearch:
         route = respx.post(_concepts_url(100)).mock(
             return_value=httpx.Response(200, json=search_response)
         )
-        search(_make_client(), term="age", consents=[])
+        searchDictionary(_make_client(), term="age", consents=[])
         body = json.loads(route.calls[0].request.content)
         assert "consents" not in body
 
@@ -201,7 +201,7 @@ class TestSearch:
         route = respx.post(_concepts_url(100)).mock(
             return_value=httpx.Response(200, json=search_response)
         )
-        search(_make_client(), term="age")
+        searchDictionary(_make_client(), term="age")
         body = json.loads(route.calls[0].request.content)
         assert "consents" not in body
 
@@ -210,7 +210,7 @@ class TestSearch:
         route = respx.post(_concepts_url(487375)).mock(
             return_value=httpx.Response(200, json=search_response)
         )
-        search(_make_client(), term="age", page_size=487375)
+        searchDictionary(_make_client(), term="age", page_size=487375)
         assert route.called
 
     @respx.mock
@@ -218,7 +218,7 @@ class TestSearch:
         route = respx.post(_concepts_url(100)).mock(
             return_value=httpx.Response(200, json=search_response)
         )
-        search(_make_client(), term="age", page_size=0)
+        searchDictionary(_make_client(), term="age", page_size=0)
         assert route.called
 
     @respx.mock
@@ -235,7 +235,7 @@ class TestSearch:
         respx.post(_concepts_url(100)).mock(
             return_value=httpx.Response(200, json=duplicate_response)
         )
-        df = search(_make_client())
+        df = searchDictionary(_make_client())
         assert len(df) == 2
         assert df.iloc[0]["display"] == "First"
 
@@ -246,7 +246,7 @@ class TestSearch:
                 200, json={"content": [], "totalElements": 0, "last": True}
             )
         )
-        df = search(_make_client(), term="nonexistent")
+        df = searchDictionary(_make_client(), term="nonexistent")
         assert len(df) == 0
         assert "conceptPath" in df.columns
 
@@ -257,7 +257,7 @@ class TestSearch:
                 200, json={"content": [], "totalElements": 0, "last": True}
             )
         )
-        search(_make_client(), term="nonexistent")
+        searchDictionary(_make_client(), term="nonexistent")
         assert "0 results" in capsys.readouterr().err
 
     @respx.mock
@@ -275,7 +275,7 @@ class TestSearch:
             return_value=httpx.Response(200, json=truncated)
         )
         with pytest.raises(PicSureQueryError, match="truncated"):
-            search(_make_client(), term="x")
+            searchDictionary(_make_client(), term="x")
 
     @respx.mock
     def test_truncated_page_error_message_contains_counts(self):
@@ -288,7 +288,7 @@ class TestSearch:
             return_value=httpx.Response(200, json=truncated)
         )
         with pytest.raises(PicSureQueryError, match=r"1/5"):
-            search(_make_client(), term="x")
+            searchDictionary(_make_client(), term="x")
 
     @respx.mock
     def test_last_missing_but_counts_match_ok(self):
@@ -302,7 +302,7 @@ class TestSearch:
             return_value=httpx.Response(200, json=response)
         )
         with pytest.raises(PicSureQueryError, match="truncated"):
-            search(_make_client(), term="x")
+            searchDictionary(_make_client(), term="x")
 
     @respx.mock
     def test_total_elements_mismatch_raises_even_when_last_true(self):
@@ -317,7 +317,7 @@ class TestSearch:
             return_value=httpx.Response(200, json=response)
         )
         with pytest.raises(PicSureQueryError, match="truncated"):
-            search(_make_client(), term="x")
+            searchDictionary(_make_client(), term="x")
 
     @respx.mock
     def test_server_error_raises_connection_error(self):
@@ -325,7 +325,7 @@ class TestSearch:
             return_value=httpx.Response(500, text="Internal Server Error")
         )
         with pytest.raises(PicSureConnectionError, match="search"):
-            search(_make_client(), term="test")
+            searchDictionary(_make_client(), term="test")
 
     @respx.mock
     def test_network_error_raises_connection_error(self):
@@ -333,7 +333,7 @@ class TestSearch:
             side_effect=httpx.ConnectError("Connection refused")
         )
         with pytest.raises(PicSureConnectionError):
-            search(_make_client(), term="test")
+            searchDictionary(_make_client(), term="test")
 
 
 class TestFetchTotalConcepts:

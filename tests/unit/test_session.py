@@ -272,7 +272,7 @@ class TestSessionSearch:
         )
 
         session = _make_live_session()
-        df = session.dictionarySearch("sex")
+        df = session.searchDictionary("sex")
 
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 3
@@ -284,7 +284,7 @@ class TestSessionSearch:
         )
 
         session = _make_live_session()
-        df = session.dictionarySearch()
+        df = session.searchDictionary()
 
         assert isinstance(df, pd.DataFrame)
 
@@ -303,7 +303,7 @@ class TestSessionSearch:
             resources=[Resource(uuid="r", name="t", description="")],
             consents=["phs000007.c1"],
         )
-        session.dictionarySearch("age")
+        session.searchDictionary("age")
         body = __import__("json").loads(route.calls[0].request.content)
         assert body["consents"] == ["phs000007.c1"]
 
@@ -337,7 +337,7 @@ class TestSessionFacets:
         session = _make_live_session()
         fs = session.facets()
         fs.add("dataset_id", "phs000007")
-        session.dictionarySearch("sex", facets=fs)
+        session.searchDictionary("sex", facets=fs)
 
         import json
 

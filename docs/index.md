@@ -22,7 +22,7 @@ from picsure import ClauseType, GroupOperator
 session = picsure.connect(platform="BDC Authorized", token=my_token)
 
 # Search the dictionary
-results = session.dictionarySearch("blood pressure")
+results = session.searchDictionary("blood pressure")
 
 # Build a query
 sex = picsure.createClause(

@@ -115,7 +115,7 @@ def fetch_total_concepts(
         return 0
 
 
-def search(
+def searchDictionary(  # noqa: N802
     client: PicSureClient,
     term: str = "",
     facets: FacetSet | None = None,

@@ -26,7 +26,7 @@ from picsure import ClauseType, GroupOperator
 session = picsure.connect(platform="BDC Authorized", token="your-token")
 
 # Search the data dictionary
-results = session.dictionarySearch("blood pressure")
+results = session.searchDictionary("blood pressure")
 
 # Build a query
 sex = picsure.createClause("\\phs1\\sex\\", type=ClauseType.FILTER, categories="Male")
