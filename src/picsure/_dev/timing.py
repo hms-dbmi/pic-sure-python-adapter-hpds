@@ -33,6 +33,8 @@ def timed(name: str) -> Callable[[F], F]:
             try:
                 result = func(self, *args, **kwargs)
             except Exception as exc:
+                if getattr(exc, "_picsure_dev_emitted", False):
+                    raise
                 duration_ms = (time.monotonic() - start) * 1000.0
                 cfg.emit(
                     Event(

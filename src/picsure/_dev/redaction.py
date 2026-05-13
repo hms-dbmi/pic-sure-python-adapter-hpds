@@ -9,6 +9,22 @@ _SENSITIVE_RESULT_TYPES = {
     "DATAFRAME_PFB",
 }
 
+# PSAMA's /user/me returns the user's JWT in a `token` field alongside
+# `email` and other identity fields.  Treat any of these as secrets when
+# they appear in a PSAMA-pathed body.
+_PSAMA_SENSITIVE_KEYS = frozenset(
+    {
+        "email",
+        "token",
+        "access_token",
+        "refresh_token",
+        "password",
+        "secret",
+        "apikey",
+        "api_key",
+    }
+)
+
 
 def redact_headers(headers: dict[str, str]) -> dict[str, str]:
     """Return a copy of headers with Authorization masked."""
@@ -32,7 +48,7 @@ def redact_for_log(
         return ""
 
     if _is_psama_path(path):
-        return json.dumps(_redact_email(body))
+        return json.dumps(_redact_psama_secrets(body))
 
     if _is_query_sync_path(path) and _body_is_participant_like(body):
         return None
@@ -58,12 +74,16 @@ def _body_is_participant_like(body: Any) -> bool:
     return result_type in _SENSITIVE_RESULT_TYPES
 
 
-def _redact_email(body: Any) -> Any:
+def _redact_psama_secrets(body: Any) -> Any:
     if isinstance(body, dict):
         return {
-            k: ("***" if k == "email" and isinstance(v, str) else _redact_email(v))
+            k: (
+                "***"
+                if k.lower() in _PSAMA_SENSITIVE_KEYS and isinstance(v, str)
+                else _redact_psama_secrets(v)
+            )
             for k, v in body.items()
         }
     if isinstance(body, list):
-        return [_redact_email(item) for item in body]
+        return [_redact_psama_secrets(item) for item in body]
     return body

@@ -460,9 +460,9 @@ class Session:
         if self._resource_uuid is not None:
             return self._resource_uuid
         if not self._resources:
-            from picsure.errors import PicSureError
+            from picsure.errors import PicSureValidationError
 
-            raise PicSureError(
+            raise PicSureValidationError(
                 "No resources are available on this connection. "
                 "Check with your administrator."
             )

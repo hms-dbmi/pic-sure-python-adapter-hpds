@@ -37,6 +37,27 @@ def test_redact_psama_body_strips_email():
     assert "***" in out
 
 
+def test_redact_psama_body_strips_token():
+    body = {"uuid": "u-1", "email": "u@x.com", "token": "eyJhbGciOiJI.payload.sig"}
+    out = redact_for_log("/psama/user/me", "GET", body)
+    assert out is not None
+    assert "eyJhbGciOiJI" not in out
+    assert "u@x.com" not in out
+
+
+def test_redact_psama_body_strips_credential_aliases():
+    body = {
+        "access_token": "at",
+        "refresh_token": "rt",
+        "password": "pw",
+        "apiKey": "k",
+    }
+    out = redact_for_log("/psama/login", "POST", body)
+    assert out is not None
+    for secret in ("at", "rt", "pw", "k"):
+        assert f'"{secret}"' not in out
+
+
 def test_redact_participant_query_returns_none():
     body = {"query": {"expectedResultType": "DATAFRAME", "fields": []}}
     out = redact_for_log("/picsure/query/sync", "POST", body)

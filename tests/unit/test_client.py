@@ -327,14 +327,16 @@ class TestPicSureClientRetryScoping:
         assert route.call_count == 2
 
     @respx.mock
-    def test_post_timeout_does_retry(self):
+    def test_post_timeout_does_not_retry(self):
+        # Read-timeouts on POST may mean the server already processed the
+        # request; retrying would risk duplicating a non-idempotent mutation.
         route = respx.post(f"{BASE_URL}/query/sync").mock(
             side_effect=httpx.ReadTimeout("timed out")
         )
         client = PicSureClient(base_url=BASE_URL, token=TOKEN)
         with pytest.raises(TransportConnectionError):
             client.post_json("/query/sync", body={"q": "x"})
-        assert route.call_count == 2
+        assert route.call_count == 1
 
     @respx.mock
     def test_post_raw_502_does_not_retry(self):

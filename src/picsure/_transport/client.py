@@ -27,6 +27,13 @@ _MAX_RETRIES = 1
 _TIMEOUT_SECONDS = 30.0
 
 
+def _mark_emitted(exc: BaseException) -> BaseException:
+    # Tag exceptions whose failure has already been recorded as a dev-mode
+    # error event so @timed wrappers higher up the stack don't double-emit.
+    exc._picsure_dev_emitted = True  # type: ignore[attr-defined]
+    return exc
+
+
 class PicSureClient:
     """HTTP client for PIC-SURE API calls.
 
@@ -151,16 +158,18 @@ class PicSureClient:
                 # reached the server, so retrying can't double-execute.
                 if attempt < _MAX_RETRIES:
                     continue
-                raise TransportConnectionError(str(exc)) from exc
+                raise _mark_emitted(TransportConnectionError(str(exc))) from exc
             except httpx.TimeoutException as exc:
                 last_exc = exc
                 self._emit_error(method, path, attempt, start, type(exc).__name__)
-                # Timeouts may or may not have reached the server, but
-                # the convention in this client is to retry — see the
-                # original TransportConnectionError path.
-                if attempt < _MAX_RETRIES:
+                # Read-timeouts on POST may mean the server already processed
+                # the request; retrying could duplicate a non-idempotent
+                # mutation.  Only retry GETs.
+                if method == "GET" and attempt < _MAX_RETRIES:
                     continue
-                raise TransportConnectionError(f"Request timed out: {exc}") from exc
+                raise _mark_emitted(
+                    TransportConnectionError(f"Request timed out: {exc}")
+                ) from exc
 
             self._emit_http(method, path, body, response, attempt, start)
 
@@ -171,6 +180,7 @@ class PicSureClient:
                     _raise_for_status(status, response.text, response)
                 except TransportError as exc:
                     self._emit_error(method, path, attempt, start, type(exc).__name__)
+                    _mark_emitted(exc)
                     raise
 
             if status >= 500:
@@ -179,7 +189,7 @@ class PicSureClient:
                 if method == "GET" and attempt < _MAX_RETRIES:
                     continue
                 self._emit_error(method, path, attempt, start, "TransportServerError")
-                raise TransportServerError(status, response.text)
+                raise _mark_emitted(TransportServerError(status, response.text))
 
             return response
 
