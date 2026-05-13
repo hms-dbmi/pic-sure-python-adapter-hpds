@@ -747,9 +747,7 @@ class TestRunQueryAcceptsMixedTopLevelGroup:
             keys=["\\phs1\\sex\\"], type=ClauseType.FILTER, categories=["Male"]
         )
         age = Clause(keys=["\\phs1\\age\\"], type=ClauseType.FILTER, min=40.0)
-        pheno_group = ClauseGroup(
-            clauses=[sex, age], operator=GroupOperator.AND
-        )
+        pheno_group = ClauseGroup(clauses=[sex, age], operator=GroupOperator.AND)
         top = ClauseGroup(
             clauses=[select_a, select_b, pheno_group],
             operator=GroupOperator.AND,
@@ -778,9 +776,7 @@ class TestRunQueryAcceptsMixedTopLevelGroup:
     def test_select_only_top_level_group_omits_phenotypic(self):
         select_a = Clause(keys=["\\phs1\\out_a\\"], type=ClauseType.SELECT)
         select_b = Clause(keys=["\\phs1\\out_b\\"], type=ClauseType.SELECT)
-        top = ClauseGroup(
-            clauses=[select_a, select_b], operator=GroupOperator.AND
-        )
+        top = ClauseGroup(clauses=[select_a, select_b], operator=GroupOperator.AND)
         route = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"")
         )

@@ -597,12 +597,12 @@ class TestSessionLoadQueryByID:
                 "not": False,
             },
         )
-        legacy = respx.get(
-            f"{BASE_URL}/picsure/query/abc-123/metadata"
-        ).mock(return_value=httpx.Response(200, json=body))
-        v3 = respx.get(
-            f"{BASE_URL}/picsure/v3/query/abc-123/metadata"
-        ).mock(return_value=httpx.Response(200, json=body))
+        legacy = respx.get(f"{BASE_URL}/picsure/query/abc-123/metadata").mock(
+            return_value=httpx.Response(200, json=body)
+        )
+        v3 = respx.get(f"{BASE_URL}/picsure/v3/query/abc-123/metadata").mock(
+            return_value=httpx.Response(200, json=body)
+        )
         result = session.loadQueryByID("abc-123")
         assert legacy.called
         assert not v3.called
@@ -629,9 +629,9 @@ class TestSessionLoadQueryByID:
                 "not": False,
             },
         )
-        legacy = respx.get(
-            f"{BASE_URL}/picsure/query/abc-123/metadata"
-        ).mock(return_value=httpx.Response(200, json=body))
+        legacy = respx.get(f"{BASE_URL}/picsure/query/abc-123/metadata").mock(
+            return_value=httpx.Response(200, json=body)
+        )
         result = session.loadQueryByID("abc-123")
         assert legacy.called
         assert isinstance(result, Clause)
@@ -680,9 +680,9 @@ class TestSessionRunQueryByID:
                 "not": False,
             },
         )
-        metadata = respx.get(
-            f"{BASE_URL}/picsure/query/abc-123/metadata"
-        ).mock(return_value=httpx.Response(200, json=body))
+        metadata = respx.get(f"{BASE_URL}/picsure/query/abc-123/metadata").mock(
+            return_value=httpx.Response(200, json=body)
+        )
         sync = respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
             return_value=httpx.Response(200, content=b"42")
         )

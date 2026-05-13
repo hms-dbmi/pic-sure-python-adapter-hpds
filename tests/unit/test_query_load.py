@@ -207,9 +207,7 @@ class TestToQuery:
         assert result.keys == ["\\phs1\\out\\"]
 
     def test_multiple_selects_only(self):
-        result = _to_query(
-            ["\\phs1\\out_a\\", "\\phs1\\out_b\\"], None
-        )
+        result = _to_query(["\\phs1\\out_a\\", "\\phs1\\out_b\\"], None)
         assert isinstance(result, ClauseGroup)
         assert result.operator == GroupOperator.AND
         assert len(result.clauses) == 2
@@ -218,15 +216,11 @@ class TestToQuery:
             assert c.type == ClauseType.SELECT
 
     def test_selects_plus_phenotypic_returns_and_group(self):
-        result = _to_query(
-            ["\\phs1\\out\\"], self._filter("\\phs1\\sex\\", "Male")
-        )
+        result = _to_query(["\\phs1\\out\\"], self._filter("\\phs1\\sex\\", "Male"))
         assert isinstance(result, ClauseGroup)
         assert result.operator == GroupOperator.AND
         assert len(result.clauses) == 2  # one SELECT + the phenotypic clause
-        types = sorted(
-            c.type.name for c in result.clauses if isinstance(c, Clause)
-        )
+        types = sorted(c.type.name for c in result.clauses if isinstance(c, Clause))
         assert types == ["FILTER", "SELECT"]
 
     def test_selects_plus_phenotypic_round_trips_through_to_query_json(self):
@@ -385,12 +379,8 @@ class TestLoadQueryHappyPath:
                 "id": None,
             }
         )
-        legacy = respx.get(META_URL).mock(
-            return_value=httpx.Response(200, json=body)
-        )
-        v3 = respx.get(V3_META_URL).mock(
-            return_value=httpx.Response(200, json=body)
-        )
+        legacy = respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
+        v3 = respx.get(V3_META_URL).mock(return_value=httpx.Response(200, json=body))
         load_query(_make_client(), QUERY_ID)
         assert legacy.called
         assert not v3.called
@@ -452,9 +442,7 @@ class TestLoadQueryErrors:
 
     @respx.mock
     def test_401_raises_auth_error(self):
-        respx.get(META_URL).mock(
-            return_value=httpx.Response(401, text="unauthorized")
-        )
+        respx.get(META_URL).mock(return_value=httpx.Response(401, text="unauthorized"))
         with pytest.raises(PicSureAuthError):
             load_query(_make_client(), QUERY_ID)
 

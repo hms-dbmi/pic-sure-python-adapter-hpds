@@ -20,9 +20,7 @@ def _make_jwt(exp: int | float | None) -> str:
 
     def _b64(payload: dict) -> str:
         return (
-            base64.urlsafe_b64encode(json.dumps(payload).encode())
-            .rstrip(b"=")
-            .decode()
+            base64.urlsafe_b64encode(json.dumps(payload).encode()).rstrip(b"=").decode()
         )
 
     header = _b64({"alg": "none", "typ": "JWT"})

@@ -57,9 +57,7 @@ def _parse_phenotypic(node: object) -> Clause | ClauseGroup:
     if "operator" in node and "phenotypicClauses" in node:
         return _parse_subquery(node)
     if "operator" in node:
-        raise PicSureQueryError(
-            "Subquery node missing 'phenotypicClauses'."
-        )
+        raise PicSureQueryError("Subquery node missing 'phenotypicClauses'.")
     raise PicSureQueryError(
         f"Unrecognized phenotypic clause shape: keys={sorted(node.keys())!r}"
     )
@@ -74,9 +72,7 @@ def _parse_leaf(node: dict[str, object]) -> Clause:
         )
     concept_path = node.get("conceptPath")
     if not isinstance(concept_path, str):
-        raise PicSureQueryError(
-            "Leaf phenotypic clause missing 'conceptPath' string."
-        )
+        raise PicSureQueryError("Leaf phenotypic clause missing 'conceptPath' string.")
     clause_type = _FILTER_TYPE_TO_CLAUSE[raw_type]
     categories: list[str] | None = None
     cmin: float | None = None
@@ -111,9 +107,7 @@ def _parse_subquery(node: dict[str, object]) -> ClauseGroup:
         raise PicSureQueryError(
             "Subquery 'phenotypicClauses' must be a non-empty list."
         )
-    children: list[Clause | ClauseGroup] = [
-        _parse_phenotypic(c) for c in raw_children
-    ]
+    children: list[Clause | ClauseGroup] = [_parse_phenotypic(c) for c in raw_children]
     return ClauseGroup(
         clauses=children,
         operator=GroupOperator(raw_op),
@@ -129,9 +123,7 @@ def _to_query(
         Clause(keys=[p], type=ClauseType.SELECT) for p in select_paths
     ]
     phenotypic: Clause | ClauseGroup | None = (
-        _parse_phenotypic(phenotypic_node)
-        if phenotypic_node is not None
-        else None
+        _parse_phenotypic(phenotypic_node) if phenotypic_node is not None else None
     )
 
     if phenotypic is None and not selects:
@@ -145,9 +137,7 @@ def _to_query(
         return ClauseGroup(clauses=selects, operator=GroupOperator.AND)
     if not selects:
         return phenotypic
-    return ClauseGroup(
-        clauses=[*selects, phenotypic], operator=GroupOperator.AND
-    )
+    return ClauseGroup(clauses=[*selects, phenotypic], operator=GroupOperator.AND)
 
 
 # Always use the legacy /picsure/query/{id}/metadata path.  The v3
@@ -213,8 +203,7 @@ def load_query(
         raise PicSureConnectionError(msg) from exc
     except TransportError as exc:
         raise PicSureConnectionError(
-            "Could not load the saved query. The server may be temporarily "
-            "unavailable."
+            "Could not load the saved query. The server may be temporarily unavailable."
         ) from exc
 
     return _build_query_from_response(response)
@@ -228,9 +217,7 @@ def _build_query_from_response(response: object) -> Clause | ClauseGroup:
         )
     metadata = response.get("resultMetadata")
     if not isinstance(metadata, dict):
-        raise PicSureQueryError(
-            "Metadata response is missing 'resultMetadata' object."
-        )
+        raise PicSureQueryError("Metadata response is missing 'resultMetadata' object.")
     query_json = metadata.get("queryJson")
     if not isinstance(query_json, dict):
         raise PicSureQueryError(
@@ -247,8 +234,7 @@ def _build_query_from_response(response: object) -> Clause | ClauseGroup:
             ) from exc
     if not isinstance(inner, dict):
         raise PicSureQueryError(
-            "Metadata response is missing 'resultMetadata.queryJson.query' "
-            "object."
+            "Metadata response is missing 'resultMetadata.queryJson.query' object."
         )
     genomic = inner.get("genomicFilters")
     if isinstance(genomic, list) and genomic:

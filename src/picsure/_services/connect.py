@@ -217,9 +217,7 @@ def _token_expiration_from_jwt(token: str) -> str:
     if not isinstance(exp, (int, float)) or isinstance(exp, bool):
         return "unknown"
 
-    return datetime.fromtimestamp(exp, tz=timezone.utc).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
+    return datetime.fromtimestamp(exp, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _install_default_handler() -> None:
