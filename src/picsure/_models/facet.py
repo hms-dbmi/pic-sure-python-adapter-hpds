@@ -95,7 +95,7 @@ class FacetSet:
     """Mutable container for facet selections.
 
     Created by ``Session.facets()``. Add selections with ``add()``,
-    then pass the FacetSet to ``Session.search()`` to narrow results.
+    then pass the FacetSet to ``Session.dictionarySearch()`` to narrow results.
     """
 
     def __init__(self, available: list[FacetCategory]) -> None:

@@ -129,8 +129,8 @@ class Session:
             f"'{name}' does not match any resource. Available resources: {valid}."
         )
 
-    @timed("session.search")
-    def search(
+    @timed("session.dictionarySearch")
+    def dictionarySearch(  # noqa: N802
         self,
         term: str = "",
         *,
@@ -148,8 +148,8 @@ class Session:
             DataFrame of matching data dictionary entries.
 
         Example:
-            >>> df = session.search("blood pressure")
-            >>> df_filtered = session.search("sex", facets=my_facets)
+            >>> df = session.dictionarySearch("blood pressure")
+            >>> df_filtered = session.dictionarySearch("sex", facets=my_facets)
         """
         from picsure._services.search import search as _search
 
@@ -172,7 +172,7 @@ class Session:
         """Fetch available facet categories and return a FacetSet.
 
         The returned FacetSet starts with no selections. Use ``add()`` to
-        select values, then pass it to ``search()`` to narrow results.
+        select values, then pass it to ``dictionarySearch()`` to narrow results.
 
         Args:
             term: Optional search term. When supplied, each returned
@@ -191,7 +191,7 @@ class Session:
         Example:
             >>> fs = session.facets()
             >>> fs.add("dataset_id", "phs000007")
-            >>> df = session.search("sex", facets=fs)
+            >>> df = session.dictionarySearch("sex", facets=fs)
             >>> # Recompute with contextual counts:
             >>> refreshed = session.facets(term="sex", facets=fs)
         """

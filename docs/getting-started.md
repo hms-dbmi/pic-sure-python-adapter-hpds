@@ -38,7 +38,7 @@ use `with` so the underlying HTTP connection pool is released promptly:
 
 ```python
 with picsure.connect(platform="BDC Authorized", token="your-api-token") as session:
-    df = session.search("blood pressure")
+    df = session.dictionarySearch("blood pressure")
     # connection released on exit
 ```
 
@@ -51,7 +51,7 @@ repeatedly or lives inside a long-running process. You can also call
 
 ```python
 # Search for variables containing "blood pressure"
-results = session.search("blood pressure")
+results = session.dictionarySearch("blood pressure")
 results.head()
 ```
 
@@ -69,7 +69,7 @@ facets = session.facets()
 facets.add("dataset_id", "phs000007")
 
 # Search with facets
-fhs_results = session.search("blood pressure", facets=facets)
+fhs_results = session.dictionarySearch("blood pressure", facets=facets)
 ```
 
 ## Step 3: Build a Query
