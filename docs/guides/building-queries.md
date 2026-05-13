@@ -17,24 +17,24 @@ PIC-SURE supports four types of clauses:
 ## Creating Clauses
 
 ```python
-from picsure import createClause, ClauseType
+from picsure import createSubQuery, ClauseType
 
 # Categorical filter
-sex = createClause(
+sex = createSubQuery(
     "\\phs1\\pht1\\phv1\\sex\\",
     type=ClauseType.FILTER,
     categories="Male",
 )
 
 # Multiple categorical values
-asthma = createClause(
+asthma = createSubQuery(
     "\\phs1\\pht2\\phv3\\asthma\\",
     type=ClauseType.FILTER,
     categories=["Yes, recent", "Yes, since childhood"],
 )
 
 # Numeric range filter
-age = createClause(
+age = createSubQuery(
     "\\phs1\\pht1\\phv5\\age\\",
     type=ClauseType.FILTER,
     min=40,
@@ -42,20 +42,20 @@ age = createClause(
 )
 
 # Min only (no upper bound)
-age_over_40 = createClause(
+age_over_40 = createSubQuery(
     "\\phs1\\pht1\\phv5\\age\\",
     type=ClauseType.FILTER,
     min=40,
 )
 
 # Any record of a variable
-has_sleep_data = createClause(
+has_sleep_data = createSubQuery(
     "\\phs1\\pht3\\phv8\\trouble_sleeping\\",
     type=ClauseType.ANYRECORD,
 )
 
 # Select for output without filtering
-include_height = createClause(
+include_height = createSubQuery(
     "\\phs1\\pht1\\phv10\\height\\",
     type=ClauseType.SELECT,
 )
@@ -63,19 +63,19 @@ include_height = createClause(
 
 ## Combining Clauses with AND/OR
 
-Use `buildClauseGroup` to combine clauses:
+Use `buildQuery` to combine clauses:
 
 ```python
-from picsure import buildClauseGroup, GroupOperator
+from picsure import buildQuery, GroupOperator
 
 # AND: all conditions must be true
-males_over_40 = buildClauseGroup(
+males_over_40 = buildQuery(
     [sex, age_over_40],
     operator=GroupOperator.AND,
 )
 
 # OR: at least one condition must be true
-copd_or_asthma = buildClauseGroup(
+copd_or_asthma = buildQuery(
     [copd, asthma],
     operator=GroupOperator.OR,
 )
@@ -87,7 +87,7 @@ Groups can contain other groups for complex logic:
 
 ```python
 # Find males over 40 with COPD or asthma
-full_query = buildClauseGroup(
+full_query = buildQuery(
     [males_over_40, copd_or_asthma],
     operator=GroupOperator.AND,
 )
@@ -106,19 +106,19 @@ COPD/asthma or sleep problems:
 
 ```python
 import picsure
-from picsure import createClause, buildClauseGroup, ClauseType, GroupOperator
+from picsure import createSubQuery, buildQuery, ClauseType, GroupOperator
 
-sex_filter = createClause("\\phs1\\sex\\", type=ClauseType.FILTER, categories="Male")
-age_filter = createClause("\\phs1\\age\\", type=ClauseType.FILTER, min=40)
-copd_filter = createClause("\\phs1\\copd\\", type=ClauseType.FILTER, categories="Yes")
-asthma_filter = createClause("\\phs1\\asthma\\", type=ClauseType.FILTER, categories="Yes")
-sleep_filter = createClause("\\phs1\\trouble_sleeping\\", type=ClauseType.ANYRECORD)
-insomnia_filter = createClause("\\phs1\\insomnia\\", type=ClauseType.ANYRECORD)
+sex_filter = createSubQuery("\\phs1\\sex\\", type=ClauseType.FILTER, categories="Male")
+age_filter = createSubQuery("\\phs1\\age\\", type=ClauseType.FILTER, min=40)
+copd_filter = createSubQuery("\\phs1\\copd\\", type=ClauseType.FILTER, categories="Yes")
+asthma_filter = createSubQuery("\\phs1\\asthma\\", type=ClauseType.FILTER, categories="Yes")
+sleep_filter = createSubQuery("\\phs1\\trouble_sleeping\\", type=ClauseType.ANYRECORD)
+insomnia_filter = createSubQuery("\\phs1\\insomnia\\", type=ClauseType.ANYRECORD)
 
-copd_or_asthma = buildClauseGroup([copd_filter, asthma_filter], operator=GroupOperator.OR)
-sleep_or_insomnia = buildClauseGroup([sleep_filter, insomnia_filter], operator=GroupOperator.OR)
+copd_or_asthma = buildQuery([copd_filter, asthma_filter], operator=GroupOperator.OR)
+sleep_or_insomnia = buildQuery([sleep_filter, insomnia_filter], operator=GroupOperator.OR)
 
-full_query = buildClauseGroup(
+full_query = buildQuery(
     [sex_filter, age_filter, copd_or_asthma, sleep_or_insomnia],
     operator=GroupOperator.AND,
 )
@@ -131,13 +131,13 @@ error messages:
 
 ```python
 # ANYRECORD with categories raises an error
-createClause("\\path\\", type=ClauseType.ANYRECORD, categories="Male")
+createSubQuery("\\path\\", type=ClauseType.ANYRECORD, categories="Male")
 # PicSureValidationError: ANYRECORD clauses cannot have categories.
 # ANYRECORD matches the presence of any value for the variable.
 # Remove the categories argument.
 
 # FILTER without any criteria raises an error
-createClause("\\path\\", type=ClauseType.FILTER)
+createSubQuery("\\path\\", type=ClauseType.FILTER)
 # PicSureValidationError: FILTER clauses require at least one of:
 # categories, min, or max.
 ```

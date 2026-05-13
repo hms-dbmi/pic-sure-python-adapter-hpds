@@ -5,7 +5,7 @@ from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure.errors import PicSureValidationError
 
 
-def createClause(  # noqa: N802
+def createSubQuery(  # noqa: N802
     keys: str | list[str],
     type: ClauseType,  # noqa: A002
     categories: str | list[str] | None = None,
@@ -24,20 +24,20 @@ def createClause(  # noqa: N802
         max: For FILTER clauses on numeric variables, maximum value.
 
     Returns:
-        A Clause that can be used in ``buildClauseGroup()`` or
+        A Clause that can be used in ``buildQuery()`` or
         passed directly to ``Session.runQuery()``.
 
     Raises:
         PicSureValidationError: If the clause configuration is invalid.
 
     Example:
-        >>> from picsure import createClause, ClauseType
-        >>> sex = createClause(
+        >>> from picsure import createSubQuery, ClauseType
+        >>> sex = createSubQuery(
         ...     r"\\phs1\\pht1\\phv1\\sex\\",
         ...     type=ClauseType.FILTER,
         ...     categories="Male",
         ... )
-        >>> age = createClause(
+        >>> age = createSubQuery(
         ...     r"\\phs1\\pht1\\phv5\\age\\",
         ...     type=ClauseType.FILTER,
         ...     min=40.0,
@@ -99,7 +99,7 @@ def createClause(  # noqa: N802
     )
 
 
-def buildClauseGroup(  # noqa: N802
+def buildQuery(  # noqa: N802
     clauses: list[Clause | ClauseGroup],
     operator: GroupOperator = GroupOperator.AND,
 ) -> ClauseGroup:
@@ -118,8 +118,8 @@ def buildClauseGroup(  # noqa: N802
         PicSureValidationError: If the clause list is empty.
 
     Example:
-        >>> from picsure import buildClauseGroup, GroupOperator
-        >>> group = buildClauseGroup(
+        >>> from picsure import buildQuery, GroupOperator
+        >>> group = buildQuery(
         ...     [sex_filter, age_filter],
         ...     operator=GroupOperator.AND,
         ... )

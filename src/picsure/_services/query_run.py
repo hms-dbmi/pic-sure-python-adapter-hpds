@@ -55,7 +55,7 @@ def run_query(
     Args:
         client: Authenticated HTTP client.
         resource_uuid: The resource to query.
-        query: A Clause or ClauseGroup built with createClause/buildClauseGroup.
+        query: A Clause or ClauseGroup built with createSubQuery/buildQuery.
         query_type: A :class:`QueryType` member (e.g. ``QueryType.COUNT``)
             or one of the strings ``"count"``, ``"participant"``,
             ``"timestamp"``, ``"cross_count"``.
@@ -137,7 +137,7 @@ def build_query_body(
     if not isinstance(query, (Clause, ClauseGroup)):
         raise PicSureValidationError(
             "Query must be a Clause or ClauseGroup. "
-            "Use createClause() or buildClauseGroup() to construct one."
+            "Use createSubQuery() or buildQuery() to construct one."
         )
     select_paths = query.select_paths()
     phenotypic = _phenotypic_clause(query)

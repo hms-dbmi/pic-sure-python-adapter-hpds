@@ -9,7 +9,7 @@ from picsure.errors import PicSureValidationError
 class ClauseType(Enum):
     """Type of filter clause in a PIC-SURE query.
 
-    Use these constants with ``picsure.createClause()``:
+    Use these constants with ``picsure.createSubQuery()``:
 
     - ``FILTER`` — filter by categorical values or numeric range
     - ``ANYRECORD`` — match records where the concept path *or any
@@ -37,9 +37,9 @@ _PHENOTYPIC_FILTER_TYPE: dict[ClauseType, str] = {
 class Clause:
     """A single filter clause in a PIC-SURE query.
 
-    Created by ``picsure.createClause()``. Can be passed directly to
+    Created by ``picsure.createSubQuery()``. Can be passed directly to
     ``Session.runQuery()`` or combined with other clauses via
-    ``picsure.buildClauseGroup()``.
+    ``picsure.buildQuery()``.
 
     **Wire format.** :meth:`to_query_json` emits a v3 ``PhenotypicFilter``
     leaf (or an ``OR`` ``PhenotypicSubquery`` of leaves for multi-key

@@ -10,7 +10,7 @@ from picsure._models.query import Query
 from picsure._models.query_type import QueryType
 from picsure._models.session import Session
 from picsure._services.connect import connect
-from picsure._services.query_build import buildClauseGroup, createClause
+from picsure._services.query_build import buildQuery, createSubQuery
 from picsure._transport.platforms import Platform
 from picsure.errors import (
     PicSureAuthError,
@@ -34,9 +34,9 @@ def set_dev_mode(enabled: bool) -> None:
 
 
 __all__ = [
-    "buildClauseGroup",
+    "buildQuery",
     "connect",
-    "createClause",
+    "createSubQuery",
     "set_dev_mode",
     "Clause",
     "ClauseGroup",

@@ -22,7 +22,7 @@ class GroupOperator(Enum):
 class ClauseGroup:
     """A group of clauses combined with AND or OR.
 
-    Created by ``picsure.buildClauseGroup()``. Can contain both
+    Created by ``picsure.buildQuery()``. Can contain both
     ``Clause`` and nested ``ClauseGroup`` objects for arbitrarily
     deep nesting.
 

@@ -163,7 +163,7 @@ def load_query(
     Returns:
         A :class:`Clause` or :class:`ClauseGroup` that can be passed
         directly to :meth:`Session.runQuery`, :meth:`Session.exportAsPFB`,
-        or composed with :func:`buildClauseGroup`.
+        or composed with :func:`buildQuery`.
 
     Raises:
         PicSureValidationError: If the ID is blank, the query was not

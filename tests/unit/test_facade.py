@@ -28,8 +28,8 @@ class TestPublicFacade:
             "Platform",
             "Session",
             "FacetSet",
-            "createClause",
-            "buildClauseGroup",
+            "createSubQuery",
+            "buildQuery",
             "ClauseType",
             "GroupOperator",
             "Clause",
@@ -47,10 +47,10 @@ class TestPublicFacade:
         assert picsure.FacetSet is not None
 
     def test_create_clause_is_callable(self):
-        assert callable(picsure.createClause)
+        assert callable(picsure.createSubQuery)
 
     def test_build_clause_group_is_callable(self):
-        assert callable(picsure.buildClauseGroup)
+        assert callable(picsure.buildQuery)
 
     def test_clause_type_is_importable(self):
         assert picsure.ClauseType is not None

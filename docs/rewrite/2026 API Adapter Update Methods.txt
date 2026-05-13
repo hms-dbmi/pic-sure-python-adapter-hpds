@@ -285,7 +285,7 @@ Product
    1. User goals and workflows
 As a user, I would like to create filters of various types (anyrecordof, filter, select, or require) and use these filters to create groups combined with AND or OR. I would like to review my query. 
    2. Function list and behavior
-PICSURE.createClause()
+PICSURE.createSubQuery()
    * Enables a user to create a filter
    * Inputs[p]:
    * keys: required, string or list of concept paths to use in the filter
@@ -295,10 +295,10 @@ PICSURE.createClause()
    * Outputs:
    * Returns a query object with one clause[r]
    * Examples:
-   * heartClause = PICSURE.createClause(‘heart disease’, ‘anyrecord’, ‘XXXX’, ‘min’)
+   * heartClause = PICSURE.createSubQuery(‘heart disease’, ‘anyrecord’, ‘XXXX’, ‘min’)
 
 
-PICSURE.buildClauseGroup()
+PICSURE.buildQuery()
    * Enables a user to create a group of filters and specify root node to combine filters 
    * Inputs[s]:
    * filters: required, list of clauses created
@@ -306,8 +306,8 @@ PICSURE.buildClauseGroup()
    * Outputs:
    * Returns a query object with a group of clauses
    * Examples:
-   * heartAgeWeightGroup = PICSURE.buildClauseGroup([heartClause, ageClause, weightClause], “AND”)
-   * adverseEventGroup = PICSURE.buildClauseGroup([deathClause, hospitalClause], “or”) [t]
+   * heartAgeWeightGroup = PICSURE.buildQuery([heartClause, ageClause, weightClause], “AND”)
+   * adverseEventGroup = PICSURE.buildQuery([deathClause, hospitalClause], “or”) [t]
 
 
 We should have a public pruning function here,
@@ -349,11 +349,11 @@ sleep_filter = picsure.addClause(“\pht1\pht3\phv8\trouble_sleeping\”, type =
 insomnia_filter = picsure.addClause(“\phs1\pht3\phv9\insomnia\”, type = “ANYRECORD”)
 
 
-copd_or_asthma = picsure.buildClauseGroup([copd_filter, asthma_filter], root = “OR”)
-sleep_or_insomnia = picsure.buildClauseGroup([sleep_filter, insomnia_filter], root = “OR”)
+copd_or_asthma = picsure.buildQuery([copd_filter, asthma_filter], root = “OR”)
+sleep_or_insomnia = picsure.buildQuery([sleep_filter, insomnia_filter], root = “OR”)
 
 
-full_query = picsure.buildClauseGroup([sex_filter, age_filter, copd_or_asthma, sleep_or_insomnia], root = “AND”)
+full_query = picsure.buildQuery([sex_filter, age_filter, copd_or_asthma, sleep_or_insomnia], root = “AND”)
 
 
 Results_df = picsure.runQuery(sex_filter) # a simple query for all males

@@ -250,7 +250,7 @@ class Session:
         """Execute a query and return the result.
 
         Args:
-            query: A Clause or ClauseGroup built with createClause/buildClauseGroup.
+            query: A Clause or ClauseGroup built with createSubQuery/buildQuery.
             type: Result type. Pass either a :class:`QueryType` member
                 (e.g. ``QueryType.COUNT``) or one of the strings:
 
@@ -400,7 +400,7 @@ class Session:
 
         Returns:
             A Clause or ClauseGroup that can be passed back into runQuery,
-            exportAsPFB, or composed with buildClauseGroup.
+            exportAsPFB, or composed with buildQuery.
 
         Raises:
             PicSureValidationError: If the ID is empty, the query was not

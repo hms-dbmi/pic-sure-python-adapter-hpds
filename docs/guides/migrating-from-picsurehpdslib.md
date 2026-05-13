@@ -29,11 +29,11 @@ One package replaces both the client and the adapter.
 | `PicSureHpdsLib.Adapter(conn)` | *(not needed — `connect` returns a Session directly)* |
 | `adapter.useResource(uuid)` | `session.setResourceID(uuid)` |
 | `resource.dictionary().find("sex")` | `session.searchDictionary("sex")` |
-| `resource.query()` | `picsure.createClause(...)` |
-| `query.filter().add(path, values)` | `picsure.createClause(path, type=ClauseType.FILTER, categories=values)` |
-| `query.require().add(path)` | `picsure.createClause(path, type=ClauseType.REQUIRE)` |
-| `query.anyRecordOf().add(path)` | `picsure.createClause(path, type=ClauseType.ANYRECORD)` |
-| `query.select().add(path)` | `picsure.createClause(path, type=ClauseType.SELECT)` |
+| `resource.query()` | `picsure.createSubQuery(...)` |
+| `query.filter().add(path, values)` | `picsure.createSubQuery(path, type=ClauseType.FILTER, categories=values)` |
+| `query.require().add(path)` | `picsure.createSubQuery(path, type=ClauseType.REQUIRE)` |
+| `query.anyRecordOf().add(path)` | `picsure.createSubQuery(path, type=ClauseType.ANYRECORD)` |
+| `query.select().add(path)` | `picsure.createSubQuery(path, type=ClauseType.SELECT)` |
 | `query.getCount()` | `session.runQuery(query, type="count")` |
 | `query.getResults()` | `session.runQuery(query, type="participant")` |
 | `query.getResultsDataFrame()` | `session.runQuery(query, type="participant")` |
@@ -98,13 +98,13 @@ query.require().add("\\phs1\\bmi\\")
 **New:**
 
 ```python
-from picsure import createClause, buildClauseGroup, ClauseType, GroupOperator
+from picsure import createSubQuery, buildQuery, ClauseType, GroupOperator
 
-sex = createClause("\\phs1\\sex\\", type=ClauseType.FILTER, categories="Male")
-age = createClause("\\phs1\\age\\", type=ClauseType.FILTER, min=40)
-bmi = createClause("\\phs1\\bmi\\", type=ClauseType.REQUIRE)
+sex = createSubQuery("\\phs1\\sex\\", type=ClauseType.FILTER, categories="Male")
+age = createSubQuery("\\phs1\\age\\", type=ClauseType.FILTER, min=40)
+bmi = createSubQuery("\\phs1\\bmi\\", type=ClauseType.REQUIRE)
 
-query = buildClauseGroup([sex, age, bmi], operator=GroupOperator.AND)
+query = buildQuery([sex, age, bmi], operator=GroupOperator.AND)
 ```
 
 ### Running a Query

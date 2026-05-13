@@ -23,8 +23,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `FacetSet` for building facet selections with validation.
 - Search result deduplication by concept path.
 - Zero-result searches return empty DataFrames with a stderr note.
-- `picsure.createClause()` to build individual filter clauses (FILTER, ANYRECORD, SELECT, REQUIRE).
-- `picsure.buildClauseGroup()` to combine clauses with AND/OR logic, supporting arbitrary nesting.
+- `picsure.createSubQuery()` to build individual filter clauses (FILTER, ANYRECORD, SELECT, REQUIRE).
+- `picsure.buildQuery()` to combine clauses with AND/OR logic, supporting arbitrary nesting.
 - `ClauseType` and `GroupOperator` enums for type-safe clause and group construction.
 - `Clause`, `ClauseGroup`, and `Query` types with `to_query_json()` serialization.
 - `CountResult` dataclass exposing `value`, `margin`, `cap`, `raw`, and an `obfuscated` property for count query responses.
@@ -52,7 +52,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `Session.runQuery(..., type="cross_count")` now returns a `dict[str, CountResult]` keyed by concept path instead of a DataFrame.
 - `PicSureClient` now strips leading/trailing whitespace from the bearer token; a whitespace-only token is treated as anonymous (no `Authorization` header, `request-source: Open`).
 - `Session.exportAsPFB()` / `picsure._services.export.export_pfb` now use the async flow (`POST /picsure/v3/query` → poll `/query/{id}/status` → `POST /query/{id}/result`) rather than `/query/sync`. Response bytes are streamed directly to disk. Polling uses exponential backoff (1s, 2s, 4s, … capped at 60s per poll) and fails with `PicSureConnectionError` after 10 minutes of cumulative waiting. The output file is written atomically (`.part` staging file + rename on success).
-- `createClause` now raises `PicSureValidationError` for additional invalid combinations:
+- `createSubQuery` now raises `PicSureValidationError` for additional invalid combinations:
   FILTER clauses with both `categories` and `min`/`max`; REQUIRE or SELECT clauses
   with any of `categories`/`min`/`max`; empty keys lists. These were previously
   silently accepted and the extra arguments discarded (or rejected downstream by
@@ -62,7 +62,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   symmetric with `Clause.to_query_json()`, which has always raised on SELECT.
   `ClauseGroup.select_paths()` and `build_query_body()` continue to handle SELECT
   extraction at the top level; inline SELECTs inside a group are the error case.
-- `createClause` now defensively copies list arguments (`keys`, `categories`), so
+- `createSubQuery` now defensively copies list arguments (`keys`, `categories`), so
   mutating the caller's lists after construction does not affect the resulting
   `Clause`.
 - Dependency ranges tightened to upper-bounded majors (`httpx>=0.27,<1`, `pandas>=2,<3`) to avoid silent breakage on major releases.

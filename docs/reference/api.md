@@ -15,9 +15,9 @@ Complete reference for all public functions, classes, and types in the
 
 ## Query Construction
 
-::: picsure.createClause
+::: picsure.createSubQuery
 
-::: picsure.buildClauseGroup
+::: picsure.buildQuery
 
 ## Types
 
