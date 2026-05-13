@@ -1273,10 +1273,32 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#picsure.Session.exportPFB" class="md-nav__link">
+  <a href="#picsure.Session.runQueryByID" class="md-nav__link">
     <span class="md-ellipsis">
       
-        exportPFB
+        runQueryByID
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#picsure.Session.loadQueryByID" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        loadQueryByID
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#picsure.Session.exportAsPFB" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        exportAsPFB
       
     </span>
   </a>
@@ -2215,10 +2237,32 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#picsure.Session.exportPFB" class="md-nav__link">
+  <a href="#picsure.Session.runQueryByID" class="md-nav__link">
     <span class="md-ellipsis">
       
-        exportPFB
+        runQueryByID
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#picsure.Session.loadQueryByID" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        loadQueryByID
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#picsure.Session.exportAsPFB" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        exportAsPFB
       
     </span>
   </a>
@@ -4912,12 +4956,347 @@ df = session.runQuery(my_query, type="participant")</p>
 <div class="doc doc-object doc-function">
 
 
-<h3 id="picsure.Session.exportPFB" class="doc doc-heading">
-            <span class="doc doc-object-name doc-function-name">exportPFB</span>
+<h3 id="picsure.Session.runQueryByID" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">runQueryByID</span>
 
 
-<a href="#picsure.Session.exportPFB" class="headerlink" title="Permanent link">&para;</a></h3>
-<div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">exportPFB</span><span class="p">(</span><span class="n">query</span><span class="p">:</span> <span class="n">Query</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span>
+<a href="#picsure.Session.runQueryByID" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">runQueryByID</span><span class="p">(</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">query_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="nb">type</span><span class="p">:</span> <span class="n">QueryType</span> <span class="o">|</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;count&quot;</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CountResult</span> <span class="o">|</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">CountResult</span><span class="p">]</span> <span class="o">|</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Load a saved query by ID and execute it in one call.</p>
+<p>Convenience wrapper around :meth:<code>loadQueryByID</code> + :meth:<code>runQuery</code>.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>query_id</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The UUID string of a previous PIC-SURE query.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>type</code>
+            </td>
+            <td>
+                  <code><span title="picsure._models.query_type.QueryType">QueryType</span> | <span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Result type, as accepted by :meth:<code>runQuery</code> —
+<code>"count"</code> (default), <code>"cross_count"</code>, <code>"participant"</code>,
+or <code>"timestamp"</code> (or the equivalent :class:<code>QueryType</code>
+member).</p>
+              </div>
+            </td>
+            <td>
+                  <code>&#39;count&#39;</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+<th>Name</th>          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+<td><code>A</code></td>            <td>
+                  <code><a class="autorefs autorefs-internal" title="CountResult
+
+
+  
+      dataclass
+   (picsure._models.count_result.CountResult)" href="#picsure.CountResult">CountResult</a> | <span title="dict">dict</span>[<span title="str">str</span>, <a class="autorefs autorefs-internal" title="CountResult
+
+
+  
+      dataclass
+   (picsure._models.count_result.CountResult)" href="#picsure.CountResult">CountResult</a>] | <span title="pandas.DataFrame">DataFrame</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>class:<code>CountResult</code>, <code>dict[str, CountResult]</code>, or</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td></td>            <td>
+                  <code><a class="autorefs autorefs-internal" title="CountResult
+
+
+  
+      dataclass
+   (picsure._models.count_result.CountResult)" href="#picsure.CountResult">CountResult</a> | <span title="dict">dict</span>[<span title="str">str</span>, <a class="autorefs autorefs-internal" title="CountResult
+
+
+  
+      dataclass
+   (picsure._models.count_result.CountResult)" href="#picsure.CountResult">CountResult</a>] | <span title="pandas.DataFrame">DataFrame</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>class:<code>pandas.DataFrame</code> depending on <code>type</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="PicSureValidationError (picsure.errors.PicSureValidationError)" href="#picsure.PicSureValidationError">PicSureValidationError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the ID is blank, the saved query
+cannot be loaded, or the query type is invalid.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="PicSureAuthError (picsure.errors.PicSureAuthError)" href="#picsure.PicSureAuthError">PicSureAuthError</a> / <a class="autorefs autorefs-internal" title="PicSureConnectionError (picsure.errors.PicSureConnectionError)" href="#picsure.PicSureConnectionError">PicSureConnectionError</a> / <a class="autorefs autorefs-internal" title="PicSureQueryError (picsure.errors.PicSureQueryError)" href="#picsure.PicSureQueryError">PicSureQueryError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>As raised by the underlying load and execute calls.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<details class="example" open>
+  <summary>Example</summary>
+  <blockquote>
+<blockquote>
+<blockquote>
+<p>count = session.runQueryByID(
+...     "11111111-2222-3333-4444-555555555555", type="count"
+... )
+df = session.runQueryByID("XXXXX-ID", type="participant")</p>
+</blockquote>
+</blockquote>
+</blockquote>
+</details>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="picsure.Session.loadQueryByID" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">loadQueryByID</span>
+
+
+<a href="#picsure.Session.loadQueryByID" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">loadQueryByID</span><span class="p">(</span><span class="n">query_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Query</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Load a previously-saved PIC-SURE query by its query ID.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>query_id</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The UUID string of a previous query.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="Query
+
+
+  
+      module-attribute
+   (picsure._models.query.Query)" href="#picsure.Query">Query</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>A Clause or ClauseGroup that can be passed back into runQuery,</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="Query
+
+
+  
+      module-attribute
+   (picsure._models.query.Query)" href="#picsure.Query">Query</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>exportAsPFB, or composed with buildClauseGroup.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="PicSureValidationError (picsure.errors.PicSureValidationError)" href="#picsure.PicSureValidationError">PicSureValidationError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the ID is empty, the query was not
+found, or the saved query uses features this adapter cannot
+yet represent (NOT clauses, genomic filters).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="PicSureAuthError (picsure.errors.PicSureAuthError)" href="#picsure.PicSureAuthError">PicSureAuthError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>On 401 / 403.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="PicSureConnectionError (picsure.errors.PicSureConnectionError)" href="#picsure.PicSureConnectionError">PicSureConnectionError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the server is unreachable.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="PicSureQueryError (picsure.errors.PicSureQueryError)" href="#picsure.PicSureQueryError">PicSureQueryError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the response cannot be parsed.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<details class="example" open>
+  <summary>Example</summary>
+  <blockquote>
+<blockquote>
+<blockquote>
+<p>previous = session.loadQueryByID("11111111-2222-3333-4444-555555555555")
+count = session.runQuery(previous, type="count")</p>
+</blockquote>
+</blockquote>
+</blockquote>
+</details>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="picsure.Session.exportAsPFB" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">exportAsPFB</span>
+
+
+<a href="#picsure.Session.exportAsPFB" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">exportAsPFB</span><span class="p">(</span><span class="n">query</span><span class="p">:</span> <span class="n">Query</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span>
 </code></pre></div>
 
     <div class="doc doc-contents ">
