@@ -840,7 +840,7 @@ PIC-SURE instances.</p>
 <p><code>Session</code> is a context manager. In scripts or long-running processes,
 use <code>with</code> so the underlying HTTP connection pool is released promptly:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="k">with</span> <span class="n">picsure</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">platform</span><span class="o">=</span><span class="s2">&quot;BDC Authorized&quot;</span><span class="p">,</span> <span class="n">token</span><span class="o">=</span><span class="s2">&quot;your-api-token&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">session</span><span class="p">:</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">df</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">dictionarySearch</span><span class="p">(</span><span class="s2">&quot;blood pressure&quot;</span><span class="p">)</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">df</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">searchDictionary</span><span class="p">(</span><span class="s2">&quot;blood pressure&quot;</span><span class="p">)</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="c1"># connection released on exit</span>
 </code></pre></div>
 <p>This is not required in short-lived notebook cells where the kernel
@@ -849,7 +849,7 @@ repeatedly or lives inside a long-running process. You can also call
 <code>session.close()</code> directly.</p>
 <h2 id="step-2-search-the-data-dictionary">Step 2: Search the Data Dictionary<a class="headerlink" href="#step-2-search-the-data-dictionary" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Search for variables containing &quot;blood pressure&quot;</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">results</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">dictionarySearch</span><span class="p">(</span><span class="s2">&quot;blood pressure&quot;</span><span class="p">)</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">results</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">searchDictionary</span><span class="p">(</span><span class="s2">&quot;blood pressure&quot;</span><span class="p">)</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">results</span><span class="o">.</span><span class="n">head</span><span class="p">()</span>
 </code></pre></div>
 <p>The result is a pandas DataFrame with columns like <code>conceptPath</code>, <code>name</code>,
@@ -863,7 +863,7 @@ repeatedly or lives inside a long-running process. You can also call
 <a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="n">facets</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;dataset_id&quot;</span><span class="p">,</span> <span class="s2">&quot;phs000007&quot;</span><span class="p">)</span>
 <a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>
 <a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="c1"># Search with facets</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="n">fhs_results</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">dictionarySearch</span><span class="p">(</span><span class="s2">&quot;blood pressure&quot;</span><span class="p">,</span> <span class="n">facets</span><span class="o">=</span><span class="n">facets</span><span class="p">)</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="n">fhs_results</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">searchDictionary</span><span class="p">(</span><span class="s2">&quot;blood pressure&quot;</span><span class="p">,</span> <span class="n">facets</span><span class="o">=</span><span class="n">facets</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="step-3-build-a-query">Step 3: Build a Query<a class="headerlink" href="#step-3-build-a-query" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">picsure</span><span class="w"> </span><span class="kn">import</span> <span class="n">ClauseType</span><span class="p">,</span> <span class="n">GroupOperator</span>

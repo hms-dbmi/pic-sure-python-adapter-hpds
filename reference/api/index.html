@@ -3949,7 +3949,7 @@ SELECT paths via :meth:<code>select_paths</code> before calling
 
         <p>Mutable container for facet selections.</p>
 <p>Created by <code>Session.facets()</code>. Add selections with <code>add()</code>,
-then pass the FacetSet to <code>Session.dictionarySearch()</code> to narrow results.</p>
+then pass the FacetSet to <code>Session.searchDictionary()</code> to narrow results.</p>
 
 
 
@@ -4410,7 +4410,7 @@ requests so every result comes back in one page.</p>
 
         <p>Fetch available facet categories and return a FacetSet.</p>
 <p>The returned FacetSet starts with no selections. Use <code>add()</code> to
-select values, then pass it to <code>dictionarySearch()</code> to narrow results.</p>
+select values, then pass it to <code>searchDictionary()</code> to narrow results.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -4515,7 +4515,7 @@ selections — matching the UI sidebar's behavior.</p>
 <blockquote>
 <p>fs = session.facets()
 fs.add("dataset_id", "phs000007")
-df = session.dictionarySearch("sex", facets=fs)</p>
+df = session.searchDictionary("sex", facets=fs)</p>
 <h4 id="picsure.Session.facets--recompute-with-contextual-counts">Recompute with contextual counts:<a class="headerlink" href="#picsure.Session.facets--recompute-with-contextual-counts" title="Permanent link">&para;</a></h4>
 <p>refreshed = session.facets(term="sex", facets=fs)</p>
 </blockquote>
