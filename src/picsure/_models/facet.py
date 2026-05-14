@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from typing import cast
 
@@ -64,6 +65,19 @@ class Facet:
             )
 
         return cast(Facet, facets[0])
+
+    def walk(self) -> Iterator[Facet]:
+        """Yield ``self`` and every descendant in depth-first order."""
+        yield from _walk_tree([self])
+
+
+def _walk_tree(roots: Iterable[Facet]) -> Iterator[Facet]:
+    """Iterative DFS over a list of Facet roots, preserving sibling order."""
+    stack: list[Facet] = list(reversed(list(roots)))
+    while stack:
+        node = stack.pop()
+        yield node
+        stack.extend(reversed(node.children))
 
 
 @dataclass(frozen=True)
@@ -178,10 +192,4 @@ class FacetSet:
 
 def _flatten_options_by_value(options: list[Facet]) -> dict[str, Facet]:
     """Return a map of value → Facet covering the tree of options."""
-    result: dict[str, Facet] = {}
-    stack: list[Facet] = list(options)
-    while stack:
-        opt = stack.pop()
-        result[opt.value] = opt
-        stack.extend(opt.children)
-    return result
+    return {opt.value: opt for opt in _walk_tree(options)}

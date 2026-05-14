@@ -9,6 +9,7 @@ from picsure._dev.reporting import events_to_df, stats_to_df
 from picsure._dev.timing import timed
 from picsure._models.query_type import QueryType
 from picsure._models.resource import Resource
+from picsure.errors import PicSureValidationError
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -98,8 +99,6 @@ class Session:
             PicSureValidationError: If the UUID does not match any
                 resource on this connection.
         """
-        from picsure.errors import PicSureValidationError
-
         known_uuids = {r.uuid for r in self._resources}
         if known_uuids and resource_uuid not in known_uuids:
             raise PicSureValidationError(
@@ -117,8 +116,6 @@ class Session:
         Raises:
             PicSureValidationError: If no resource matches the given name.
         """
-        from picsure.errors import PicSureValidationError
-
         for r in self._resources:
             if r.name == name:
                 self._resource_uuid = r.uuid
@@ -306,8 +303,6 @@ class Session:
                 open-access platform.
         """
         if self._use_legacy_query_path:
-            from picsure.errors import PicSureValidationError
-
             raise PicSureValidationError(
                 "PFB export is not supported on open-access platforms. "
                 "Connect with an authorized platform (e.g. "
@@ -460,8 +455,6 @@ class Session:
         if self._resource_uuid is not None:
             return self._resource_uuid
         if not self._resources:
-            from picsure.errors import PicSureValidationError
-
             raise PicSureValidationError(
                 "No resources are available on this connection. "
                 "Check with your administrator."

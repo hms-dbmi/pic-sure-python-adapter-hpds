@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from picsure._models.clause import Clause, ClauseType
+from picsure._models.clause import CLAUSE_TYPE_BY_WIRE_NAME, Clause, ClauseType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
+from picsure._models.dictionary import coerce_float
+from picsure._services._errors import rate_limit_message
 from picsure._transport.errors import (
     TransportAuthenticationError,
     TransportError,
@@ -21,13 +23,6 @@ from picsure.errors import (
 
 if TYPE_CHECKING:
     from picsure._transport.client import PicSureClient
-
-
-_FILTER_TYPE_TO_CLAUSE: dict[str, ClauseType] = {
-    "FILTER": ClauseType.FILTER,
-    "REQUIRED": ClauseType.REQUIRE,
-    "ANY_RECORD_OF": ClauseType.ANYRECORD,
-}
 
 
 def _parse_phenotypic(node: object) -> Clause | ClauseGroup:
@@ -65,15 +60,15 @@ def _parse_phenotypic(node: object) -> Clause | ClauseGroup:
 
 def _parse_leaf(node: dict[str, object]) -> Clause:
     raw_type = node.get("phenotypicFilterType")
-    if not isinstance(raw_type, str) or raw_type not in _FILTER_TYPE_TO_CLAUSE:
+    if not isinstance(raw_type, str) or raw_type not in CLAUSE_TYPE_BY_WIRE_NAME:
         raise PicSureQueryError(
             f"Unknown phenotypicFilterType: {raw_type!r}. "
-            f"Expected one of: {sorted(_FILTER_TYPE_TO_CLAUSE.keys())}."
+            f"Expected one of: {sorted(CLAUSE_TYPE_BY_WIRE_NAME.keys())}."
         )
     concept_path = node.get("conceptPath")
     if not isinstance(concept_path, str):
         raise PicSureQueryError("Leaf phenotypic clause missing 'conceptPath' string.")
-    clause_type = _FILTER_TYPE_TO_CLAUSE[raw_type]
+    clause_type = CLAUSE_TYPE_BY_WIRE_NAME[raw_type]
     categories: list[str] | None = None
     cmin: float | None = None
     cmax: float | None = None
@@ -81,12 +76,8 @@ def _parse_leaf(node: dict[str, object]) -> Clause:
         values = node.get("values")
         if isinstance(values, list) and values:
             categories = [str(v) for v in values]
-        raw_min = node.get("min")
-        raw_max = node.get("max")
-        if isinstance(raw_min, (int, float)) and not isinstance(raw_min, bool):
-            cmin = float(raw_min)
-        if isinstance(raw_max, (int, float)) and not isinstance(raw_max, bool):
-            cmax = float(raw_max)
+        cmin = coerce_float(node.get("min"))
+        cmax = coerce_float(node.get("max"))
     return Clause(
         keys=[concept_path],
         type=clause_type,
@@ -196,11 +187,7 @@ def load_query(
             f"(HTTP {exc.status_code}): {exc.body[:200]}"
         ) from exc
     except TransportRateLimitError as exc:
-        if exc.retry_after is not None:
-            msg = f"Rate limited; server said retry after {exc.retry_after} seconds."
-        else:
-            msg = "Rate limited. Please wait and try again."
-        raise PicSureConnectionError(msg) from exc
+        raise PicSureConnectionError(rate_limit_message(exc)) from exc
     except TransportError as exc:
         raise PicSureConnectionError(
             "Could not load the saved query. The server may be temporarily unavailable."

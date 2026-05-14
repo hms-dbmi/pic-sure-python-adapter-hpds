@@ -18,6 +18,12 @@ _CONNECT_LOGGER = logging.getLogger("picsure.connect")
 _ERROR_LOGGER = logging.getLogger("picsure.error")
 _DEV_WARNING_LOGGER = logging.getLogger("picsure.dev")
 
+_LOGGERS = {
+    "http": _HTTP_LOGGER,
+    "function": _FN_LOGGER,
+    "connect": _CONNECT_LOGGER,
+}
+
 
 def _env_truthy(raw: str | None) -> bool:
     return raw is not None and raw.strip().lower() in _TRUTHY
@@ -34,13 +40,7 @@ def _env_int(raw: str | None, default: int) -> int:
 
 
 def _logger_for(kind: str) -> logging.Logger:
-    if kind == "http":
-        return _HTTP_LOGGER
-    if kind == "function":
-        return _FN_LOGGER
-    if kind == "connect":
-        return _CONNECT_LOGGER
-    return _ERROR_LOGGER
+    return _LOGGERS.get(kind, _ERROR_LOGGER)
 
 
 def _format_bytes(n: int | None) -> str:

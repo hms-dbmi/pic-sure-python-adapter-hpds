@@ -76,18 +76,11 @@ def createSubQuery(  # noqa: N802
                 "FILTER clauses cannot have both categories and min/max."
             )
 
-    if type == ClauseType.REQUIRE and (
+    if type in (ClauseType.REQUIRE, ClauseType.SELECT) and (
         categories is not None or min is not None or max is not None
     ):
         raise PicSureValidationError(
-            "REQUIRE clauses cannot have categories, min, or max."
-        )
-
-    if type == ClauseType.SELECT and (
-        categories is not None or min is not None or max is not None
-    ):
-        raise PicSureValidationError(
-            "SELECT clauses cannot have categories, min, or max."
+            f"{type.name} clauses cannot have categories, min, or max."
         )
 
     return Clause(

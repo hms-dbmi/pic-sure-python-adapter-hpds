@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import httpx
 
 from picsure._dev.events import Event
-from picsure._dev.redaction import redact_for_log
+from picsure._dev.redaction import body_is_sensitive
 from picsure._transport.errors import (
     TransportAuthenticationError,
     TransportConnectionError,
@@ -225,7 +225,7 @@ class PicSureClient:
         bytes_out = len(response.content or b"")
         metadata: dict[str, object] = {}
 
-        if redact_for_log(path, method, body) is None:
+        if body_is_sensitive(path, method, body):
             metadata["redacted"] = "participant"
 
         cfg.emit(
@@ -318,5 +318,5 @@ def _estimate_bytes(body: dict | None) -> int | None:  # type: ignore[type-arg]
 
     try:
         return len(_json.dumps(body).encode("utf-8"))
-    except Exception:  # pragma: no cover — extremely defensive
+    except (TypeError, ValueError):
         return None

@@ -4,6 +4,21 @@ from dataclasses import dataclass, field
 from typing import Any, cast
 
 
+def coerce_float(value: object) -> float | None:
+    """Coerce a JSON-parsed number to ``float``, rejecting bool.
+
+    ``bool`` is an ``int`` subclass in Python, so a bare
+    ``isinstance(x, (int, float))`` accepts ``True``/``False`` as
+    valid numerics. This guard prevents that surprise when ingesting
+    server payloads.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
 @dataclass(frozen=True)
 class DictionaryEntry:
     """One row from a PIC-SURE data dictionary search result.
@@ -47,14 +62,8 @@ class DictionaryEntry:
         data_type_raw = data.get("type", data.get("dataType", ""))
         study_id_raw = data.get("dataset", data.get("studyId", ""))
 
-        raw_min = data.get("min")
-        min_val: float | None = (
-            float(cast(float, raw_min)) if isinstance(raw_min, (int, float)) else None
-        )
-        raw_max = data.get("max")
-        max_val: float | None = (
-            float(cast(float, raw_max)) if isinstance(raw_max, (int, float)) else None
-        )
+        min_val = coerce_float(data.get("min"))
+        max_val = coerce_float(data.get("max"))
 
         raw_allow = data.get("allowFiltering")
         allow_filtering: bool | None = (

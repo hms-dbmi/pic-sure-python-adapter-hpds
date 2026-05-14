@@ -5,7 +5,8 @@ import sys
 import pandas as pd
 
 from picsure._models.dictionary import DictionaryEntry
-from picsure._models.facet import Facet, FacetCategory, FacetSet
+from picsure._models.facet import FacetCategory, FacetSet
+from picsure._services._errors import rate_limit_message
 from picsure._transport.client import PicSureClient
 from picsure._transport.errors import (
     TransportError,
@@ -68,12 +69,6 @@ def _translate_dictionary_4xx(
     )
 
 
-def _rate_limit_message(exc: TransportRateLimitError) -> str:
-    if exc.retry_after is not None:
-        return f"Rate limited; server said retry after {exc.retry_after} seconds."
-    return "Rate limited. Please wait and try again."
-
-
 def fetch_total_concepts(
     client: PicSureClient,
     consents: list[str] | None = None,
@@ -101,7 +96,7 @@ def fetch_total_concepts(
     except (TransportValidationError, TransportNotFoundError) as exc:
         raise _translate_dictionary_4xx(exc, "initialize the data dictionary") from exc
     except TransportRateLimitError as exc:
-        raise PicSureConnectionError(_rate_limit_message(exc)) from exc
+        raise PicSureConnectionError(rate_limit_message(exc)) from exc
     except TransportError as exc:
         raise PicSureConnectionError(
             "Could not initialize the data dictionary. "
@@ -154,7 +149,7 @@ def searchDictionary(  # noqa: N802
     except (TransportValidationError, TransportNotFoundError) as exc:
         raise _translate_dictionary_4xx(exc, "complete search") from exc
     except TransportRateLimitError as exc:
-        raise PicSureConnectionError(_rate_limit_message(exc)) from exc
+        raise PicSureConnectionError(rate_limit_message(exc)) from exc
     except TransportError as exc:
         raise PicSureConnectionError(
             "Could not complete search. The server may be temporarily unavailable."
@@ -222,7 +217,7 @@ def fetch_facets(
     except (TransportValidationError, TransportNotFoundError) as exc:
         raise _translate_dictionary_4xx(exc, "fetch facets") from exc
     except TransportRateLimitError as exc:
-        raise PicSureConnectionError(_rate_limit_message(exc)) from exc
+        raise PicSureConnectionError(rate_limit_message(exc)) from exc
     except TransportError as exc:
         raise PicSureConnectionError(
             "Could not fetch facets. The server may be temporarily unavailable."
@@ -271,31 +266,21 @@ def show_all_facets(
     categories = fetch_facets(client, consents=consents, term=term, facets=facets)
     rows: list[dict[str, object]] = []
     for cat in categories:
-        for opt in _walk_options(cat.options):
-            rows.append(
-                {
-                    "category": cat.name,
-                    "Category Display": cat.display,
-                    "display": opt.display,
-                    "description": opt.description,
-                    "value": opt.value,
-                    "count": opt.count,
-                }
-            )
+        for root in cat.options:
+            for opt in root.walk():
+                rows.append(
+                    {
+                        "category": cat.name,
+                        "Category Display": cat.display,
+                        "display": opt.display,
+                        "description": opt.description,
+                        "value": opt.value,
+                        "count": opt.count,
+                    }
+                )
     if not rows:
         return pd.DataFrame(columns=_SHOW_ALL_FACETS_COLUMNS)
     return pd.DataFrame(rows)
-
-
-def _walk_options(options: list[Facet]) -> list[Facet]:
-    """Yield every option and its descendants in depth-first order."""
-    result: list[Facet] = []
-    stack: list[Facet] = list(reversed(options))
-    while stack:
-        opt = stack.pop()
-        result.append(opt)
-        stack.extend(reversed(opt.children))
-    return result
 
 
 def _build_concepts_body(
@@ -329,22 +314,19 @@ def _entries_to_dataframe(
     entries: list[DictionaryEntry],
     include_values: bool,
 ) -> pd.DataFrame:
-    rows: list[dict[str, object]] = []
-    for e in entries:
-        row: dict[str, object] = {
-            "conceptPath": e.concept_path,
-            "name": e.name,
-            "display": e.display,
-            "description": e.description,
-            "dataType": e.data_type,
-            "studyId": e.study_id,
-        }
-        if include_values:
-            row["values"] = e.values
-        row["min"] = e.min
-        row["max"] = e.max
-        row["allowFiltering"] = e.allow_filtering
-        row["meta"] = e.meta
-        row["studyAcronym"] = e.study_acronym
-        rows.append(row)
-    return pd.DataFrame(rows)
+    cols: dict[str, list[object]] = {
+        "conceptPath": [e.concept_path for e in entries],
+        "name": [e.name for e in entries],
+        "display": [e.display for e in entries],
+        "description": [e.description for e in entries],
+        "dataType": [e.data_type for e in entries],
+        "studyId": [e.study_id for e in entries],
+    }
+    if include_values:
+        cols["values"] = [e.values for e in entries]
+    cols["min"] = [e.min for e in entries]
+    cols["max"] = [e.max for e in entries]
+    cols["allowFiltering"] = [e.allow_filtering for e in entries]
+    cols["meta"] = [e.meta for e in entries]
+    cols["studyAcronym"] = [e.study_acronym for e in entries]
+    return pd.DataFrame(cols)

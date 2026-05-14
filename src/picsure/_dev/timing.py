@@ -60,7 +60,7 @@ def timed(name: str) -> Callable[[F], F]:
                     name=name,
                     duration_ms=duration_ms,
                     bytes_in=None,
-                    bytes_out=_bytes_out_for(result),
+                    bytes_out=None,
                     status=None,
                     retry=0,
                     error=None,
@@ -72,12 +72,6 @@ def timed(name: str) -> Callable[[F], F]:
         return wrapper  # type: ignore[return-value]
 
     return decorator
-
-
-def _bytes_out_for(result: Any) -> int | None:
-    # Best-effort: DataFrames don't expose a byte count cheaply, and we do
-    # not want to serialize large payloads just to measure them. Leave None.
-    return None
 
 
 def _metadata_for(result: Any) -> dict[str, Any]:

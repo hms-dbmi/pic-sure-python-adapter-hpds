@@ -8,20 +8,13 @@ from pathlib import Path
 import pandas as pd
 
 from picsure._models.query import Query
+from picsure._services._errors import translate_stage_error
 from picsure._services.query_run import build_query_body
 from picsure._transport.client import PicSureClient
-from picsure._transport.errors import (
-    TransportAuthenticationError,
-    TransportError,
-    TransportNotFoundError,
-    TransportRateLimitError,
-    TransportValidationError,
-)
+from picsure._transport.errors import TransportError
 from picsure.errors import (
-    PicSureAuthError,
     PicSureConnectionError,
     PicSureQueryError,
-    PicSureValidationError,
 )
 
 _QUERY_SUBMIT_PATH = "/picsure/v3/query"
@@ -107,7 +100,7 @@ def _submit_query(
     try:
         return client.post_json(_QUERY_SUBMIT_PATH, body=body)
     except TransportError as exc:
-        raise _translate_transport_error(exc, stage="submit") from exc
+        raise translate_stage_error(exc, service="PFB", stage="submit") from exc
 
 
 def _extract_query_id(response: dict[str, object]) -> str:
@@ -142,7 +135,7 @@ def _poll_until_available(
         try:
             status_response = client.post_json(status_path, body=body)
         except TransportError as exc:
-            raise _translate_transport_error(exc, stage="status") from exc
+            raise translate_stage_error(exc, service="PFB", stage="status") from exc
 
         status = _extract_status(status_response)
 
@@ -199,7 +192,7 @@ def _download_result(
             _stream_to_file(response, part_path)
     except TransportError as exc:
         _cleanup_partial(part_path)
-        raise _translate_transport_error(exc, stage="result") from exc
+        raise translate_stage_error(exc, service="PFB", stage="result") from exc
     except OSError as exc:
         _cleanup_partial(part_path)
         raise PicSureConnectionError(f"Could not write PFB to {target}: {exc}") from exc
@@ -226,7 +219,7 @@ def _stream_to_file(response: object, part_path: Path) -> None:
     transport-layer import into this helper.
     """
     with open(part_path, "wb") as out:
-        for chunk in response.iter_bytes():  # type: ignore[attr-defined]
+        for chunk in response.iter_bytes(chunk_size=64 * 1024):  # type: ignore[attr-defined]
             if chunk:
                 out.write(chunk)
 
@@ -239,39 +232,6 @@ def _cleanup_partial(part_path: Path) -> None:
     """
     with contextlib.suppress(OSError):
         part_path.unlink(missing_ok=True)
-
-
-def _translate_transport_error(exc: TransportError, *, stage: str) -> Exception:
-    """Translate a transport exception to the public error hierarchy.
-
-    ``stage`` is one of ``"submit"``, ``"status"``, or ``"result"`` and
-    is included in the user-facing message so the failure point is
-    visible.
-    """
-    if isinstance(exc, TransportValidationError):
-        return PicSureValidationError(
-            f"Server rejected the PFB {stage} request "
-            f"(HTTP {exc.status_code}): {exc.body[:200]}"
-        )
-    if isinstance(exc, TransportNotFoundError):
-        return PicSureQueryError(f"PFB {stage} endpoint returned 404: {exc.body[:200]}")
-    if isinstance(exc, TransportAuthenticationError):
-        return PicSureAuthError(
-            f"Authentication failed on PFB {stage} "
-            f"(HTTP {exc.status_code}): {exc.body[:200]}"
-        )
-    if isinstance(exc, TransportRateLimitError):
-        if exc.retry_after is not None:
-            msg = (
-                f"Rate limited on PFB {stage}; "
-                f"server said retry after {exc.retry_after} seconds."
-            )
-        else:
-            msg = f"Rate limited on PFB {stage}. Please wait and try again."
-        return PicSureConnectionError(msg)
-    return PicSureConnectionError(
-        f"Could not {stage} PFB export. The server may be temporarily unavailable."
-    )
 
 
 def export_csv(data: pd.DataFrame, path: str | Path) -> None:

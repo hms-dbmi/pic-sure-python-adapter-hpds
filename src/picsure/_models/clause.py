@@ -32,6 +32,12 @@ _PHENOTYPIC_FILTER_TYPE: dict[ClauseType, str] = {
     ClauseType.ANYRECORD: "ANY_RECORD_OF",
 }
 
+# Reverse of _PHENOTYPIC_FILTER_TYPE, exposed so query_load can rebuild
+# clauses from the wire payload without redefining the mapping.
+CLAUSE_TYPE_BY_WIRE_NAME: dict[str, ClauseType] = {
+    v: k for k, v in _PHENOTYPIC_FILTER_TYPE.items()
+}
+
 
 @dataclass(frozen=True)
 class Clause:

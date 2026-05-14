@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import io
 import json
 import re
+from io import BytesIO
 
 import pandas as pd
 
@@ -11,6 +11,7 @@ from picsure._models.clause_group import ClauseGroup
 from picsure._models.count_result import CountResult
 from picsure._models.query import Query
 from picsure._models.query_type import QueryType
+from picsure._services._errors import rate_limit_message
 from picsure._transport.client import PicSureClient
 from picsure._transport.errors import (
     TransportError,
@@ -101,11 +102,7 @@ def run_query(
             f"Query endpoint not found (HTTP {exc.status_code}): {exc.body[:200]}"
         ) from exc
     except TransportRateLimitError as exc:
-        if exc.retry_after is not None:
-            msg = f"Rate limited; server said retry after {exc.retry_after} seconds."
-        else:
-            msg = "Rate limited. Please wait and try again."
-        raise PicSureConnectionError(msg) from exc
+        raise PicSureConnectionError(rate_limit_message(exc)) from exc
     except TransportError as exc:
         raise PicSureConnectionError(
             "Could not execute query. The server may be temporarily unavailable."
@@ -254,19 +251,15 @@ def _parse_cross_count(raw: bytes) -> dict[str, CountResult]:
 
 
 def _parse_dataframe(raw: bytes) -> pd.DataFrame:
-    try:
-        text = raw.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        byte_preview = raw[:200]
-        raise PicSureQueryError(
-            f"Server returned a malformed CSV response: {byte_preview!r}"
-        ) from exc
-    if not text.strip():
+    if not raw.strip():
         return pd.DataFrame()
     try:
-        return pd.read_csv(io.StringIO(text))
-    except (pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
-        text_preview = text[:200]
+        return pd.read_csv(BytesIO(raw), encoding="utf-8")
+    except UnicodeDecodeError as exc:
         raise PicSureQueryError(
-            f"Server returned a malformed CSV response: {text_preview!r}"
+            f"Server returned a malformed CSV response: {raw[:200]!r}"
+        ) from exc
+    except (pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
+        raise PicSureQueryError(
+            f"Server returned a malformed CSV response: {raw[:200]!r}"
         ) from exc

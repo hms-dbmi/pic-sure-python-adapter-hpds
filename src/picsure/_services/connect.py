@@ -10,6 +10,7 @@ from picsure._dev.config import DevConfig
 from picsure._dev.events import Event
 from picsure._models.resource import Resource
 from picsure._models.session import Session
+from picsure._services._errors import rate_limit_message
 from picsure._services.consents import fetch_consents
 from picsure._services.search import fetch_total_concepts
 from picsure._transport.client import PicSureClient
@@ -256,21 +257,14 @@ def _fetch_profile(
             f"{exc.body[:200]}"
         ) from exc
     except TransportRateLimitError as exc:
-        raise PicSureConnectionError(_rate_limit_message(display_name, exc)) from exc
+        raise PicSureConnectionError(
+            rate_limit_message(exc, suffix=f" by {display_name}")
+        ) from exc
     except (TransportConnectionError, TransportServerError) as exc:
         raise PicSureConnectionError(
             f"Could not reach {display_name} ({base_url}). Check your internet "
             "connection, or try a different platform."
         ) from exc
-
-
-def _rate_limit_message(display_name: str, exc: TransportRateLimitError) -> str:
-    if exc.retry_after is not None:
-        return (
-            f"Rate limited by {display_name}; server said retry after "
-            f"{exc.retry_after} seconds."
-        )
-    return f"Rate limited by {display_name}. Please wait and try again."
 
 
 def _fetch_resources(

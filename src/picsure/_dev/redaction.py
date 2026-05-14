@@ -57,6 +57,21 @@ def redact_for_log(
     return json.dumps(body, default=str)
 
 
+def body_is_sensitive(
+    path: str,
+    method: str,
+    body: dict[str, Any] | list[Any] | None,
+) -> bool:
+    """Cheap predicate: would ``redact_for_log`` refuse to serialize this body?
+
+    Callers that only need the yes/no decision can use this to avoid the
+    full ``json.dumps`` round-trip in ``redact_for_log``.
+    """
+    if body is None:
+        return False
+    return _is_query_sync_path(path) and _body_is_participant_like(body)
+
+
 def _is_psama_path(path: str) -> bool:
     return path.startswith("/psama/")
 
