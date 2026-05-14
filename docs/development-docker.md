@@ -27,6 +27,21 @@ Both services use the same image and share the same `/opt/venv`, so
 anything you install via `uv add` in the dev shell is immediately
 available in the notebook.
 
+The notebook service includes `jupyterlab-lsp` and `python-lsp-server`,
+which give you inline as-you-type completion, hover types,
+jump-to-definition, and live diagnostics in every cell — not just the
+Tab completion the IPython kernel provides out of the box.
+
+### Where notebooks live
+
+JupyterLab opens with **File → New Notebook** defaulting to
+`/workspace/notebooks/`. That directory is the only place where
+`*.ipynb` files are tracked by git — see
+[`notebooks/README.md`](../notebooks/README.md) for the convention.
+Scratch notebooks created anywhere else (the repo root, inside `src/`,
+etc.) are gitignored automatically, so you can experiment freely
+without polluting commits.
+
 ## What's mounted
 
 | Host path           | Container path             | Why                                                |

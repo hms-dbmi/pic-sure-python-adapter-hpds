@@ -24,7 +24,17 @@ docs/superpowers/
 
 # JupyterLab artifacts written into the source tree from the dev container
 .ipynb_checkpoints/
-Untitled*.ipynb
+
+# Only commit notebooks that live under notebooks/. Anything elsewhere
+# (Untitled.ipynb in the repo root, scratch experiments inside src/,
+# accidental notebooks from container sessions) stays out of git.
+*.ipynb
+!notebooks/**/*.ipynb
 
 # XDG trash directory created when a container process "deletes" a file
 .Trash-*/
+
+# Credentials sometimes pasted into the workspace
+token.txt
+token*.txt
+*.token

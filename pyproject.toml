@@ -32,6 +32,8 @@ docs = [
 notebook = [
     "jupyterlab>=4.2",
     "ipykernel>=6.29",
+    "jupyterlab-lsp>=5.1",
+    "python-lsp-server[all]>=1.12",
 ]
 
 [build-system]
