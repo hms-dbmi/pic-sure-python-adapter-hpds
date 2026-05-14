@@ -56,3 +56,8 @@ nav:
       - Running & Exporting: guides/running-and-exporting.md
       - Migration Guide: guides/migrating-from-picsurehpdslib.md
   - API Reference: reference/api.md
+  - Development:
+      - Docker: development/docker.md
+      - Architecture: development/architecture.md
+      - Testing: development/testing.md
+      - Releasing: development/releasing.md

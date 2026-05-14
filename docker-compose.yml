@@ -15,7 +15,7 @@
 #   docker compose up notebook       # starts JupyterLab on :8888
 #
 # Override mounts (e.g. AI-agent credentials) in
-# docker-compose.override.yml — see docs/development-docker.md.
+# docker-compose.override.yml — see docs/development/docker.md.
 
 x-common: &common
   image: picsure-dev:latest
