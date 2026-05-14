@@ -2,6 +2,12 @@
 
 ## Development Setup
 
+Prefer Docker? See [docs/development-docker.md](docs/development-docker.md)
+for a containerized setup (no local `uv` or Python required, JupyterLab
+included). That guide also covers
+[IDE setup for VS Code and PyCharm](docs/development-docker.md#ide-setup--using-the-containers-python-from-your-editor)
+so your editor can use the container's interpreter directly.
+
 1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/).
 
 2. Clone the repo and install dependencies:

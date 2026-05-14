@@ -1,0 +1,62 @@
+# Development container for picsure.
+#
+# Two services share a single image (built from docker/Dockerfile):
+#
+#   dev       — interactive shell. Run tests, lint, mypy, git from here.
+#   notebook  — JupyterLab on http://localhost:8888 (no token, host-only).
+#
+# Both services bind-mount the repo at /workspace and share a named
+# volume for /opt/venv so the Linux virtualenv is built once and
+# reused across services and restarts.
+#
+# Quick start:
+#   cp .env.example .env             # if you don't have one
+#   docker compose run --rm dev      # opens a shell
+#   docker compose up notebook       # starts JupyterLab on :8888
+#
+# Override mounts (e.g. AI-agent credentials) in
+# docker-compose.override.yml — see docs/development-docker.md.
+
+x-common: &common
+  image: picsure-dev:latest
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+    args:
+      USER_UID: ${UID:-1000}
+      USER_GID: ${GID:-1000}
+  env_file:
+    - path: .env
+      required: false
+  volumes:
+    - .:/workspace
+    - picsure-venv:/opt/venv
+    - uv-cache:/home/dev/.cache/uv
+    - ${HOME}/.gitconfig:/home/dev/.gitconfig
+    - ${HOME}/.ssh:/home/dev/.ssh
+  working_dir: /workspace
+
+services:
+  dev:
+    <<: *common
+    stdin_open: true
+    tty: true
+    command: ["bash"]
+
+  notebook:
+    <<: *common
+    ports:
+      - "127.0.0.1:8888:8888"
+    command:
+      - jupyter
+      - lab
+      - --ip=0.0.0.0
+      - --port=8888
+      - --no-browser
+      - --ServerApp.token=
+      - --ServerApp.password=
+      - --ServerApp.root_dir=/workspace
+
+volumes:
+  picsure-venv:
+  uv-cache:

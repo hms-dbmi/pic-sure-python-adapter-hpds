@@ -1,0 +1,33 @@
+# The repo is bind-mounted at runtime, so the build context only needs
+# what the Dockerfile actually COPYs (docker/entrypoint.sh). Keep this
+# tight to make `docker compose build` fast.
+
+# Build/cache artifacts
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+*.egg
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+site/
+
+# Editor / IDE
+.idea/
+.vscode/
+*.iml
+
+# Local state
+.worktrees/
+.env
+.git/
+.github/
+
+# Docs that aren't needed during build
+docs/superpowers/

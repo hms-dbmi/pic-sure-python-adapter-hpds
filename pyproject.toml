@@ -29,6 +29,10 @@ docs = [
     "mkdocs-material>=9.5",
     "mkdocstrings[python]>=0.25",
 ]
+notebook = [
+    "jupyterlab>=4.2",
+    "ipykernel>=6.29",
+]
 
 [build-system]
 requires = ["hatchling>=1.21"]
