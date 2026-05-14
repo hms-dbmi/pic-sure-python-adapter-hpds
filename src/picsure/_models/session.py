@@ -318,6 +318,44 @@ class Session:
             path,
         )
 
+    @timed("session.saveQueryByName")
+    def saveQueryByName(  # noqa: N802
+        self,
+        query: Query,
+        name: str,
+        *,
+        overwrite: bool = False,
+    ) -> str:
+        """Save a query to the user's profile and return its PIC-SURE query ID.
+
+        Not supported on open-access deployments. The returned ID can be
+        passed to :meth:`loadQueryByID` or :meth:`runQueryByID` later.
+
+        Args:
+            query: A Clause or ClauseGroup.
+            name: Display name to associate with the query.
+            overwrite: When ``False`` (default), refuse if a named query
+                with that name already exists for this user. When ``True``,
+                repoint the existing record at the freshly-submitted query.
+
+        Example:
+            >>> qid = session.saveQueryByName(my_query, "Cohort 2026-Q2")
+            >>> qid = session.saveQueryByName(
+            ...     my_query, "Cohort 2026-Q2", overwrite=True
+            ... )
+            >>> later = session.loadQueryByID(qid)
+        """
+        from picsure._services.query_save import save_query_by_name
+
+        return save_query_by_name(
+            self._client,
+            self._default_resource_uuid(),
+            query,
+            name,
+            use_legacy_query_path=self._use_legacy_query_path,
+            overwrite=overwrite,
+        )
+
     @timed("session.exportCSV")
     def exportCSV(  # noqa: N802
         self,

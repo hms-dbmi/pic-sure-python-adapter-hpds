@@ -75,6 +75,11 @@ class PicSureClient:
         response = self._request("POST", path, json=body)
         return response.json()  # type: ignore[no-any-return]
 
+    def put_json(self, path: str, body: dict | None = None) -> dict:  # type: ignore[type-arg]
+        """Send PUT request with JSON body and return parsed JSON."""
+        response = self._request("PUT", path, json=body)
+        return response.json()  # type: ignore[no-any-return]
+
     def post_raw(self, path: str, body: dict | None = None) -> bytes:  # type: ignore[type-arg]
         """Send POST request with JSON body and return raw response bytes.
 

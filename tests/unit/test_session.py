@@ -527,6 +527,54 @@ class TestSessionExport:
         assert client.post_raw_stream.call_count == 0
         assert not output.exists()
 
+    def test_save_query_by_name_forwards_to_service(self, monkeypatch):
+        # Verify Session.saveQueryByName forwards to the service layer with
+        # the session-bound client, resource UUID, and legacy-flag.
+        from picsure._models import session as session_module
+
+        session = _make_session(
+            resources=[Resource(uuid="uuid-1", name="hpds", description="x")],
+        )
+        session._resource_uuid = "uuid-1"
+        clause = Clause(keys=["\\sex\\"], type=ClauseType.FILTER, categories=["Male"])
+
+        captured: dict[str, object] = {}
+
+        def fake_save(
+            client,
+            resource_uuid,
+            query,
+            name,
+            *,
+            use_legacy_query_path,
+            overwrite,
+        ):
+            captured["client"] = client
+            captured["resource_uuid"] = resource_uuid
+            captured["query"] = query
+            captured["name"] = name
+            captured["use_legacy_query_path"] = use_legacy_query_path
+            captured["overwrite"] = overwrite
+            return "qid-fake-001"
+
+        # The session lazy-imports save_query_by_name, so patch the module
+        # the service lives in.
+        from picsure._services import query_save
+
+        monkeypatch.setattr(query_save, "save_query_by_name", fake_save)
+
+        qid = session.saveQueryByName(clause, "Cohort A", overwrite=True)
+
+        assert qid == "qid-fake-001"
+        assert captured["client"] is session._client
+        assert captured["resource_uuid"] == "uuid-1"
+        assert captured["query"] is clause
+        assert captured["name"] == "Cohort A"
+        assert captured["use_legacy_query_path"] is False
+        assert captured["overwrite"] is True
+        # Silence unused-import warning from ruff for the imported alias.
+        assert session_module.Session is Session
+
     def test_export_csv(self, tmp_path):
         session = _make_session()
         df = pd.DataFrame({"id": [1, 2], "name": ["A", "B"]})
