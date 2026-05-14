@@ -15,8 +15,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         tini \
     && rm -rf /var/lib/apt/lists/*
 
-# Pinned uv from the official image — no curl-pipe-sh install.
-COPY --from=ghcr.io/astral-sh/uv:0.5.11 /uv /uvx /usr/local/bin/
+# Pinned uv from the official image — no curl-pipe-sh install. Bump
+# this in lockstep with the host uv version so `uv.lock` doesn't churn
+# between host syncs and container syncs (older uv strips `revision`
+# and `upload-time` fields that newer uv writes).
+COPY --from=ghcr.io/astral-sh/uv:0.7.13 /uv /uvx /usr/local/bin/
 
 # Non-root user. UID/GID configurable so files written through the
 # bind mount land with host ownership on Linux hosts. On macOS Docker
