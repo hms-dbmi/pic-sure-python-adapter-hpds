@@ -16,8 +16,8 @@ if TYPE_CHECKING:
     from picsure._transport.client import PicSureClient
 
 _QUERY_SUBMIT_PATH = "/picsure/v3/query"
-_NAMED_DATASET_COLLECTION_PATH = "/dataset/named/"
-_NAMED_DATASET_ITEM_PATH = "/dataset/named/{named_dataset_id}/"
+_NAMED_DATASET_COLLECTION_PATH = "/picsure/dataset/named"
+_NAMED_DATASET_ITEM_PATH = "/picsure/dataset/named/{named_dataset_id}"
 
 # Mirrors the @Pattern on NamedDatasetRequest.name in pic-sure-api-data.
 _NAME_PATTERN = re.compile(r"^[\w\d \-\\/?+=\[\]\.():\"']+$")
