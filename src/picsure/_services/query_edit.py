@@ -6,7 +6,7 @@ from picsure._models.query import Query
 from picsure.errors import PicSureValidationError
 
 
-def removeSubQuery(target: Query, query: Query) -> Query:  # noqa: N802
+def removeSubQuery(query: Query, target: Query) -> Query:  # noqa: N802
     """Return a copy of ``query`` with every match of ``target`` removed.
 
     Matching is structural (frozen-dataclass equality): any nested
@@ -18,8 +18,8 @@ def removeSubQuery(target: Query, query: Query) -> Query:  # noqa: N802
         PicSureValidationError: if the whole query would be removed
             (nothing left), or if either argument is not a Query.
     """
-    _check_is_query(target, "target")
     _check_is_query(query, "query")
+    _check_is_query(target, "target")
 
     if query == target:
         raise PicSureValidationError(
@@ -35,8 +35,8 @@ def removeSubQuery(target: Query, query: Query) -> Query:  # noqa: N802
 
 
 def replaceClause(  # noqa: N802
-    target: Query,
     query: Query,
+    target: Query,
     replacement: Query,
 ) -> Query:
     """Return a copy of ``query`` with every match of ``target`` swapped.
@@ -47,8 +47,8 @@ def replaceClause(  # noqa: N802
     Raises:
         PicSureValidationError: if any argument is not a Query.
     """
-    _check_is_query(target, "target")
     _check_is_query(query, "query")
+    _check_is_query(target, "target")
     _check_is_query(replacement, "replacement")
 
     return _replace(query, target, replacement)
