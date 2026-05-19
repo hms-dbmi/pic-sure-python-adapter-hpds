@@ -31,7 +31,7 @@ class TestRemoveSubQuery:
         b = _clause("\\b\\", "y")
         q = buildQuery([a, b], operator=GroupOperator.AND)
 
-        pruned = removeSubQuery(a, q)
+        pruned = removeSubQuery(q, a)
 
         assert isinstance(pruned, ClauseGroup)
         assert pruned.clauses == [b]
@@ -44,7 +44,7 @@ class TestRemoveSubQuery:
         inner = buildQuery([a, b], operator=GroupOperator.OR)
         outer = buildQuery([inner, c], operator=GroupOperator.AND)
 
-        pruned = removeSubQuery(a, outer)
+        pruned = removeSubQuery(outer, a)
 
         # inner becomes a 1-clause group [b]; outer keeps both children.
         assert isinstance(pruned, ClauseGroup)
@@ -61,7 +61,7 @@ class TestRemoveSubQuery:
         inner = buildQuery([a], operator=GroupOperator.AND)
         outer = buildQuery([inner, c], operator=GroupOperator.AND)
 
-        pruned = removeSubQuery(a, outer)
+        pruned = removeSubQuery(outer, a)
 
         assert isinstance(pruned, ClauseGroup)
         assert pruned.clauses == [c]
@@ -77,7 +77,7 @@ class TestRemoveSubQuery:
         q = buildQuery([a], operator=GroupOperator.AND)
 
         with pytest.raises(PicSureValidationError, match="entire query"):
-            removeSubQuery(a, q)
+            removeSubQuery(q, a)
 
     def test_removing_all_nested_clauses_raises(self):
         a = _clause("\\a\\", "x")
@@ -85,7 +85,7 @@ class TestRemoveSubQuery:
         outer = buildQuery([inner], operator=GroupOperator.AND)
 
         with pytest.raises(PicSureValidationError, match="entire query"):
-            removeSubQuery(a, outer)
+            removeSubQuery(outer, a)
 
     def test_no_op_when_target_absent(self):
         a = _clause("\\a\\", "x")
@@ -93,19 +93,19 @@ class TestRemoveSubQuery:
         missing = _clause("\\zz\\", "q")
         q = buildQuery([a, b], operator=GroupOperator.AND)
 
-        pruned = removeSubQuery(missing, q)
+        pruned = removeSubQuery(q, missing)
 
         assert pruned == q
 
     def test_rejects_non_query_target(self):
         a = _clause("\\a\\", "x")
         with pytest.raises(PicSureValidationError, match="`target` must be"):
-            removeSubQuery("not-a-clause", a)  # type: ignore[arg-type]
+            removeSubQuery(a, "not-a-clause")  # type: ignore[arg-type]
 
     def test_rejects_non_query_query(self):
         a = _clause("\\a\\", "x")
         with pytest.raises(PicSureValidationError, match="`query` must be"):
-            removeSubQuery(a, 42)  # type: ignore[arg-type]
+            removeSubQuery(42, a)  # type: ignore[arg-type]
 
 
 class TestReplaceClause:
@@ -116,7 +116,7 @@ class TestReplaceClause:
         inner = buildQuery([a, b], operator=GroupOperator.OR)
         outer = buildQuery([a, inner], operator=GroupOperator.AND)
 
-        replaced = replaceClause(a, outer, c)
+        replaced = replaceClause(outer, a, c)
 
         flat = _flatten(replaced)
         assert a not in flat
@@ -138,7 +138,7 @@ class TestReplaceClause:
         replacement = _clause("\\rr\\", "r")
         q = buildQuery([a, b], operator=GroupOperator.AND)
 
-        replaced = replaceClause(missing, q, replacement)
+        replaced = replaceClause(q, missing, replacement)
 
         assert replaced == q
 
@@ -148,7 +148,7 @@ class TestReplaceClause:
         c = _clause("\\c\\", "z")
         q = buildQuery([a, b], operator=GroupOperator.OR)
 
-        replaced = replaceClause(a, q, c)
+        replaced = replaceClause(q, a, c)
 
         assert isinstance(replaced, ClauseGroup)
         assert replaced.operator == GroupOperator.OR
@@ -162,7 +162,7 @@ class TestReplaceClause:
         sub = buildQuery([c, d], operator=GroupOperator.OR)
         q = buildQuery([a, b], operator=GroupOperator.AND)
 
-        replaced = replaceClause(a, q, sub)
+        replaced = replaceClause(q, a, sub)
 
         assert isinstance(replaced, ClauseGroup)
         assert replaced.clauses[0] == sub
@@ -173,4 +173,4 @@ class TestReplaceClause:
         b = _clause("\\b\\", "y")
         q = buildQuery([a, b], operator=GroupOperator.AND)
         with pytest.raises(PicSureValidationError, match="`replacement` must be"):
-            replaceClause(a, q, None)  # type: ignore[arg-type]
+            replaceClause(q, a, None)  # type: ignore[arg-type]

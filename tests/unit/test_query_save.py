@@ -20,9 +20,9 @@ BASE_URL = "https://api.example.com"
 TOKEN = "test-token"
 RESOURCE_UUID = "res-uuid-1111"
 
-LIST_URL = f"{BASE_URL}/dataset/named/"
+LIST_URL = f"{BASE_URL}/picsure/dataset/named"
 SUBMIT_URL = f"{BASE_URL}/picsure/v3/query"
-SAVE_URL = f"{BASE_URL}/dataset/named/"
+SAVE_URL = f"{BASE_URL}/picsure/dataset/named"
 
 
 def _client() -> PicSureClient:
@@ -165,7 +165,7 @@ class TestSaveQueryByNameDuplicates:
         respx.post(SUBMIT_URL).mock(
             return_value=httpx.Response(200, json={"picsureResultId": "qid-new"})
         )
-        put = respx.put(f"{BASE_URL}/dataset/named/nd-old/").mock(
+        put = respx.put(f"{BASE_URL}/picsure/dataset/named/nd-old").mock(
             return_value=httpx.Response(
                 200,
                 json={
