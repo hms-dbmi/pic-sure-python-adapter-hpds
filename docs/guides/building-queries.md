@@ -124,6 +124,34 @@ full_query = buildQuery(
 )
 ```
 
+## Editing an Existing Query
+
+`removeSubQuery` and `replaceClause` let you edit a query tree without
+rebuilding it from scratch. Both return a **new** query — the input is
+not mutated. Matching is structural (frozen-dataclass equality): a node
+matches when every field is equal, including nested children.
+
+```python
+from picsure import removeSubQuery, replaceClause
+
+# Start with the nested query built above:
+#   full_query = AND(sex, age, OR(copd, asthma), OR(sleep, insomnia))
+
+# Drop the sleep/insomnia OR group entirely
+without_sleep = removeSubQuery(full_query, sleep_or_insomnia)
+
+# Swap "Male" for "Female"
+female_filter = createSubQuery(
+    "\\phs1\\sex\\", type=ClauseType.FILTER, categories="Female"
+)
+female_query = replaceClause(full_query, sex_filter, female_filter)
+```
+
+`removeSubQuery` drops any `ClauseGroup` left empty by a removal, so
+you don't end up with orphan operators. It raises
+`PicSureValidationError` if the removal would empty the whole tree —
+build a fresh query instead in that case.
+
 ## Validation
 
 The library validates clause configurations and provides actionable

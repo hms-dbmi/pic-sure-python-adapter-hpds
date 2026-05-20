@@ -74,6 +74,43 @@ session.exportAsPFB(my_query, "my_cohort.pfb")
     pip install picsure[pfb]
     ```
 
+## Saving a Query by Name
+
+On authorized deployments, you can persist a query to your user
+profile under a display name. `saveQueryByName` submits the query and
+associates the name with it server-side, returning the PIC-SURE query
+ID:
+
+```python
+qid = session.saveQueryByName(my_query, "Cohort 2026-Q2")
+```
+
+The returned `qid` is the same UUID you'd pass to `loadQueryByID` or
+`runQueryByID` later:
+
+```python
+restored = session.loadQueryByID(qid)
+df = session.runQueryByID(qid, type="participant")
+```
+
+By default, saving a second time with the same name raises
+`PicSureValidationError`. To repoint the existing record at a freshly
+built query, pass `overwrite=True`:
+
+```python
+qid = session.saveQueryByName(refined_query, "Cohort 2026-Q2", overwrite=True)
+```
+
+Constraints (validated client-side, mirrored from the backend
+`NamedDataset` contract):
+
+- `name` is required, non-empty, max 255 characters.
+- Allowed characters: letters, digits, spaces, and ``- _ \ / ? + = [ ] . ( ) : " '``.
+
+!!! note
+    `saveQueryByName` is not supported on open-access deployments —
+    the `/dataset/named/` endpoint requires an authenticated principal.
+
 ## Simple Queries
 
 You can pass a single clause directly to `runQuery` — you don't have

@@ -83,7 +83,7 @@ src/picsure/
 
 | Module             | What it owns                                                                 |
 |--------------------|------------------------------------------------------------------------------|
-| `session.py`       | `Session` class. Holds the HTTP client, resource list, consents, dictionary size, and the dev-mode config. Public methods (`searchDictionary`, `runQuery`, `runQueryByID`, `exportAsPFB`, `exportCSV`, `exportTSV`, `setResourceID`, `setResourceIDByName`, `getResourceID`, `facets`, `showAllFacets`, …) delegate to `_services/*`. |
+| `session.py`       | `Session` class. Holds the HTTP client, resource list, consents, dictionary size, and the dev-mode config. Public methods (`searchDictionary`, `runQuery`, `runQueryByID`, `loadQueryByID`, `saveQueryByName`, `exportAsPFB`, `exportCSV`, `exportTSV`, `setResourceID`, `setResourceIDByName`, `getResourceID`, `facets`, `showAllFacets`, …) delegate to `_services/*`. |
 | `resource.py`      | `Resource` dataclass (`uuid`, `name`, `description`) with a `from_dict` constructor for `/picsure/info/resources` payloads. |
 | `clause.py`        | `Clause` dataclass + `ClauseType` enum (`FILTER`, `ANYRECORD`, `SELECT`, `REQUIRE`). Each `Clause.to_query_json()` emits the v3 `PhenotypicClause` shape; `SELECT` raises and is extracted separately via `select_paths()`. |
 | `clause_group.py`  | `ClauseGroup` dataclass + `GroupOperator` enum (`AND`, `OR`). Recursively serializes to a v3 `PhenotypicSubquery`. Refuses to embed `SELECT` children inline (symmetry with `Clause`). |
@@ -100,8 +100,10 @@ src/picsure/
 | `connect.py`     | `connect(platform, token, …)`. Resolves the platform, hits `/psama/user/me` (skipped on open-access), fetches resources, consents, dictionary size, and constructs the `Session`. Also handles the dev-mode toggle and the success/expiration banner. |
 | `search.py`      | `searchDictionary`, `fetch_facets`, `show_all_facets`, plus the smaller helpers that build dictionary-api request bodies, dedupe entries, and turn results into DataFrames. Also `fetch_total_concepts` (used by connect to pre-size search pages). |
 | `query_build.py` | `createSubQuery` and `buildQuery` — the public constructors for `Clause` and `ClauseGroup` with input validation (rejects mutually-exclusive arguments before they reach the wire). |
+| `query_edit.py`  | `removeSubQuery(query, target)` and `replaceClause(query, target, replacement)`. Pure local tree edits — no network calls. Matching is structural (frozen-dataclass equality). Removals that empty a `ClauseGroup` prune the parent; removing the whole tree raises `PicSureValidationError`. |
 | `query_run.py`   | `run_query(client, resource_uuid, query, type)`. Serializes via `build_query_body`, posts to the v3 sync endpoint (or the legacy path on open-only deployments), and parses each response shape. Also `parse_count_string` for the obfuscated-count regexes. |
 | `query_load.py`  | `load_query(client, query_id)`. Hits the saved-query endpoint and reconstructs a `Clause` / `ClauseGroup` from the response so it can be re-run via `runQueryByID`. |
+| `query_save.py`  | `save_query_by_name(client, resource_uuid, query, name, *, use_legacy_query_path, overwrite)`. Submits the query via `POST /picsure/v3/query`, then `POST`s a new record to `/dataset/named/` (or `PUT`-updates an existing one when `overwrite=True`). Validates `name` against the backend `NamedDataset` pattern client-side. Refused on open-access deployments. |
 | `export.py`      | `export_pfb` — the async PFB flow (submit → poll with exponential backoff capped at 60s, 10-minute total deadline → stream result to a `.part` file → atomic rename). Plus `export_csv` and `export_tsv` for in-memory DataFrames. |
 | `consents.py`    | `fetch_consents(client)`. Reads `/psama/user/me/queryTemplate/`, parses the doubly-encoded JSON, and pulls the `\\_consents\\` study-consent list used by dictionary-api requests on authorized deployments. |
 
@@ -109,7 +111,7 @@ src/picsure/
 
 | Module         | What it owns                                                                  |
 |----------------|-------------------------------------------------------------------------------|
-| `client.py`    | `PicSureClient`. Wraps `httpx.Client` with Bearer-token auth, the `request-source: Authorized|Open` gateway header, a 30s timeout, one retry on connection errors and 5xx for GETs (POSTs are not retried on 5xx because they are non-idempotent), and a streaming variant `post_raw_stream` for binary payloads. `_raise_for_status` translates 4xx into the `Transport*Error` set. |
+| `client.py`    | `PicSureClient`. Wraps `httpx.Client` with Bearer-token auth, the `request-source: Authorized|Open` gateway header, a 30s timeout, one retry on connection errors and 5xx for GETs (POSTs are not retried on 5xx because they are non-idempotent), and a streaming variant `post_raw_stream` for binary payloads, plus `put_json` for the `saveQueryByName` overwrite path. `_raise_for_status` translates 4xx into the `Transport*Error` set. |
 | `errors.py`    | Internal `TransportError` hierarchy: `TransportAuthenticationError` (401/403), `TransportValidationError` (400/422/other 4xx), `TransportNotFoundError` (404), `TransportRateLimitError` (429, parses `Retry-After`), `TransportServerError` (5xx), `TransportConnectionError` (DNS / timeout / refused). |
 | `platforms.py` | `Platform` enum (`BDC_AUTHORIZED`, `BDC_OPEN`, `BDC_DEV_*`, `BDC_PREDEV_*`, `NHANES_AUTHORIZED`, `NHANES_OPEN`) and `resolve_platform()`. A `Platform` member carries URL, default resource UUID, whether dictionary calls need consents, and whether the platform requires a token; `resolve_platform` also accepts a raw `http(s)://` URL for unlisted deployments. |
 

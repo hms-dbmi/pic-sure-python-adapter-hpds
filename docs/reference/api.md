@@ -19,6 +19,10 @@ Complete reference for all public functions, classes, and types in the
 
 ::: picsure.buildQuery
 
+::: picsure.removeSubQuery
+
+::: picsure.replaceClause
+
 ## Types
 
 ### ClauseType
@@ -84,6 +88,7 @@ Complete reference for all public functions, classes, and types in the
         - runQuery
         - runQueryByID
         - loadQueryByID
+        - saveQueryByName
         - exportAsPFB
         - exportCSV
         - exportTSV

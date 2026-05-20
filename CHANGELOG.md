@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- `picsure.removeSubQuery(query, target)` returns a copy of `query` with every structurally-equal occurrence of `target` removed, recursively through nested groups. Emptied `ClauseGroup`s are dropped. Raises `PicSureValidationError` if the whole tree would be removed.
+- `picsure.replaceClause(query, target, replacement)` returns a copy of `query` with every structurally-equal occurrence of `target` swapped for `replacement`.
+- `Session.saveQueryByName(query, name, *, overwrite=False)` submits the query via `POST /picsure/v3/query` and associates `name` with it via `POST /dataset/named/`. With `overwrite=True`, an existing record with the same name is `PUT`-updated to point at the freshly-submitted query. The backend's `NamedDataset` constraints (`name` max 255 chars, allowed: letters, digits, spaces, ``- _ \ / ? + = [ ] . ( ) : " '``) are validated client-side. Refused on open-access deployments. Returns the new query ID — pass it to `loadQueryByID` / `runQueryByID` later.
+- `PicSureClient.put_json()` on the transport client (used by the `saveQueryByName` overwrite path).
 - `picsure.PicSureAuthError`, `picsure.PicSureConnectionError`, `picsure.PicSureQueryError`, and `picsure.PicSureValidationError` are now re-exported from the top-level package, so `from picsure import PicSureQueryError` works (previously required `from picsure.errors import ...`).
 - `Session.facets(term="", *, facets=None)` and `Session.showAllFacets(term="", *, facets=None)` now accept optional search term and facet selections. Counts returned are contextual to the provided search when term/facets are supplied; passing no arguments preserves the previous "global counts" behaviour.
 - `DictionaryEntry` exposes `min`, `max`, `allow_filtering`, `meta`, and `study_acronym` fields. The corresponding columns (`min`, `max`, `allowFiltering`, `meta`, `studyAcronym`) are added to the `Session.searchDictionary` DataFrame result.
