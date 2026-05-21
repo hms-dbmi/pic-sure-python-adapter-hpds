@@ -78,20 +78,20 @@ fhs_results = session.searchDictionary("blood pressure", facets=facets)
 from picsure import PhenotypicFilterType, GroupOperator
 
 # Create individual clauses
-sex_filter = picsure.createSubQuery(
+sex_filter = picsure.buildClause(
     "\\phs1\\pht1\\phv1\\sex\\",
     type=PhenotypicFilterType.FILTER,
     categories="Male",
 )
 
-age_filter = picsure.createSubQuery(
+age_filter = picsure.buildClause(
     "\\phs1\\pht1\\phv5\\age\\",
     type=PhenotypicFilterType.FILTER,
     min=40,
 )
 
 # Combine into a group
-query = picsure.buildQuery(
+query = picsure.buildClauseGroup(
     [sex_filter, age_filter],
     operator=GroupOperator.AND,
 )
