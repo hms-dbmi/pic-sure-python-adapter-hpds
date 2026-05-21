@@ -10,7 +10,7 @@ from picsure._models.query import Query
 from picsure._models.query_type import QueryType
 from picsure._models.session import Session
 from picsure._services.connect import connect
-from picsure._services.query_build import buildQuery, createSubQuery
+from picsure._services.query_build import buildClause, buildClauseGroup, buildQuery
 from picsure._services.query_edit import removeSubQuery, replaceClause
 from picsure._transport.platforms import Platform
 from picsure.errors import (
@@ -35,9 +35,10 @@ def set_dev_mode(enabled: bool) -> None:
 
 
 __all__ = [
+    "buildClause",
+    "buildClauseGroup",
     "buildQuery",
     "connect",
-    "createSubQuery",
     "removeSubQuery",
     "replaceClause",
     "set_dev_mode",

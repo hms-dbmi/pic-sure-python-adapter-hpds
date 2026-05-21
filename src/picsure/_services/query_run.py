@@ -6,7 +6,7 @@ from io import BytesIO
 
 import pandas as pd
 
-from picsure._models.clause import Clause, PhenotypicFilterType
+from picsure._models.clause import Clause
 from picsure._models.clause_group import ClauseGroup
 from picsure._models.count_result import CountResult
 from picsure._models.query import Query
@@ -46,7 +46,7 @@ _COUNT_SUPPRESSED = re.compile(r"^<\s*(\d+)$")
 def run_query(
     client: PicSureClient,
     resource_uuid: str,
-    query: Query,
+    query: Query | Clause | ClauseGroup,
     query_type: QueryType | str,
     *,
     use_legacy_query_path: bool = False,
@@ -56,7 +56,8 @@ def run_query(
     Args:
         client: Authenticated HTTP client.
         resource_uuid: The resource to query.
-        query: A Clause or ClauseGroup built with createSubQuery/buildQuery.
+        query: A Query, Clause, or ClauseGroup built with
+            buildQuery/buildClause/buildClauseGroup.
         query_type: A :class:`QueryType` member (e.g. ``QueryType.COUNT``)
             or one of the strings ``"count"``, ``"participant"``,
             ``"timestamp"``, ``"cross_count"``.
@@ -116,14 +117,15 @@ def run_query(
 
 
 def build_query_body(
-    query: Query,
+    query: Query | Clause | ClauseGroup,
     resource_uuid: str,
     expected_result_type: str,
 ) -> dict[str, object]:
     """Assemble the v3 ``/picsure/v3/query/sync`` request body.
 
-    Splits any SELECT clauses out of the query tree to the top-level
-    ``select`` list; the rest becomes ``phenotypicClause``.
+    Normalizes the query into a phenotypic filter tree and a list of
+    ``includeConcepts``; the tree becomes ``phenotypicClause`` and the
+    concept paths become the top-level ``select`` array.
 
     Notes:
         ``authorizationFilters`` is intentionally omitted from the body.
@@ -131,13 +133,8 @@ def build_query_body(
         client-asserted list (especially with a long-term token) is
         treated as tampering and can be rejected with a 401.
     """
-    if not isinstance(query, (Clause, ClauseGroup)):
-        raise PicSureValidationError(
-            "Query must be a Clause or ClauseGroup. "
-            "Use createSubQuery() or buildQuery() to construct one."
-        )
-    select_paths = query.select_paths()
-    phenotypic = _phenotypic_clause(query)
+    filter_tree, select_paths = _split(query)
+    phenotypic = filter_tree.to_query_json() if filter_tree is not None else None
     return {
         "query": {
             "select": select_paths,
@@ -151,15 +148,18 @@ def build_query_body(
     }
 
 
-def _phenotypic_clause(query: Query) -> dict[str, object] | None:
-    if isinstance(query, Clause):
-        if query.type == PhenotypicFilterType.SELECT:
-            return None
-        return query.to_query_json()
-    stripped = query.phenotypic_only()
-    if stripped is None:
-        return None
-    return stripped.to_query_json()
+def _split(
+    query: Query | Clause | ClauseGroup,
+) -> tuple[Clause | ClauseGroup | None, list[str]]:
+    """Normalize a runnable query into a (filter tree, select paths) pair."""
+    if isinstance(query, Query):
+        return query.phenotypicFilter, list(query.includeConcepts)
+    if isinstance(query, (Clause, ClauseGroup)):
+        return query, []
+    raise PicSureValidationError(
+        "Query must be a Clause, ClauseGroup, or Query. Use "
+        "buildClause()/buildClauseGroup()/buildQuery() to construct one."
+    )
 
 
 def _resolve_query_type(query_type: QueryType | str) -> str:

@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from picsure._models.clause import Clause
+from picsure._models.clause_group import ClauseGroup
 from picsure._models.query import Query
 from picsure._services._errors import translate_stage_error
 from picsure._services.query_run import build_query_body
@@ -39,7 +41,7 @@ _TOTAL_TIMEOUT_SECONDS = 600.0
 def export_pfb(
     client: PicSureClient,
     resource_uuid: str,
-    query: Query,
+    query: Query | Clause | ClauseGroup,
     path: str | Path,
 ) -> None:
     """Execute a query and stream the PFB result to disk.

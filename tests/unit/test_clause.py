@@ -1,8 +1,7 @@
 import pytest
 
 from picsure._models.clause import Clause, PhenotypicFilterType
-from picsure._services.query_build import createSubQuery
-from picsure.errors import PicSureValidationError
+from picsure._services.query_build import buildClause
 
 
 class TestPhenotypicFilterType:
@@ -12,17 +11,16 @@ class TestPhenotypicFilterType:
     def test_anyrecord_value(self):
         assert PhenotypicFilterType.ANYRECORD.value == "anyrecord"
 
-    def test_select_value(self):
-        assert PhenotypicFilterType.SELECT.value == "select"
-
     def test_require_value(self):
         assert PhenotypicFilterType.REQUIRE.value == "require"
+
+    def test_select_member_removed(self):
+        assert not hasattr(PhenotypicFilterType, "SELECT")
 
     def test_all_members(self):
         assert set(PhenotypicFilterType) == {
             PhenotypicFilterType.FILTER,
             PhenotypicFilterType.ANYRECORD,
-            PhenotypicFilterType.SELECT,
             PhenotypicFilterType.REQUIRE,
         }
 
@@ -71,7 +69,7 @@ class TestClause:
     def test_multiple_keys(self):
         clause = Clause(
             keys=["\\path1\\", "\\path2\\"],
-            type=PhenotypicFilterType.SELECT,
+            type=PhenotypicFilterType.ANYRECORD,
         )
         assert len(clause.keys) == 2
 
@@ -135,11 +133,6 @@ class TestClauseToQueryJson:
         assert result["conceptPath"] == "\\path\\"
         assert result["not"] is False
 
-    def test_select_raises(self):
-        clause = Clause(keys=["\\path\\"], type=PhenotypicFilterType.SELECT)
-        with pytest.raises(PicSureValidationError, match="SELECT clauses"):
-            clause.to_query_json()
-
     def test_multi_key_wrapped_in_or_subquery(self):
         clause = Clause(
             keys=["\\path_a\\", "\\path_b\\"],
@@ -155,36 +148,16 @@ class TestClauseToQueryJson:
         assert leaf_a["phenotypicFilterType"] == "ANY_RECORD_OF"
 
 
-class TestClauseSelectPaths:
-    def test_select_returns_keys(self):
-        clause = Clause(keys=["\\a\\", "\\b\\"], type=PhenotypicFilterType.SELECT)
-        assert clause.select_paths() == ["\\a\\", "\\b\\"]
-
-    def test_filter_returns_empty(self):
-        clause = Clause(
-            keys=["\\a\\"], type=PhenotypicFilterType.FILTER, categories=["x"]
-        )
-        assert clause.select_paths() == []
-
-    def test_anyrecord_returns_empty(self):
-        clause = Clause(keys=["\\a\\"], type=PhenotypicFilterType.ANYRECORD)
-        assert clause.select_paths() == []
-
-    def test_require_returns_empty(self):
-        clause = Clause(keys=["\\a\\"], type=PhenotypicFilterType.REQUIRE)
-        assert clause.select_paths() == []
-
-
-class TestCreateClauseDefensiveCopies:
+class TestBuildClauseDefensiveCopies:
     def test_mutating_keys_list_after_construction_does_not_affect_clause(self):
         keys = ["\\p1\\", "\\p2\\"]
-        clause = createSubQuery(keys, type=PhenotypicFilterType.SELECT)
+        clause = buildClause(keys, type=PhenotypicFilterType.ANYRECORD)
         keys.append("\\p3\\")
         assert clause.keys == ["\\p1\\", "\\p2\\"]
 
     def test_mutating_categories_list_after_construction_does_not_affect_clause(self):
         categories = ["Male", "Female"]
-        clause = createSubQuery(
+        clause = buildClause(
             "\\path\\",
             type=PhenotypicFilterType.FILTER,
             categories=categories,
@@ -194,7 +167,7 @@ class TestCreateClauseDefensiveCopies:
 
     def test_mutating_keys_list_does_not_affect_clause_via_clear(self):
         keys = ["\\p1\\", "\\p2\\"]
-        clause = createSubQuery(
+        clause = buildClause(
             keys,
             type=PhenotypicFilterType.FILTER,
             categories=["x"],
@@ -204,7 +177,7 @@ class TestCreateClauseDefensiveCopies:
 
     def test_mutating_categories_list_does_not_affect_clause_via_clear(self):
         categories = ["Male"]
-        clause = createSubQuery(
+        clause = buildClause(
             "\\path\\",
             type=PhenotypicFilterType.FILTER,
             categories=categories,

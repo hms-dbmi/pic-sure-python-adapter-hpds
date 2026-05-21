@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
+from picsure._models.query import Query
 from picsure.errors import PicSureValidationError
 
 
-def createSubQuery(  # noqa: N802
+def buildClause(  # noqa: N802
     keys: str | list[str],
     type: PhenotypicFilterType,  # noqa: A002
     categories: str | list[str] | None = None,
@@ -18,26 +19,33 @@ def createSubQuery(  # noqa: N802
         keys: Concept path(s) this clause applies to.
         type: The kind of filter. Use ``PhenotypicFilterType.FILTER`` for
             categorical or range filters, ``PhenotypicFilterType.ANYRECORD``
-            to match the presence of any value.
+            to match the presence of any value, or
+            ``PhenotypicFilterType.REQUIRE`` to require a non-null value.
         categories: For FILTER clauses on categorical variables.
         min: For FILTER clauses on numeric variables, minimum value.
         max: For FILTER clauses on numeric variables, maximum value.
 
     Returns:
-        A Clause that can be used in ``buildQuery()`` or
-        passed directly to ``Session.runQuery()``.
+        A Clause that can be combined with ``buildClauseGroup()``, assembled
+        into a query with ``buildQuery()``, or passed directly to
+        ``Session.runQuery()``.
 
     Raises:
         PicSureValidationError: If the clause configuration is invalid.
 
+    Note:
+        To include concept paths in the query output without filtering, use
+        ``buildQuery(includeConcepts=...)`` — output columns are no longer a
+        clause type.
+
     Example:
-        >>> from picsure import createSubQuery, PhenotypicFilterType
-        >>> sex = createSubQuery(
+        >>> from picsure import buildClause, PhenotypicFilterType
+        >>> sex = buildClause(
         ...     r"\\phs1\\pht1\\phv1\\sex\\",
         ...     type=PhenotypicFilterType.FILTER,
         ...     categories="Male",
         ... )
-        >>> age = createSubQuery(
+        >>> age = buildClause(
         ...     r"\\phs1\\pht1\\phv5\\age\\",
         ...     type=PhenotypicFilterType.FILTER,
         ...     min=40.0,
@@ -76,11 +84,11 @@ def createSubQuery(  # noqa: N802
                 "FILTER clauses cannot have both categories and min/max."
             )
 
-    if type in (PhenotypicFilterType.REQUIRE, PhenotypicFilterType.SELECT) and (
+    if type == PhenotypicFilterType.REQUIRE and (
         categories is not None or min is not None or max is not None
     ):
         raise PicSureValidationError(
-            f"{type.name} clauses cannot have categories, min, or max."
+            "REQUIRE clauses cannot have categories, min, or max."
         )
 
     return Clause(
@@ -92,11 +100,11 @@ def createSubQuery(  # noqa: N802
     )
 
 
-def buildQuery(  # noqa: N802
+def buildClauseGroup(  # noqa: N802
     clauses: list[Clause | ClauseGroup],
     operator: GroupOperator = GroupOperator.AND,
 ) -> ClauseGroup:
-    """Create a group of clauses combined with AND or OR.
+    """Combine clauses (and nested groups) under an AND or OR operator.
 
     Args:
         clauses: List of Clause or ClauseGroup objects to combine.
@@ -104,15 +112,16 @@ def buildQuery(  # noqa: N802
             ``GroupOperator.OR``.
 
     Returns:
-        A ClauseGroup that can be nested or passed to
+        A ClauseGroup that can be nested in another ``buildClauseGroup()``,
+        assembled into a query with ``buildQuery()``, or passed directly to
         ``Session.runQuery()``.
 
     Raises:
         PicSureValidationError: If the clause list is empty.
 
     Example:
-        >>> from picsure import buildQuery, GroupOperator
-        >>> group = buildQuery(
+        >>> from picsure import buildClauseGroup, GroupOperator
+        >>> group = buildClauseGroup(
         ...     [sex_filter, age_filter],
         ...     operator=GroupOperator.AND,
         ... )
@@ -121,3 +130,56 @@ def buildQuery(  # noqa: N802
         raise PicSureValidationError("A clause group must contain at least one clause.")
 
     return ClauseGroup(clauses=clauses, operator=operator)
+
+
+def buildQuery(  # noqa: N802
+    phenotypicFilter: Clause | ClauseGroup | None = None,  # noqa: N803
+    includeConcepts: str | list[str] | tuple[str, ...] = (),  # noqa: N803
+) -> Query:
+    """Assemble a complete query from a filter tree and/or output concepts.
+
+    Args:
+        phenotypicFilter: A Clause or ClauseGroup (from ``buildClause()`` /
+            ``buildClauseGroup()``) to filter on, or ``None`` for an
+            include-only query.
+        includeConcepts: Concept path(s) to include as output columns. Order
+            is preserved and duplicates are dropped.
+
+    Returns:
+        A Query suitable for ``Session.runQuery()``, ``Session.exportAsPFB()``,
+        or ``Session.saveQueryByName()``.
+
+    Raises:
+        PicSureValidationError: If ``phenotypicFilter`` is not a Clause /
+            ClauseGroup / None, or if both arguments are empty.
+
+    Example:
+        >>> from picsure import buildClause, buildQuery, PhenotypicFilterType
+        >>> males = buildClause(
+        ...     sex_path, type=PhenotypicFilterType.FILTER, categories="Male"
+        ... )
+        >>> q = buildQuery(phenotypicFilter=males, includeConcepts=[bmi, hdl])
+        >>> df = session.runQuery(q, type="participant")
+    """
+    cols = (
+        [includeConcepts] if isinstance(includeConcepts, str) else list(includeConcepts)
+    )
+
+    if phenotypicFilter is not None and not isinstance(
+        phenotypicFilter, (Clause, ClauseGroup)
+    ):
+        raise PicSureValidationError(
+            "phenotypicFilter must be a Clause or ClauseGroup (from "
+            "buildClause()/buildClauseGroup()), or None."
+        )
+
+    if phenotypicFilter is None and not cols:
+        raise PicSureValidationError(
+            "buildQuery requires a phenotypicFilter, includeConcepts, or both."
+        )
+
+    # de-dup while preserving order
+    return Query(
+        phenotypicFilter=phenotypicFilter,
+        includeConcepts=tuple(dict.fromkeys(cols)),
+    )

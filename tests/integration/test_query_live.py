@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 
 import picsure
-from picsure import PhenotypicFilterType, createSubQuery
+from picsure import PhenotypicFilterType, buildClause
 
 from .conftest import requires_auth
 
@@ -14,7 +14,7 @@ class TestRunQueryLive:
         from picsure import CountResult
 
         session = picsure.connect(platform=test_platform, token=test_token)
-        clause = createSubQuery(test_concept_path, type=PhenotypicFilterType.REQUIRE)
+        clause = buildClause(test_concept_path, type=PhenotypicFilterType.REQUIRE)
         result = session.runQuery(clause, type="count")
         assert isinstance(result, CountResult)
         # Either the server returned an exact or noisy count (value set)
@@ -32,12 +32,12 @@ class TestRunQueryLive:
                 "open-access platforms don't support participant queries."
             )
         session = picsure.connect(platform=test_platform, token=test_token)
-        clause = createSubQuery(test_concept_path, type=PhenotypicFilterType.REQUIRE)
+        clause = buildClause(test_concept_path, type=PhenotypicFilterType.REQUIRE)
         df = session.runQuery(clause, type="participant")
         assert isinstance(df, pd.DataFrame)
 
     def test_invalid_type_raises(self, test_token, test_platform, test_concept_path):
         session = picsure.connect(platform=test_platform, token=test_token)
-        clause = createSubQuery(test_concept_path, type=PhenotypicFilterType.REQUIRE)
+        clause = buildClause(test_concept_path, type=PhenotypicFilterType.REQUIRE)
         with pytest.raises(picsure.PicSureError):
             session.runQuery(clause, type="invalid_type")
