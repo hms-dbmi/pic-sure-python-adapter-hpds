@@ -1,7 +1,7 @@
 # ruff: noqa: E402
 import pytest
 
-from picsure._models.clause import Clause, ClauseType
+from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure._services.query_load import _parse_phenotypic
 from picsure.errors import PicSureQueryError, PicSureValidationError
@@ -18,7 +18,7 @@ class TestParsePhenotypicLeaf:
         result = _parse_phenotypic(node)
         assert isinstance(result, Clause)
         assert result.keys == ["\\phs1\\sex\\"]
-        assert result.type == ClauseType.FILTER
+        assert result.type == PhenotypicFilterType.FILTER
         assert result.categories == ["Male"]
         assert result.min is None
         assert result.max is None
@@ -33,7 +33,7 @@ class TestParsePhenotypicLeaf:
         }
         result = _parse_phenotypic(node)
         assert isinstance(result, Clause)
-        assert result.type == ClauseType.FILTER
+        assert result.type == PhenotypicFilterType.FILTER
         assert result.min == 40.0
         assert result.max == 65.5
         assert result.categories is None
@@ -58,7 +58,7 @@ class TestParsePhenotypicLeaf:
         }
         result = _parse_phenotypic(node)
         assert isinstance(result, Clause)
-        assert result.type == ClauseType.REQUIRE
+        assert result.type == PhenotypicFilterType.REQUIRE
         assert result.keys == ["\\phs1\\bmi\\"]
 
     def test_any_record_of_leaf(self):
@@ -69,7 +69,7 @@ class TestParsePhenotypicLeaf:
         }
         result = _parse_phenotypic(node)
         assert isinstance(result, Clause)
-        assert result.type == ClauseType.ANYRECORD
+        assert result.type == PhenotypicFilterType.ANYRECORD
 
     def test_unknown_filter_type_raises(self):
         node = {
@@ -198,12 +198,12 @@ class TestToQuery:
     def test_phenotypic_only(self):
         result = _to_query([], self._filter("\\phs1\\sex\\", "Male"))
         assert isinstance(result, Clause)
-        assert result.type == ClauseType.FILTER
+        assert result.type == PhenotypicFilterType.FILTER
 
     def test_single_select_only(self):
         result = _to_query(["\\phs1\\out\\"], None)
         assert isinstance(result, Clause)
-        assert result.type == ClauseType.SELECT
+        assert result.type == PhenotypicFilterType.SELECT
         assert result.keys == ["\\phs1\\out\\"]
 
     def test_multiple_selects_only(self):
@@ -213,7 +213,7 @@ class TestToQuery:
         assert len(result.clauses) == 2
         for c in result.clauses:
             assert isinstance(c, Clause)
-            assert c.type == ClauseType.SELECT
+            assert c.type == PhenotypicFilterType.SELECT
 
     def test_selects_plus_phenotypic_returns_and_group(self):
         result = _to_query(["\\phs1\\out\\"], self._filter("\\phs1\\sex\\", "Male"))
@@ -320,7 +320,7 @@ class TestLoadQueryHappyPath:
         respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
         result = load_query(_make_client(), QUERY_ID)
         assert isinstance(result, Clause)
-        assert result.type == ClauseType.FILTER
+        assert result.type == PhenotypicFilterType.FILTER
 
     @respx.mock
     def test_select_plus_phenotypic_returns_group(self):

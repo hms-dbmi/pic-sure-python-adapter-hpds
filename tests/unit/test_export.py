@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 import respx
 
-from picsure._models.clause import Clause, ClauseType
+from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._services.export import export_csv, export_pfb, export_tsv
 from picsure._transport.client import PicSureClient
 from picsure.errors import (
@@ -30,7 +30,9 @@ def _make_client() -> PicSureClient:
 
 
 def _simple_clause() -> Clause:
-    return Clause(keys=["\\phs1\\sex\\"], type=ClauseType.FILTER, categories=["Male"])
+    return Clause(
+        keys=["\\phs1\\sex\\"], type=PhenotypicFilterType.FILTER, categories=["Male"]
+    )
 
 
 def _submit_ok() -> httpx.Response:

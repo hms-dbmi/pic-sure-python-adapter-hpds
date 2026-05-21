@@ -6,7 +6,7 @@ import httpx
 import pytest
 import respx
 
-from picsure._models.clause import Clause, ClauseType
+from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._services.query_save import save_query_by_name
 from picsure._transport.client import PicSureClient
 from picsure.errors import (
@@ -30,7 +30,7 @@ def _client() -> PicSureClient:
 
 
 def _clause() -> Clause:
-    return Clause(keys=["\\a\\"], type=ClauseType.FILTER, categories=["x"])
+    return Clause(keys=["\\a\\"], type=PhenotypicFilterType.FILTER, categories=["x"])
 
 
 class TestSaveQueryByNameHappyPath:

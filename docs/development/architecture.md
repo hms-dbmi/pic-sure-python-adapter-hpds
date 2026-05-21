@@ -85,7 +85,7 @@ src/picsure/
 |--------------------|------------------------------------------------------------------------------|
 | `session.py`       | `Session` class. Holds the HTTP client, resource list, consents, dictionary size, and the dev-mode config. Public methods (`searchDictionary`, `runQuery`, `runQueryByID`, `loadQueryByID`, `saveQueryByName`, `exportAsPFB`, `exportCSV`, `exportTSV`, `setResourceID`, `setResourceIDByName`, `getResourceID`, `facets`, `showAllFacets`, …) delegate to `_services/*`. |
 | `resource.py`      | `Resource` dataclass (`uuid`, `name`, `description`) with a `from_dict` constructor for `/picsure/info/resources` payloads. |
-| `clause.py`        | `Clause` dataclass + `ClauseType` enum (`FILTER`, `ANYRECORD`, `SELECT`, `REQUIRE`). Each `Clause.to_query_json()` emits the v3 `PhenotypicClause` shape; `SELECT` raises and is extracted separately via `select_paths()`. |
+| `clause.py`        | `Clause` dataclass + `PhenotypicFilterType` enum (`FILTER`, `ANYRECORD`, `SELECT`, `REQUIRE`). Each `Clause.to_query_json()` emits the v3 `PhenotypicClause` shape; `SELECT` raises and is extracted separately via `select_paths()`. |
 | `clause_group.py`  | `ClauseGroup` dataclass + `GroupOperator` enum (`AND`, `OR`). Recursively serializes to a v3 `PhenotypicSubquery`. Refuses to embed `SELECT` children inline (symmetry with `Clause`). |
 | `query.py`         | `Query` type alias: `Clause | ClauseGroup`. The single type that runs through the query path. |
 | `query_type.py`    | `QueryType` enum (`COUNT`, `PARTICIPANT`, `TIMESTAMP`, `CROSS_COUNT`). Public API also accepts equivalent lowercase strings. |

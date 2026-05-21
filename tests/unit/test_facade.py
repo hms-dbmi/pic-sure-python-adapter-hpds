@@ -30,7 +30,7 @@ class TestPublicFacade:
             "FacetSet",
             "createSubQuery",
             "buildQuery",
-            "ClauseType",
+            "PhenotypicFilterType",
             "GroupOperator",
             "Clause",
             "ClauseGroup",
@@ -53,7 +53,7 @@ class TestPublicFacade:
         assert callable(picsure.buildQuery)
 
     def test_clause_type_is_importable(self):
-        assert picsure.ClauseType is not None
+        assert picsure.PhenotypicFilterType is not None
 
     def test_group_operator_is_importable(self):
         assert picsure.GroupOperator is not None

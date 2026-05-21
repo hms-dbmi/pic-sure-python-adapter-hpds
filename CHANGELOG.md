@@ -29,7 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Zero-result searches return empty DataFrames with a stderr note.
 - `picsure.createSubQuery()` to build individual filter clauses (FILTER, ANYRECORD, SELECT, REQUIRE).
 - `picsure.buildQuery()` to combine clauses with AND/OR logic, supporting arbitrary nesting.
-- `ClauseType` and `GroupOperator` enums for type-safe clause and group construction.
+- `PhenotypicFilterType` and `GroupOperator` enums for type-safe clause and group construction.
 - `Clause`, `ClauseGroup`, and `Query` types with `to_query_json()` serialization.
 - `CountResult` dataclass exposing `value`, `margin`, `cap`, `raw`, and an `obfuscated` property for count query responses.
 - Input validation with actionable error messages for invalid clause configurations.

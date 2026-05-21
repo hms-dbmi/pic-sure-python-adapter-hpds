@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-from picsure._models.clause import Clause, ClauseType
+from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure.errors import PicSureValidationError
 
 
@@ -48,7 +48,7 @@ class ClauseGroup:
         """
         pheno_children: list[dict[str, object]] = []
         for child in self.clauses:
-            if isinstance(child, Clause) and child.type == ClauseType.SELECT:
+            if isinstance(child, Clause) and child.type == PhenotypicFilterType.SELECT:
                 raise PicSureValidationError(
                     "ClauseGroup cannot contain a SELECT clause; use "
                     "Clause.select_paths() to extract SELECT concept paths."
@@ -71,7 +71,7 @@ class ClauseGroup:
         """True if this group contains any non-SELECT clause, recursively."""
         for child in self.clauses:
             if isinstance(child, Clause):
-                if child.type != ClauseType.SELECT:
+                if child.type != PhenotypicFilterType.SELECT:
                     return True
             elif child.has_phenotypic():
                 return True
@@ -92,7 +92,7 @@ class ClauseGroup:
         kept: list[Clause | ClauseGroup] = []
         for child in self.clauses:
             if isinstance(child, Clause):
-                if child.type != ClauseType.SELECT:
+                if child.type != PhenotypicFilterType.SELECT:
                     kept.append(child)
             else:
                 stripped = child.phenotypic_only()

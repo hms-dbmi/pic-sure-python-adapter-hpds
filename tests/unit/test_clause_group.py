@@ -1,6 +1,6 @@
 import pytest
 
-from picsure._models.clause import Clause, ClauseType
+from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure.errors import PicSureValidationError
 
@@ -19,7 +19,7 @@ class TestGroupOperator:
 def _sex_clause() -> Clause:
     return Clause(
         keys=["\\phs1\\sex\\"],
-        type=ClauseType.FILTER,
+        type=PhenotypicFilterType.FILTER,
         categories=["Male"],
     )
 
@@ -27,7 +27,7 @@ def _sex_clause() -> Clause:
 def _age_clause() -> Clause:
     return Clause(
         keys=["\\phs1\\age\\"],
-        type=ClauseType.FILTER,
+        type=PhenotypicFilterType.FILTER,
         min=40.0,
     )
 
@@ -35,7 +35,7 @@ def _age_clause() -> Clause:
 def _copd_clause() -> Clause:
     return Clause(
         keys=["\\phs1\\copd\\"],
-        type=ClauseType.FILTER,
+        type=PhenotypicFilterType.FILTER,
         categories=["Yes"],
     )
 
@@ -43,13 +43,13 @@ def _copd_clause() -> Clause:
 def _asthma_clause() -> Clause:
     return Clause(
         keys=["\\phs1\\asthma\\"],
-        type=ClauseType.FILTER,
+        type=PhenotypicFilterType.FILTER,
         categories=["Yes, recent"],
     )
 
 
 def _select_clause() -> Clause:
-    return Clause(keys=["\\phs1\\output\\"], type=ClauseType.SELECT)
+    return Clause(keys=["\\phs1\\output\\"], type=PhenotypicFilterType.SELECT)
 
 
 class TestClauseGroup:
@@ -259,7 +259,7 @@ class TestClauseGroupPhenotypicOnly:
         assert len(stripped.clauses) == 2
         assert stripped.operator == GroupOperator.AND
         assert all(
-            isinstance(c, Clause) and c.type != ClauseType.SELECT
+            isinstance(c, Clause) and c.type != PhenotypicFilterType.SELECT
             for c in stripped.clauses
         )
 
@@ -286,7 +286,7 @@ class TestClauseGroupPhenotypicOnly:
         assert isinstance(nested, ClauseGroup)
         assert len(nested.clauses) == 1
         assert isinstance(nested.clauses[0], Clause)
-        assert nested.clauses[0].type == ClauseType.FILTER
+        assert nested.clauses[0].type == PhenotypicFilterType.FILTER
 
     def test_drops_nested_group_that_becomes_empty(self):
         inner = ClauseGroup(
@@ -301,7 +301,7 @@ class TestClauseGroupPhenotypicOnly:
         assert stripped is not None
         assert len(stripped.clauses) == 1
         assert isinstance(stripped.clauses[0], Clause)
-        assert stripped.clauses[0].type == ClauseType.FILTER
+        assert stripped.clauses[0].type == PhenotypicFilterType.FILTER
 
     def test_returns_none_when_everything_strips(self):
         inner = ClauseGroup(

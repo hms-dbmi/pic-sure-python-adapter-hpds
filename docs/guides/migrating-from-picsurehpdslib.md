@@ -30,10 +30,10 @@ One package replaces both the client and the adapter.
 | `adapter.useResource(uuid)` | `session.setResourceID(uuid)` |
 | `resource.dictionary().find("sex")` | `session.searchDictionary("sex")` |
 | `resource.query()` | `picsure.createSubQuery(...)` |
-| `query.filter().add(path, values)` | `picsure.createSubQuery(path, type=ClauseType.FILTER, categories=values)` |
-| `query.require().add(path)` | `picsure.createSubQuery(path, type=ClauseType.REQUIRE)` |
-| `query.anyRecordOf().add(path)` | `picsure.createSubQuery(path, type=ClauseType.ANYRECORD)` |
-| `query.select().add(path)` | `picsure.createSubQuery(path, type=ClauseType.SELECT)` |
+| `query.filter().add(path, values)` | `picsure.createSubQuery(path, type=PhenotypicFilterType.FILTER, categories=values)` |
+| `query.require().add(path)` | `picsure.createSubQuery(path, type=PhenotypicFilterType.REQUIRE)` |
+| `query.anyRecordOf().add(path)` | `picsure.createSubQuery(path, type=PhenotypicFilterType.ANYRECORD)` |
+| `query.select().add(path)` | `picsure.createSubQuery(path, type=PhenotypicFilterType.SELECT)` |
 | `query.getCount()` | `session.runQuery(query, type="count")` |
 | `query.getResults()` | `session.runQuery(query, type="participant")` |
 | `query.getResultsDataFrame()` | `session.runQuery(query, type="participant")` |
@@ -98,11 +98,11 @@ query.require().add("\\phs1\\bmi\\")
 **New:**
 
 ```python
-from picsure import createSubQuery, buildQuery, ClauseType, GroupOperator
+from picsure import createSubQuery, buildQuery, PhenotypicFilterType, GroupOperator
 
-sex = createSubQuery("\\phs1\\sex\\", type=ClauseType.FILTER, categories="Male")
-age = createSubQuery("\\phs1\\age\\", type=ClauseType.FILTER, min=40)
-bmi = createSubQuery("\\phs1\\bmi\\", type=ClauseType.REQUIRE)
+sex = createSubQuery("\\phs1\\sex\\", type=PhenotypicFilterType.FILTER, categories="Male")
+age = createSubQuery("\\phs1\\age\\", type=PhenotypicFilterType.FILTER, min=40)
+bmi = createSubQuery("\\phs1\\bmi\\", type=PhenotypicFilterType.REQUIRE)
 
 query = buildQuery([sex, age, bmi], operator=GroupOperator.AND)
 ```

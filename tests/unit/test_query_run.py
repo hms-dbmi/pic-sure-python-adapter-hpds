@@ -2,7 +2,7 @@ import httpx
 import pytest
 import respx
 
-from picsure._models.clause import Clause, ClauseType
+from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure._models.count_result import CountResult
 from picsure._models.query_type import QueryType
@@ -28,7 +28,9 @@ def _make_client() -> PicSureClient:
 
 
 def _simple_clause() -> Clause:
-    return Clause(keys=["\\phs1\\sex\\"], type=ClauseType.FILTER, categories=["Male"])
+    return Clause(
+        keys=["\\phs1\\sex\\"], type=PhenotypicFilterType.FILTER, categories=["Male"]
+    )
 
 
 class TestRunQueryCount:
@@ -402,7 +404,7 @@ class TestRunQueryWithClauseGroup:
         route = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"100")
         )
-        age = Clause(keys=["\\age\\"], type=ClauseType.FILTER, min=40.0)
+        age = Clause(keys=["\\age\\"], type=PhenotypicFilterType.FILTER, min=40.0)
         group = ClauseGroup(
             clauses=[_simple_clause(), age],
             operator=GroupOperator.AND,
@@ -427,7 +429,7 @@ class TestRunQueryWithClauseGroup:
         route = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"100")
         )
-        out = Clause(keys=["\\out_a\\", "\\out_b\\"], type=ClauseType.SELECT)
+        out = Clause(keys=["\\out_a\\", "\\out_b\\"], type=PhenotypicFilterType.SELECT)
         group = ClauseGroup(
             clauses=[_simple_clause(), out],
             operator=GroupOperator.AND,
@@ -448,8 +450,8 @@ class TestRunQueryWithClauseGroup:
         route = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"100")
         )
-        select_a = Clause(keys=["\\a\\"], type=ClauseType.SELECT)
-        select_b = Clause(keys=["\\b\\"], type=ClauseType.SELECT)
+        select_a = Clause(keys=["\\a\\"], type=PhenotypicFilterType.SELECT)
+        select_b = Clause(keys=["\\b\\"], type=PhenotypicFilterType.SELECT)
         group = ClauseGroup(
             clauses=[select_a, select_b],
             operator=GroupOperator.AND,
@@ -468,7 +470,7 @@ class TestRunQueryWithClauseGroup:
         route = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"100")
         )
-        select = Clause(keys=["\\a\\"], type=ClauseType.SELECT)
+        select = Clause(keys=["\\a\\"], type=PhenotypicFilterType.SELECT)
         client = _make_client()
         run_query(client, RESOURCE_UUID, select, "count")
 
@@ -741,12 +743,14 @@ class TestRunQueryAcceptsMixedTopLevelGroup:
 
     @respx.mock
     def test_select_lifted_phenotypic_serialized(self):
-        select_a = Clause(keys=["\\phs1\\out_a\\"], type=ClauseType.SELECT)
-        select_b = Clause(keys=["\\phs1\\out_b\\"], type=ClauseType.SELECT)
+        select_a = Clause(keys=["\\phs1\\out_a\\"], type=PhenotypicFilterType.SELECT)
+        select_b = Clause(keys=["\\phs1\\out_b\\"], type=PhenotypicFilterType.SELECT)
         sex = Clause(
-            keys=["\\phs1\\sex\\"], type=ClauseType.FILTER, categories=["Male"]
+            keys=["\\phs1\\sex\\"],
+            type=PhenotypicFilterType.FILTER,
+            categories=["Male"],
         )
-        age = Clause(keys=["\\phs1\\age\\"], type=ClauseType.FILTER, min=40.0)
+        age = Clause(keys=["\\phs1\\age\\"], type=PhenotypicFilterType.FILTER, min=40.0)
         pheno_group = ClauseGroup(clauses=[sex, age], operator=GroupOperator.AND)
         top = ClauseGroup(
             clauses=[select_a, select_b, pheno_group],
@@ -774,8 +778,8 @@ class TestRunQueryAcceptsMixedTopLevelGroup:
 
     @respx.mock
     def test_select_only_top_level_group_omits_phenotypic(self):
-        select_a = Clause(keys=["\\phs1\\out_a\\"], type=ClauseType.SELECT)
-        select_b = Clause(keys=["\\phs1\\out_b\\"], type=ClauseType.SELECT)
+        select_a = Clause(keys=["\\phs1\\out_a\\"], type=PhenotypicFilterType.SELECT)
+        select_b = Clause(keys=["\\phs1\\out_b\\"], type=PhenotypicFilterType.SELECT)
         top = ClauseGroup(clauses=[select_a, select_b], operator=GroupOperator.AND)
         route = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"")

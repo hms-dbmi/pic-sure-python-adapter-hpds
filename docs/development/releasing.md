@@ -13,7 +13,7 @@ to PyPI, the docs site, and post-release housekeeping.
   parameters, narrowed types, dropped public errors, changed default
   behaviour all count.
 - **MINOR** (`0.Y.0`) — new public surface, additive changes.
-  Adding a method to `Session`, a new `ClauseType`, a new
+  Adding a method to `Session`, a new `PhenotypicFilterType`, a new
   `Platform` member.
 - **PATCH** (`0.0.Z`) — bug fixes that don't change the contract.
   Tightened input validation that previously accepted invalid input

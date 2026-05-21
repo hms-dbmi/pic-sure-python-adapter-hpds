@@ -2,7 +2,7 @@
 
 import os
 
-from picsure._models.clause import Clause, ClauseType
+from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure._models.count_result import CountResult
 from picsure._models.facet import FacetSet
@@ -43,10 +43,10 @@ __all__ = [
     "set_dev_mode",
     "Clause",
     "ClauseGroup",
-    "ClauseType",
     "CountResult",
     "FacetSet",
     "GroupOperator",
+    "PhenotypicFilterType",
     "PicSureAuthError",
     "PicSureConnectionError",
     "PicSureError",

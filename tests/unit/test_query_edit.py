@@ -5,8 +5,8 @@ import pytest
 from picsure import (
     Clause,
     ClauseGroup,
-    ClauseType,
     GroupOperator,
+    PhenotypicFilterType,
     buildQuery,
     createSubQuery,
     removeSubQuery,
@@ -16,7 +16,7 @@ from picsure.errors import PicSureValidationError
 
 
 def _clause(path: str, category: str) -> Clause:
-    return createSubQuery(path, type=ClauseType.FILTER, categories=category)
+    return createSubQuery(path, type=PhenotypicFilterType.FILTER, categories=category)
 
 
 def _flatten(node: Clause | ClauseGroup) -> list[Clause]:

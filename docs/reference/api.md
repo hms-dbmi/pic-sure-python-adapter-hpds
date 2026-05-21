@@ -25,9 +25,9 @@ Complete reference for all public functions, classes, and types in the
 
 ## Types
 
-### ClauseType
+### PhenotypicFilterType
 
-::: picsure.ClauseType
+::: picsure.PhenotypicFilterType
     options:
       members: true
 

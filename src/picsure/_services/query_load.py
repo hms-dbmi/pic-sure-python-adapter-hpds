@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from picsure._models.clause import CLAUSE_TYPE_BY_WIRE_NAME, Clause, ClauseType
+from picsure._models.clause import (
+    PHENOTYPIC_FILTER_TYPE_BY_WIRE_NAME,
+    Clause,
+    PhenotypicFilterType,
+)
 from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure._models.dictionary import coerce_float
 from picsure._services._errors import rate_limit_message
@@ -60,19 +64,22 @@ def _parse_phenotypic(node: object) -> Clause | ClauseGroup:
 
 def _parse_leaf(node: dict[str, object]) -> Clause:
     raw_type = node.get("phenotypicFilterType")
-    if not isinstance(raw_type, str) or raw_type not in CLAUSE_TYPE_BY_WIRE_NAME:
+    if (
+        not isinstance(raw_type, str)
+        or raw_type not in PHENOTYPIC_FILTER_TYPE_BY_WIRE_NAME
+    ):
         raise PicSureQueryError(
             f"Unknown phenotypicFilterType: {raw_type!r}. "
-            f"Expected one of: {sorted(CLAUSE_TYPE_BY_WIRE_NAME.keys())}."
+            f"Expected one of: {sorted(PHENOTYPIC_FILTER_TYPE_BY_WIRE_NAME.keys())}."
         )
     concept_path = node.get("conceptPath")
     if not isinstance(concept_path, str):
         raise PicSureQueryError("Leaf phenotypic clause missing 'conceptPath' string.")
-    clause_type = CLAUSE_TYPE_BY_WIRE_NAME[raw_type]
+    clause_type = PHENOTYPIC_FILTER_TYPE_BY_WIRE_NAME[raw_type]
     categories: list[str] | None = None
     cmin: float | None = None
     cmax: float | None = None
-    if clause_type == ClauseType.FILTER:
+    if clause_type == PhenotypicFilterType.FILTER:
         values = node.get("values")
         if isinstance(values, list) and values:
             categories = [str(v) for v in values]
@@ -111,7 +118,7 @@ def _to_query(
 ) -> Clause | ClauseGroup:
     """Combine the saved SELECT paths and phenotypic tree into a single Query."""
     selects: list[Clause | ClauseGroup] = [
-        Clause(keys=[p], type=ClauseType.SELECT) for p in select_paths
+        Clause(keys=[p], type=PhenotypicFilterType.SELECT) for p in select_paths
     ]
     phenotypic: Clause | ClauseGroup | None = (
         _parse_phenotypic(phenotypic_node) if phenotypic_node is not None else None

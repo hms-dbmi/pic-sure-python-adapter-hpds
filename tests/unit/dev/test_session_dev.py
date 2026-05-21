@@ -60,9 +60,11 @@ def test_runquery_count_emits_http_and_function_events():
     )
     session = _make_session(dev_enabled=True)
 
-    from picsure._models.clause import Clause, ClauseType
+    from picsure._models.clause import Clause, PhenotypicFilterType
 
-    clause = Clause(keys=["\\phs1\\sex\\"], type=ClauseType.FILTER, categories=["Male"])
+    clause = Clause(
+        keys=["\\phs1\\sex\\"], type=PhenotypicFilterType.FILTER, categories=["Male"]
+    )
     session.runQuery(clause, type="count")
 
     events = session.dev_events()
@@ -79,9 +81,11 @@ def test_dev_stats_aggregates_from_live_calls():
     )
     session = _make_session(dev_enabled=True)
 
-    from picsure._models.clause import Clause, ClauseType
+    from picsure._models.clause import Clause, PhenotypicFilterType
 
-    clause = Clause(keys=["\\phs1\\sex\\"], type=ClauseType.FILTER, categories=["Male"])
+    clause = Clause(
+        keys=["\\phs1\\sex\\"], type=PhenotypicFilterType.FILTER, categories=["Male"]
+    )
     session.runQuery(clause, type="count")
     session.runQuery(clause, type="count")
 
@@ -98,9 +102,11 @@ def test_dev_clear_empties_buffer():
     )
     session = _make_session(dev_enabled=True)
 
-    from picsure._models.clause import Clause, ClauseType
+    from picsure._models.clause import Clause, PhenotypicFilterType
 
-    clause = Clause(keys=["\\phs1\\sex\\"], type=ClauseType.FILTER, categories=["Male"])
+    clause = Clause(
+        keys=["\\phs1\\sex\\"], type=PhenotypicFilterType.FILTER, categories=["Male"]
+    )
     session.runQuery(clause, type="count")
     assert len(session.dev_events()) > 0
 

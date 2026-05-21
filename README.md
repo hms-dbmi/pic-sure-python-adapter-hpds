@@ -20,7 +20,7 @@ pip install picsure[pfb]
 
 ```python
 import picsure
-from picsure import ClauseType, GroupOperator
+from picsure import PhenotypicFilterType, GroupOperator
 
 # Connect to PIC-SURE
 session = picsure.connect(platform="BDC Authorized", token="your-token")
@@ -29,8 +29,8 @@ session = picsure.connect(platform="BDC Authorized", token="your-token")
 results = session.searchDictionary("blood pressure")
 
 # Build a query
-sex = picsure.createSubQuery("\\phs1\\sex\\", type=ClauseType.FILTER, categories="Male")
-age = picsure.createSubQuery("\\phs1\\age\\", type=ClauseType.FILTER, min=40)
+sex = picsure.createSubQuery("\\phs1\\sex\\", type=PhenotypicFilterType.FILTER, categories="Male")
+age = picsure.createSubQuery("\\phs1\\age\\", type=PhenotypicFilterType.FILTER, min=40)
 query = picsure.buildQuery([sex, age], operator=GroupOperator.AND)
 
 # Run and export

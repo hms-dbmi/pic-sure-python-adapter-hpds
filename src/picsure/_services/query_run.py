@@ -6,7 +6,7 @@ from io import BytesIO
 
 import pandas as pd
 
-from picsure._models.clause import Clause, ClauseType
+from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.clause_group import ClauseGroup
 from picsure._models.count_result import CountResult
 from picsure._models.query import Query
@@ -153,7 +153,7 @@ def build_query_body(
 
 def _phenotypic_clause(query: Query) -> dict[str, object] | None:
     if isinstance(query, Clause):
-        if query.type == ClauseType.SELECT:
+        if query.type == PhenotypicFilterType.SELECT:
             return None
         return query.to_query_json()
     stripped = query.phenotypic_only()

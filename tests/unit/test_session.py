@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 import respx
 
-from picsure._models.clause import Clause, ClauseType
+from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.resource import Resource
 from picsure._models.session import Session
 from picsure._transport.client import PicSureClient
@@ -429,11 +429,13 @@ class TestSessionRunQuery:
         respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
             return_value=httpx.Response(200, content=b"42")
         )
-        from picsure._models.clause import Clause, ClauseType
+        from picsure._models.clause import Clause, PhenotypicFilterType
         from picsure._models.count_result import CountResult
 
         session = _make_live_session()
-        clause = Clause(keys=["\\sex\\"], type=ClauseType.FILTER, categories=["Male"])
+        clause = Clause(
+            keys=["\\sex\\"], type=PhenotypicFilterType.FILTER, categories=["Male"]
+        )
         result = session.runQuery(clause, type="count")
 
         assert isinstance(result, CountResult)
@@ -445,10 +447,12 @@ class TestSessionRunQuery:
         respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
             return_value=httpx.Response(200, content=participant_response)
         )
-        from picsure._models.clause import Clause, ClauseType
+        from picsure._models.clause import Clause, PhenotypicFilterType
 
         session = _make_live_session()
-        clause = Clause(keys=["\\sex\\"], type=ClauseType.FILTER, categories=["Male"])
+        clause = Clause(
+            keys=["\\sex\\"], type=PhenotypicFilterType.FILTER, categories=["Male"]
+        )
         df = session.runQuery(clause, type="participant")
 
         assert isinstance(df, pd.DataFrame)
@@ -459,11 +463,13 @@ class TestSessionRunQuery:
         respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
             return_value=httpx.Response(200, content=b"99")
         )
-        from picsure._models.clause import Clause, ClauseType
+        from picsure._models.clause import Clause, PhenotypicFilterType
         from picsure._models.count_result import CountResult
 
         session = _make_live_session()
-        clause = Clause(keys=["\\sex\\"], type=ClauseType.FILTER, categories=["Male"])
+        clause = Clause(
+            keys=["\\sex\\"], type=PhenotypicFilterType.FILTER, categories=["Male"]
+        )
         result = session.runQuery(clause)
 
         assert isinstance(result, CountResult)
@@ -487,10 +493,12 @@ class TestSessionExport:
         )
         from unittest.mock import patch
 
-        from picsure._models.clause import Clause, ClauseType
+        from picsure._models.clause import Clause, PhenotypicFilterType
 
         session = _make_live_session()
-        clause = Clause(keys=["\\sex\\"], type=ClauseType.FILTER, categories=["Male"])
+        clause = Clause(
+            keys=["\\sex\\"], type=PhenotypicFilterType.FILTER, categories=["Male"]
+        )
         output = tmp_path / "test.pfb"
         with patch("picsure._services.export.time.sleep"):
             session.exportAsPFB(clause, output)
@@ -503,7 +511,7 @@ class TestSessionExport:
         # flow that PFB export depends on. Surface that as a clear
         # validation error instead of letting the request 401 deep in
         # the async polling loop.
-        from picsure._models.clause import Clause, ClauseType
+        from picsure._models.clause import Clause, PhenotypicFilterType
         from picsure.errors import PicSureValidationError
 
         client = MagicMock()
@@ -515,7 +523,9 @@ class TestSessionExport:
             resource_uuid="uuid-1",
             use_legacy_query_path=True,
         )
-        clause = Clause(keys=["\\sex\\"], type=ClauseType.FILTER, categories=["Male"])
+        clause = Clause(
+            keys=["\\sex\\"], type=PhenotypicFilterType.FILTER, categories=["Male"]
+        )
         output = tmp_path / "test.pfb"
 
         with pytest.raises(PicSureValidationError, match="open-access"):
@@ -536,7 +546,9 @@ class TestSessionExport:
             resources=[Resource(uuid="uuid-1", name="hpds", description="x")],
         )
         session._resource_uuid = "uuid-1"
-        clause = Clause(keys=["\\sex\\"], type=ClauseType.FILTER, categories=["Male"])
+        clause = Clause(
+            keys=["\\sex\\"], type=PhenotypicFilterType.FILTER, categories=["Male"]
+        )
 
         captured: dict[str, object] = {}
 
@@ -655,7 +667,7 @@ class TestSessionLoadQueryByID:
         assert legacy.called
         assert not v3.called
         assert isinstance(result, Clause)
-        assert result.type == ClauseType.FILTER
+        assert result.type == PhenotypicFilterType.FILTER
 
     @respx.mock
     def test_legacy_path_used_even_when_session_is_authorized_v3(self):

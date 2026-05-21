@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from picsure._models.clause import Clause, ClauseType
+from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure.errors import PicSureValidationError
 
 
 def createSubQuery(  # noqa: N802
     keys: str | list[str],
-    type: ClauseType,  # noqa: A002
+    type: PhenotypicFilterType,  # noqa: A002
     categories: str | list[str] | None = None,
     min: float | None = None,  # noqa: A002
     max: float | None = None,  # noqa: A002
@@ -16,8 +16,8 @@ def createSubQuery(  # noqa: N802
 
     Args:
         keys: Concept path(s) this clause applies to.
-        type: The kind of filter. Use ``ClauseType.FILTER`` for
-            categorical or range filters, ``ClauseType.ANYRECORD``
+        type: The kind of filter. Use ``PhenotypicFilterType.FILTER`` for
+            categorical or range filters, ``PhenotypicFilterType.ANYRECORD``
             to match the presence of any value.
         categories: For FILTER clauses on categorical variables.
         min: For FILTER clauses on numeric variables, minimum value.
@@ -31,15 +31,15 @@ def createSubQuery(  # noqa: N802
         PicSureValidationError: If the clause configuration is invalid.
 
     Example:
-        >>> from picsure import createSubQuery, ClauseType
+        >>> from picsure import createSubQuery, PhenotypicFilterType
         >>> sex = createSubQuery(
         ...     r"\\phs1\\pht1\\phv1\\sex\\",
-        ...     type=ClauseType.FILTER,
+        ...     type=PhenotypicFilterType.FILTER,
         ...     categories="Male",
         ... )
         >>> age = createSubQuery(
         ...     r"\\phs1\\pht1\\phv5\\age\\",
-        ...     type=ClauseType.FILTER,
+        ...     type=PhenotypicFilterType.FILTER,
         ...     min=40.0,
         ... )
     """
@@ -50,7 +50,7 @@ def createSubQuery(  # noqa: N802
     if not keys:
         raise PicSureValidationError("Clause must have at least one concept path.")
 
-    if type == ClauseType.ANYRECORD:
+    if type == PhenotypicFilterType.ANYRECORD:
         if categories is not None:
             raise PicSureValidationError(
                 "ANYRECORD clauses cannot have categories. ANYRECORD matches "
@@ -64,7 +64,7 @@ def createSubQuery(  # noqa: N802
                 "the min/max arguments."
             )
 
-    if type == ClauseType.FILTER:
+    if type == PhenotypicFilterType.FILTER:
         if categories is None and min is None and max is None:
             raise PicSureValidationError(
                 "FILTER clauses require at least one of: categories, min, or max. "
@@ -76,7 +76,7 @@ def createSubQuery(  # noqa: N802
                 "FILTER clauses cannot have both categories and min/max."
             )
 
-    if type in (ClauseType.REQUIRE, ClauseType.SELECT) and (
+    if type in (PhenotypicFilterType.REQUIRE, PhenotypicFilterType.SELECT) and (
         categories is not None or min is not None or max is not None
     ):
         raise PicSureValidationError(

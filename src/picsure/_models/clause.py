@@ -6,7 +6,7 @@ from enum import Enum
 from picsure.errors import PicSureValidationError
 
 
-class ClauseType(Enum):
+class PhenotypicFilterType(Enum):
     """Type of filter clause in a PIC-SURE query.
 
     Use these constants with ``picsure.createSubQuery()``:
@@ -26,16 +26,16 @@ class ClauseType(Enum):
     REQUIRE = "require"
 
 
-_PHENOTYPIC_FILTER_TYPE: dict[ClauseType, str] = {
-    ClauseType.FILTER: "FILTER",
-    ClauseType.REQUIRE: "REQUIRED",
-    ClauseType.ANYRECORD: "ANY_RECORD_OF",
+_WIRE_NAME_BY_TYPE: dict[PhenotypicFilterType, str] = {
+    PhenotypicFilterType.FILTER: "FILTER",
+    PhenotypicFilterType.REQUIRE: "REQUIRED",
+    PhenotypicFilterType.ANYRECORD: "ANY_RECORD_OF",
 }
 
-# Reverse of _PHENOTYPIC_FILTER_TYPE, exposed so query_load can rebuild
+# Reverse of _WIRE_NAME_BY_TYPE, exposed so query_load can rebuild
 # clauses from the wire payload without redefining the mapping.
-CLAUSE_TYPE_BY_WIRE_NAME: dict[str, ClauseType] = {
-    v: k for k, v in _PHENOTYPIC_FILTER_TYPE.items()
+PHENOTYPIC_FILTER_TYPE_BY_WIRE_NAME: dict[str, PhenotypicFilterType] = {
+    v: k for k, v in _WIRE_NAME_BY_TYPE.items()
 }
 
 
@@ -53,7 +53,7 @@ class Clause:
     """
 
     keys: list[str]
-    type: ClauseType
+    type: PhenotypicFilterType
     categories: list[str] | None = None
     min: float | None = None
     max: float | None = None
@@ -70,7 +70,7 @@ class Clause:
                 clauses don't participate in filtering; extract their
                 paths via :meth:`select_paths` instead.
         """
-        if self.type == ClauseType.SELECT:
+        if self.type == PhenotypicFilterType.SELECT:
             raise PicSureValidationError(
                 "SELECT clauses do not serialize as PhenotypicClauses. "
                 "Use Clause.select_paths() to retrieve their concept paths."
@@ -87,15 +87,15 @@ class Clause:
 
     def select_paths(self) -> list[str]:
         """Return this clause's concept paths if it's a SELECT, else []."""
-        return list(self.keys) if self.type == ClauseType.SELECT else []
+        return list(self.keys) if self.type == PhenotypicFilterType.SELECT else []
 
     def _make_leaf(self, concept_path: str) -> dict[str, object]:
         leaf: dict[str, object] = {
-            "phenotypicFilterType": _PHENOTYPIC_FILTER_TYPE[self.type],
+            "phenotypicFilterType": _WIRE_NAME_BY_TYPE[self.type],
             "conceptPath": concept_path,
             "not": False,
         }
-        if self.type == ClauseType.FILTER:
+        if self.type == PhenotypicFilterType.FILTER:
             if self.categories is not None:
                 leaf["values"] = list(self.categories)
             if self.min is not None:
