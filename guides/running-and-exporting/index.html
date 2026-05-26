@@ -576,6 +576,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#saving-a-query-by-name" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Saving a Query by Name
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#simple-queries" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -664,6 +675,177 @@
   
 
       </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/releasing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releasing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -795,6 +977,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#saving-a-query-by-name" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Saving a Query by Name
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#simple-queries" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -882,21 +1075,49 @@ to a file:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>pip<span class="w"> </span>install<span class="w"> </span>picsure<span class="o">[</span>pfb<span class="o">]</span>
 </code></pre></div></p>
 </div>
+<h2 id="saving-a-query-by-name">Saving a Query by Name<a class="headerlink" href="#saving-a-query-by-name" title="Permanent link">&para;</a></h2>
+<p>On authorized deployments, you can persist a query to your user
+profile under a display name. <code>saveQueryByName</code> submits the query and
+associates the name with it server-side, returning the PIC-SURE query
+ID:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">qid</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">saveQueryByName</span><span class="p">(</span><span class="n">my_query</span><span class="p">,</span> <span class="s2">&quot;Cohort 2026-Q2&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p>The returned <code>qid</code> is the same UUID you'd pass to <code>loadQueryByID</code> or
+<code>runQueryByID</code> later:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">restored</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">loadQueryByID</span><span class="p">(</span><span class="n">qid</span><span class="p">)</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">df</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">runQueryByID</span><span class="p">(</span><span class="n">qid</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;participant&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p>By default, saving a second time with the same name raises
+<code>PicSureValidationError</code>. To repoint the existing record at a freshly
+built query, pass <code>overwrite=True</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">qid</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">saveQueryByName</span><span class="p">(</span><span class="n">refined_query</span><span class="p">,</span> <span class="s2">&quot;Cohort 2026-Q2&quot;</span><span class="p">,</span> <span class="n">overwrite</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</code></pre></div>
+<p>Constraints (validated client-side, mirrored from the backend
+<code>NamedDataset</code> contract):</p>
+<ul>
+<li><code>name</code> is required, non-empty, max 255 characters.</li>
+<li>Allowed characters: letters, digits, spaces, and <code>- _ \ / ? + = [ ] . ( ) : " '</code>.</li>
+</ul>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><code>saveQueryByName</code> is not supported on open-access deployments —
+the <code>/dataset/named/</code> endpoint requires an authenticated principal.</p>
+</div>
 <h2 id="simple-queries">Simple Queries<a class="headerlink" href="#simple-queries" title="Permanent link">&para;</a></h2>
 <p>You can pass a single clause directly to <code>runQuery</code> — you don't have
 to wrap it in a group first:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">sex</span> <span class="o">=</span> <span class="n">picsure</span><span class="o">.</span><span class="n">createSubQuery</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">phs1</span><span class="se">\\</span><span class="s2">sex</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">ClauseType</span><span class="o">.</span><span class="n">FILTER</span><span class="p">,</span> <span class="n">categories</span><span class="o">=</span><span class="s2">&quot;Male&quot;</span><span class="p">)</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="c1"># This works — no buildQuery needed for simple queries</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="n">count_result</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">runQuery</span><span class="p">(</span><span class="n">sex</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;count&quot;</span><span class="p">)</span>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="n">count</span> <span class="o">=</span> <span class="n">count_result</span><span class="o">.</span><span class="n">value</span>  <span class="c1"># None if suppressed; check count_result.cap</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">sex</span> <span class="o">=</span> <span class="n">picsure</span><span class="o">.</span><span class="n">buildClause</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">phs1</span><span class="se">\\</span><span class="s2">sex</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">PhenotypicFilterType</span><span class="o">.</span><span class="n">FILTER</span><span class="p">,</span> <span class="n">categories</span><span class="o">=</span><span class="s2">&quot;Male&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="c1"># This works — no buildClauseGroup needed for simple queries</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="n">count_result</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">runQuery</span><span class="p">(</span><span class="n">sex</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;count&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="n">count</span> <span class="o">=</span> <span class="n">count_result</span><span class="o">.</span><span class="n">value</span>  <span class="c1"># None if suppressed; check count_result.cap</span>
 </code></pre></div>
 <h2 id="error-handling">Error Handling<a class="headerlink" href="#error-handling" title="Permanent link">&para;</a></h2>
 <p>If something goes wrong, you'll get a clear error message:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Invalid query type</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">session</span><span class="o">.</span><span class="n">runQuery</span><span class="p">(</span><span class="n">my_query</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;invalid&quot;</span><span class="p">)</span>
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="c1"># PicSureValidationError: &#39;invalid&#39; is not a valid query type.</span>
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># Valid types: count, participant, timestamp.</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># Invalid query type</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="n">session</span><span class="o">.</span><span class="n">runQuery</span><span class="p">(</span><span class="n">my_query</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;invalid&quot;</span><span class="p">)</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="c1"># PicSureValidationError: &#39;invalid&#39; is not a valid query type.</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="c1"># Valid types: count, participant, timestamp.</span>
 </code></pre></div>
 <p>Researchers don't need to write try/except blocks. The error messages
 tell you what happened and what to do about it.</p>

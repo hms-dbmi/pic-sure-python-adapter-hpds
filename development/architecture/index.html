@@ -1,0 +1,1422 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Python client for the PIC-SURE API">
+      
+      
+      
+      
+        <link rel="prev" href="../docker/">
+      
+      
+        <link rel="next" href="../testing/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Architecture - picsure</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="blue" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#architecture" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="picsure" class="md-header__button md-logo" aria-label="picsure" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            picsure
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Architecture
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="blue" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="blue" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_1">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/hms-dbmi/pic-sure-python-adapter-hpds" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="picsure" class="md-nav__button md-logo" aria-label="picsure" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    picsure
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/hms-dbmi/pic-sure-python-adapter-hpds" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/search-and-facets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Search & Facets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/building-queries/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Building Queries
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/running-and-exporting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running & Exporting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/migrating-from-picsurehpdslib/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Migration Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#end-to-end-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        End-to-end overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tracing-a-query" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tracing a query
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#package-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Package layout
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Package layout">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_models-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        _models/ — types
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_services-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        _services/ — operations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_transport-http" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        _transport/ — HTTP
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#errorspy-top-level" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        errors.py (top level)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_dev-dev-mode-internals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        _dev/ — dev-mode internals
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#public-vs-internal-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Public vs. internal API
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#error-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error model
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#session-and-resource-resolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Session and Resource resolution
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../releasing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releasing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#end-to-end-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        End-to-end overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tracing-a-query" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tracing a query
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#package-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Package layout
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Package layout">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_models-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        _models/ — types
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_services-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        _services/ — operations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_transport-http" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        _transport/ — HTTP
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#errorspy-top-level" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        errors.py (top level)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_dev-dev-mode-internals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        _dev/ — dev-mode internals
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#public-vs-internal-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Public vs. internal API
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#error-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error model
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#session-and-resource-resolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Session and Resource resolution
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h1>
+<p>This page is a map of the <code>picsure</code> package for contributors. It
+covers the layering, what each module owns, and the conventions that
+hold the public surface stable while leaving the internals free to
+move.</p>
+<h2 id="end-to-end-overview">End-to-end overview<a class="headerlink" href="#end-to-end-overview" title="Permanent link">&para;</a></h2>
+<p><code>picsure</code> is a thin Python client over the PIC-SURE HTTP API. A
+typical session flows:</p>
+<ol>
+<li><strong>Connect.</strong> <code>picsure.connect(platform, token)</code> resolves a
+   :class:<code>Platform</code> (or custom URL) to connection details, builds an
+   authenticated <code>PicSureClient</code>, fetches the user profile, the
+   resource list, optional consents, and the dictionary size — then
+   returns a :class:<code>Session</code>.</li>
+<li><strong>Search / build.</strong> <code>session.searchDictionary(...)</code> and
+   <code>session.facets(...)</code> go through the search service; users build
+   filters with the standalone helpers <code>picsure.buildClause(...)</code> and
+   <code>picsure.buildClauseGroup(...)</code>, then optionally wrap a filter with
+   the output concepts to return via <code>picsure.buildQuery(...)</code>.</li>
+<li><strong>Run.</strong> <code>session.runQuery(query, type=...)</code> calls the query-run
+   service, which splits the <code>Query</code> (or bare <code>Clause</code> / <code>ClauseGroup</code>)
+   into a phenotypic filter tree and <code>includeConcepts</code>, serializes to v3
+   wire format, POSTs to <code>/picsure/v3/query/sync</code>, and parses the response
+   into a <code>CountResult</code>, a <code>dict[str, CountResult]</code>, or a
+   <code>DataFrame</code>.</li>
+<li><strong>Export.</strong> <code>session.exportAsPFB(...)</code> uses the async flow
+   (<code>/picsure/v3/query</code> → poll status → fetch result), streaming the
+   bytes to disk; <code>session.exportCSV</code> / <code>exportTSV</code> write a DataFrame
+   in memory to disk.</li>
+</ol>
+<h2 id="tracing-a-query">Tracing a query<a class="headerlink" href="#tracing-a-query" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>user
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>  │  session.runQuery(query, type=&quot;count&quot;)
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>  ▼
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>picsure._models.session.Session.runQuery
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>  │  (decorated with @timed for dev-mode events)
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>  ▼
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>picsure._services.query_run.run_query
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>  │  build_query_body(query, resource_uuid, query_type)
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>  │      ├─ Clause.to_query_json()  /  ClauseGroup.to_query_json()
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>  │      └─ wraps in v3 envelope { query: { ... }, resourceUUID }
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>  │
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>  │  client.post_json(_PICSURE_QUERY_SYNC_PATH, body)
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>  ▼
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>picsure._transport.client.PicSureClient._request
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>  │  httpx.Client.request(&quot;POST&quot;, &quot;/picsure/v3/query/sync&quot;, ...)
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>  │  4xx → _raise_for_status → TransportAuthenticationError /
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>  │        TransportValidationError / TransportNotFoundError /
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>  │        TransportRateLimitError
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>  │  5xx + connection errors → retried once, then TransportServerError /
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>  │        TransportConnectionError
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>  ▼
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>picsure._services.query_run.run_query (response handling)
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>  │  parse &quot;COUNT&quot; / &quot;CROSS_COUNT&quot; / &quot;DATAFRAME&quot; / &quot;DATAFRAME_TIMESERIES&quot;
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>  │  TransportError → PicSureAuthError / PicSureQueryError /
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>  │                   PicSureConnectionError / PicSureValidationError
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>  ▼
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>result returned to caller (CountResult | dict | DataFrame)
+</code></pre></div>
+<p>Every other entrypoint follows the same shape: a <code>Session</code> method
+delegates to a <code>_services/*</code> function, which uses the transport
+client and translates <code>TransportError</code> subclasses to the public
+<code>PicSure*</code> hierarchy.</p>
+<h2 id="package-layout">Package layout<a class="headerlink" href="#package-layout" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>src/picsure/
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>├── __init__.py            # public API surface (re-exports)
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>├── errors.py              # public PicSureError hierarchy
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>├── py.typed               # PEP 561 marker
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>├── _models/               # data classes and enums
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>├── _services/             # one module per high-level operation
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>├── _transport/            # HTTP client, error mapping, platforms
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>└── _dev/                  # dev-mode instrumentation (opt-in)
+</code></pre></div>
+<h3 id="_models-types"><code>_models/</code> — types<a class="headerlink" href="#_models-types" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>What it owns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>session.py</code></td>
+<td><code>Session</code> class. Holds the HTTP client, resource list, consents, dictionary size, and the dev-mode config. Public methods (<code>searchDictionary</code>, <code>runQuery</code>, <code>runQueryByID</code>, <code>loadQueryByID</code>, <code>saveQueryByName</code>, <code>exportAsPFB</code>, <code>exportCSV</code>, <code>exportTSV</code>, <code>setResourceID</code>, <code>setResourceIDByName</code>, <code>getResourceID</code>, <code>facets</code>, <code>showAllFacets</code>, …) delegate to <code>_services/*</code>.</td>
+</tr>
+<tr>
+<td><code>resource.py</code></td>
+<td><code>Resource</code> dataclass (<code>uuid</code>, <code>name</code>, <code>description</code>) with a <code>from_dict</code> constructor for <code>/picsure/info/resources</code> payloads.</td>
+</tr>
+<tr>
+<td><code>clause.py</code></td>
+<td><code>Clause</code> dataclass + <code>PhenotypicFilterType</code> enum (<code>FILTER</code>, <code>ANYRECORD</code>, <code>REQUIRE</code>). Each <code>Clause.to_query_json()</code> emits the v3 <code>PhenotypicClause</code> shape.</td>
+</tr>
+<tr>
+<td><code>clause_group.py</code></td>
+<td><code>ClauseGroup</code> dataclass + <code>GroupOperator</code> enum (<code>AND</code>, <code>OR</code>). Recursively serializes to a v3 <code>PhenotypicSubquery</code>.</td>
+</tr>
+<tr>
+<td><code>query.py</code></td>
+<td><code>Query</code> dataclass: a <code>phenotypicFilter</code> (<code>Clause | ClauseGroup | None</code>) plus <code>includeConcepts</code> (output concept paths). <code>runQuery</code> also accepts a bare <code>Clause</code> / <code>ClauseGroup</code> (filter, no extra output columns).</td>
+</tr>
+<tr>
+<td><code>query_type.py</code></td>
+<td><code>QueryType</code> enum (<code>COUNT</code>, <code>PARTICIPANT</code>, <code>TIMESTAMP</code>, <code>CROSS_COUNT</code>). Public API also accepts equivalent lowercase strings.</td>
+</tr>
+<tr>
+<td><code>count_result.py</code></td>
+<td><code>CountResult</code> dataclass — preserves <code>value</code>, <code>margin</code>, <code>cap</code>, <code>raw</code>. Encodes exact / noisy / suppressed shapes from open-access backends. <code>obfuscated</code> property is a convenience.</td>
+</tr>
+<tr>
+<td><code>dictionary.py</code></td>
+<td><code>DictionaryEntry</code> dataclass — one row of <code>searchDictionary</code> output, mapped from the backend <code>Concept</code> payload.</td>
+</tr>
+<tr>
+<td><code>facet.py</code></td>
+<td><code>Facet</code>, <code>FacetCategory</code>, and the public <code>FacetSet</code>. Iterative <code>from_dict</code> build so deep hierarchical facets don't blow Python's recursion limit.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_services-operations"><code>_services/</code> — operations<a class="headerlink" href="#_services-operations" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>What it owns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>connect.py</code></td>
+<td><code>connect(platform, token, …)</code>. Resolves the platform, hits <code>/psama/user/me</code> (skipped on open-access), fetches resources, consents, dictionary size, and constructs the <code>Session</code>. Also handles the dev-mode toggle and the success/expiration banner.</td>
+</tr>
+<tr>
+<td><code>search.py</code></td>
+<td><code>searchDictionary</code>, <code>fetch_facets</code>, <code>show_all_facets</code>, plus the smaller helpers that build dictionary-api request bodies, dedupe entries, and turn results into DataFrames. Also <code>fetch_total_concepts</code> (used by connect to pre-size search pages).</td>
+</tr>
+<tr>
+<td><code>query_build.py</code></td>
+<td><code>buildClause</code>, <code>buildClauseGroup</code>, and <code>buildQuery</code> — the public constructors for <code>Clause</code>, <code>ClauseGroup</code>, and <code>Query</code> with input validation (rejects mutually-exclusive arguments before they reach the wire).</td>
+</tr>
+<tr>
+<td><code>query_edit.py</code></td>
+<td><code>removeSubQuery(query, target)</code> and <code>replaceClause(query, target, replacement)</code>. Pure local tree edits — no network calls. Matching is structural (frozen-dataclass equality). Removals that empty a <code>ClauseGroup</code> prune the parent; removing the whole tree raises <code>PicSureValidationError</code>.</td>
+</tr>
+<tr>
+<td><code>query_run.py</code></td>
+<td><code>run_query(client, resource_uuid, query, type)</code>. Serializes via <code>build_query_body</code>, posts to the v3 sync endpoint (or the legacy path on open-only deployments), and parses each response shape. Also <code>parse_count_string</code> for the obfuscated-count regexes.</td>
+</tr>
+<tr>
+<td><code>query_load.py</code></td>
+<td><code>load_query(client, query_id)</code>. Hits the saved-query endpoint and reconstructs a <code>Clause</code> / <code>ClauseGroup</code> from the response so it can be re-run via <code>runQueryByID</code>.</td>
+</tr>
+<tr>
+<td><code>query_save.py</code></td>
+<td><code>save_query_by_name(client, resource_uuid, query, name, *, use_legacy_query_path, overwrite)</code>. Submits the query via <code>POST /picsure/v3/query</code>, then <code>POST</code>s a new record to <code>/dataset/named/</code> (or <code>PUT</code>-updates an existing one when <code>overwrite=True</code>). Validates <code>name</code> against the backend <code>NamedDataset</code> pattern client-side. Refused on open-access deployments.</td>
+</tr>
+<tr>
+<td><code>export.py</code></td>
+<td><code>export_pfb</code> — the async PFB flow (submit → poll with exponential backoff capped at 60s, 10-minute total deadline → stream result to a <code>.part</code> file → atomic rename). Plus <code>export_csv</code> and <code>export_tsv</code> for in-memory DataFrames.</td>
+</tr>
+<tr>
+<td><code>consents.py</code></td>
+<td><code>fetch_consents(client)</code>. Reads <code>/psama/user/me/queryTemplate/</code>, parses the doubly-encoded JSON, and pulls the <code>\\_consents\\</code> study-consent list used by dictionary-api requests on authorized deployments.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_transport-http"><code>_transport/</code> — HTTP<a class="headerlink" href="#_transport-http" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>What it owns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>client.py</code></td>
+<td><code>PicSureClient</code>. Wraps <code>httpx.Client</code> with Bearer-token auth, the <code>request-source: Authorized|Open</code> gateway header, a 30s timeout, one retry on connection errors and 5xx for GETs (POSTs are not retried on 5xx because they are non-idempotent), and a streaming variant <code>post_raw_stream</code> for binary payloads, plus <code>put_json</code> for the <code>saveQueryByName</code> overwrite path. <code>_raise_for_status</code> translates 4xx into the <code>Transport*Error</code> set.</td>
+</tr>
+<tr>
+<td><code>errors.py</code></td>
+<td>Internal <code>TransportError</code> hierarchy: <code>TransportAuthenticationError</code> (401/403), <code>TransportValidationError</code> (400/422/other 4xx), <code>TransportNotFoundError</code> (404), <code>TransportRateLimitError</code> (429, parses <code>Retry-After</code>), <code>TransportServerError</code> (5xx), <code>TransportConnectionError</code> (DNS / timeout / refused).</td>
+</tr>
+<tr>
+<td><code>platforms.py</code></td>
+<td><code>Platform</code> enum (<code>BDC_AUTHORIZED</code>, <code>BDC_OPEN</code>, <code>BDC_DEV_*</code>, <code>BDC_PREDEV_*</code>, <code>NHANES_AUTHORIZED</code>, <code>NHANES_OPEN</code>) and <code>resolve_platform()</code>. A <code>Platform</code> member carries URL, default resource UUID, whether dictionary calls need consents, and whether the platform requires a token; <code>resolve_platform</code> also accepts a raw <code>http(s)://</code> URL for unlisted deployments.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="errorspy-top-level"><code>errors.py</code> (top level)<a class="headerlink" href="#errorspy-top-level" title="Permanent link">&para;</a></h3>
+<p>The public, user-facing error hierarchy. Everything user code might
+want to catch is here:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>PicSureError
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>├── PicSureAuthError         # bad/expired token, missing permissions
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>├── PicSureConnectionError   # cannot reach the server
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>├── PicSureQueryError        # server rejected the query
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>└── PicSureValidationError   # invalid input to a picsure function
+</code></pre></div>
+<p><code>PicSureError</code> is the catch-all. Services translate
+<code>TransportError</code> subclasses into these per-call (the mapping is not
+1:1 — context matters; e.g. a 404 from <code>runQuery</code> becomes
+<code>PicSureQueryError</code>, while a 404 from a dictionary lookup becomes
+<code>PicSureValidationError</code>).</p>
+<h3 id="_dev-dev-mode-internals"><code>_dev/</code> — dev-mode internals<a class="headerlink" href="#_dev-dev-mode-internals" title="Permanent link">&para;</a></h3>
+<p>Off by default. Enable per-process with the <code>PICSURE_DEV_MODE</code>
+environment variable (<code>1</code>/<code>true</code>/<code>yes</code>) or per-call with the
+<code>dev_mode=True</code> keyword argument to <code>picsure.connect</code>. Modules:</p>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>What it owns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>config.py</code></td>
+<td><code>DevConfig</code> — reads <code>PICSURE_DEV_MODE</code> and <code>PICSURE_DEV_MAX_EVENTS</code>, attaches a stderr handler to the <code>picsure</code> logger when on, and owns the <code>EventBuffer</code>.</td>
+</tr>
+<tr>
+<td><code>buffer.py</code></td>
+<td><code>EventBuffer</code> — thread-safe FIFO of <code>Event</code>s with a fixed cap (oldest drops on overflow).</td>
+</tr>
+<tr>
+<td><code>events.py</code></td>
+<td><code>Event</code> dataclass — one record per HTTP call, public method, connect, or error. Captures timestamp, kind, name, duration, and a small structured payload.</td>
+</tr>
+<tr>
+<td><code>timing.py</code></td>
+<td><code>@timed</code> decorator. Public <code>Session</code> methods wear this; emits an event on success and (tagged) on failure.</td>
+</tr>
+<tr>
+<td><code>redaction.py</code></td>
+<td>Strips secrets before logging or buffering (PSAMA <code>token</code>, dataframe-shaped result bodies, etc.).</td>
+</tr>
+<tr>
+<td><code>reporting.py</code></td>
+<td>Helpers that turn the buffered events into DataFrames for inspection.</td>
+</tr>
+</tbody>
+</table>
+<p>Dev-mode adds observability; it does not change behaviour. Production
+users should leave it off.</p>
+<p><code>picsure.set_dev_mode(enabled)</code> is the public toggle — it is part of
+<code>__all__</code> and lets a caller flip the mode on or off after <code>connect</code>
+without restarting the process.</p>
+<h2 id="public-vs-internal-api">Public vs. internal API<a class="headerlink" href="#public-vs-internal-api" title="Permanent link">&para;</a></h2>
+<p>The rule is purely syntactic:</p>
+<ul>
+<li><strong>Public:</strong> anything attached to the <code>picsure</code> package itself —
+  i.e. anything re-exported from
+  <a href="https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/blob/main/src/picsure/__init__.py"><code>src/picsure/__init__.py</code></a> (the
+  <code>__all__</code> list). Treat these as load-bearing. Renaming, removing,
+  or changing the signature of one of these is a breaking change and
+  requires a major version bump under SemVer.</li>
+<li><strong>Internal:</strong> every subpackage with a leading underscore
+  (<code>_models/</code>, <code>_services/</code>, <code>_transport/</code>, <code>_dev/</code>). Imports across
+  these are fine inside the library, but external users who reach
+  past the underscore are on their own — internal modules can be
+  renamed, split, merged, or rewritten in any release.</li>
+</ul>
+<p>Adding a name to <code>__init__.py.__all__</code> is the act that makes
+something public. Reviewers should flag any PR that grows that list
+without a corresponding CHANGELOG entry.</p>
+<h2 id="error-model">Error model<a class="headerlink" href="#error-model" title="Permanent link">&para;</a></h2>
+<p>A call site's error contract is whatever subclass of <code>PicSureError</code>
+it documents in its docstring (typically all four). The transport
+layer never raises <code>PicSureError</code> directly — it raises the internal
+<code>TransportError</code> subclasses, and each service translates those into
+the user-facing type that makes sense in context.</p>
+<p>The mapping for <code>_transport/errors.py</code>:</p>
+<table>
+<thead>
+<tr>
+<th>HTTP status / event</th>
+<th>Transport exception</th>
+<th>Typical translation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>401, 403</td>
+<td><code>TransportAuthenticationError</code></td>
+<td><code>PicSureAuthError</code></td>
+</tr>
+<tr>
+<td>400, 422, other 4xx</td>
+<td><code>TransportValidationError</code></td>
+<td><code>PicSureQueryError</code> or <code>PicSureValidationError</code> depending on whose input was wrong</td>
+</tr>
+<tr>
+<td>404</td>
+<td><code>TransportNotFoundError</code></td>
+<td>usually <code>PicSureQueryError</code> (resource/path missing)</td>
+</tr>
+<tr>
+<td>429</td>
+<td><code>TransportRateLimitError</code></td>
+<td><code>PicSureConnectionError</code> with a <code>retry_after</code> note</td>
+</tr>
+<tr>
+<td>5xx (after one retry)</td>
+<td><code>TransportServerError</code></td>
+<td><code>PicSureConnectionError</code></td>
+</tr>
+<tr>
+<td>DNS / timeout / refused</td>
+<td><code>TransportConnectionError</code></td>
+<td><code>PicSureConnectionError</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>_transport/client.py::_raise_for_status</code> is the single 4xx mapper
+shared by <code>_request</code> and <code>post_raw_stream</code>, so both code paths agree.</p>
+<h2 id="session-and-resource-resolution">Session and Resource resolution<a class="headerlink" href="#session-and-resource-resolution" title="Permanent link">&para;</a></h2>
+<p><code>Session</code> is the user-facing handle, but the data it carries is
+small:</p>
+<ul>
+<li><code>_client</code> — the authenticated <code>PicSureClient</code> (the only thing that
+  knows the base URL and token).</li>
+<li><code>_user_email</code>, <code>_token_expiration</code> — surfaced in the connect
+  banner; <code>_user_email == "anonymous"</code> on open-access deployments.</li>
+<li><code>_resources</code> — <code>list[Resource]</code> from <code>/picsure/info/resources</code>.</li>
+<li><code>_resource_uuid</code> — the currently active resource. Defaulted from
+  the <code>Platform</code> member at connect time, or required to be set
+  manually for custom URLs.</li>
+<li><code>_consents</code> — <code>list[str]</code> of study-consent identifiers. Empty on
+  open-access; required in dictionary-api request bodies on
+  authorized deployments.</li>
+<li><code>_total_concepts</code> — captured at connect time and used as the page
+  size for searches so results come back in one page.</li>
+<li><code>_dev_config</code> — opt-in <code>DevConfig</code> (off by default).</li>
+<li><code>_use_legacy_query_path</code> — set during connect when the platform is
+  open-only and must use <code>/picsure/query/sync</code> (BDC's API gateway
+  rejects open traffic on the v3 endpoint with HTTP 401).</li>
+</ul>
+<p>Resources are resolved by UUID by default. Two name-based helpers
+exist for ergonomics: <code>setResourceIDByName(name)</code> looks up by the
+backend's <code>name</code> field on <code>Resource</code>. Platform "names" like
+<code>BDC Authorized</code>, <code>BDC Open</code>, and <code>Demo</code> are user-facing labels;
+internally <code>Platform</code> enum members and custom URLs are the only
+inputs <code>resolve_platform</code> accepts. (Confirm with maintainers whether
+string aliases like <code>"BDC Authorized"</code> are intended to resolve to a
+<code>Platform</code> member — they appear in user-facing examples but
+<code>resolve_platform</code> only matches <code>Platform</code> instances or full URLs.)</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "navigation.sections", "search.highlight"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
