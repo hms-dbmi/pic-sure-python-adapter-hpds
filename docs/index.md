@@ -25,13 +25,13 @@ session = picsure.connect(platform="BDC Authorized", token=my_token)
 results = session.searchDictionary("blood pressure")
 
 # Build a query
-sex = picsure.createSubQuery(
+sex = picsure.buildClause(
     "\\phs1\\sex\\", type=PhenotypicFilterType.FILTER, categories="Male"
 )
-age = picsure.createSubQuery(
+age = picsure.buildClause(
     "\\phs1\\age\\", type=PhenotypicFilterType.FILTER, min=40
 )
-query = picsure.buildQuery([sex, age], operator=GroupOperator.AND)
+query = picsure.buildClauseGroup([sex, age], operator=GroupOperator.AND)
 
 # Run and export
 count_result = session.runQuery(query, type="count")

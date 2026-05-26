@@ -2,7 +2,6 @@ import pytest
 
 from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
-from picsure.errors import PicSureValidationError
 
 
 class TestGroupOperator:
@@ -46,10 +45,6 @@ def _asthma_clause() -> Clause:
         type=PhenotypicFilterType.FILTER,
         categories=["Yes, recent"],
     )
-
-
-def _select_clause() -> Clause:
-    return Clause(keys=["\\phs1\\output\\"], type=PhenotypicFilterType.SELECT)
 
 
 class TestClauseGroup:
@@ -149,42 +144,6 @@ class TestClauseGroupToQueryJson:
         grandchildren = children[1]["phenotypicClauses"]  # type: ignore[index]
         assert grandchildren[1]["operator"] == "OR"
 
-    def test_mixed_group_with_select_raises(self):
-        group = ClauseGroup(
-            clauses=[_sex_clause(), _select_clause()],
-            operator=GroupOperator.AND,
-        )
-        with pytest.raises(PicSureValidationError, match="SELECT"):
-            group.to_query_json()
-
-    def test_mixed_group_error_mentions_select_paths(self):
-        group = ClauseGroup(
-            clauses=[_sex_clause(), _select_clause()],
-            operator=GroupOperator.AND,
-        )
-        with pytest.raises(PicSureValidationError, match="select_paths"):
-            group.to_query_json()
-
-    def test_all_select_group_raises(self):
-        group = ClauseGroup(
-            clauses=[_select_clause(), _select_clause()],
-            operator=GroupOperator.AND,
-        )
-        with pytest.raises(PicSureValidationError, match="SELECT"):
-            group.to_query_json()
-
-    def test_nested_group_with_deep_select_raises(self):
-        inner = ClauseGroup(
-            clauses=[_age_clause(), _select_clause()],
-            operator=GroupOperator.OR,
-        )
-        outer = ClauseGroup(
-            clauses=[_sex_clause(), inner],
-            operator=GroupOperator.AND,
-        )
-        with pytest.raises(PicSureValidationError, match="SELECT"):
-            outer.to_query_json()
-
     def test_pure_phenotypic_group_still_serializes(self):
         group = ClauseGroup(
             clauses=[_sex_clause(), _age_clause()],
@@ -194,143 +153,3 @@ class TestClauseGroupToQueryJson:
         children = result["phenotypicClauses"]
         assert len(children) == 2  # type: ignore[arg-type]
         assert children[0]["conceptPath"] == "\\phs1\\sex\\"  # type: ignore[index]
-
-    def test_pure_select_group_select_paths_still_works(self):
-        group = ClauseGroup(
-            clauses=[_select_clause(), _select_clause()],
-            operator=GroupOperator.AND,
-        )
-        assert group.select_paths() == ["\\phs1\\output\\", "\\phs1\\output\\"]
-        assert group.has_phenotypic() is False
-
-
-class TestClauseGroupSelectPaths:
-    def test_flat_selects_collected(self):
-        group = ClauseGroup(
-            clauses=[_sex_clause(), _select_clause()],
-            operator=GroupOperator.AND,
-        )
-        assert group.select_paths() == ["\\phs1\\output\\"]
-
-    def test_nested_selects_collected(self):
-        inner = ClauseGroup(
-            clauses=[_select_clause()],
-            operator=GroupOperator.AND,
-        )
-        outer = ClauseGroup(
-            clauses=[_sex_clause(), inner],
-            operator=GroupOperator.AND,
-        )
-        assert outer.select_paths() == ["\\phs1\\output\\"]
-
-
-class TestClauseGroupHasPhenotypic:
-    def test_true_for_filter(self):
-        group = ClauseGroup(clauses=[_sex_clause()], operator=GroupOperator.AND)
-        assert group.has_phenotypic() is True
-
-    def test_false_for_selects_only(self):
-        group = ClauseGroup(
-            clauses=[_select_clause(), _select_clause()],
-            operator=GroupOperator.AND,
-        )
-        assert group.has_phenotypic() is False
-
-    def test_true_for_nested_filter(self):
-        inner = ClauseGroup(
-            clauses=[_sex_clause()],
-            operator=GroupOperator.AND,
-        )
-        outer = ClauseGroup(
-            clauses=[_select_clause(), inner],
-            operator=GroupOperator.AND,
-        )
-        assert outer.has_phenotypic() is True
-
-
-class TestClauseGroupPhenotypicOnly:
-    def test_strips_top_level_selects(self):
-        group = ClauseGroup(
-            clauses=[_sex_clause(), _select_clause(), _age_clause()],
-            operator=GroupOperator.AND,
-        )
-        stripped = group.phenotypic_only()
-        assert stripped is not None
-        assert len(stripped.clauses) == 2
-        assert stripped.operator == GroupOperator.AND
-        assert all(
-            isinstance(c, Clause) and c.type != PhenotypicFilterType.SELECT
-            for c in stripped.clauses
-        )
-
-    def test_returns_none_when_only_selects(self):
-        group = ClauseGroup(
-            clauses=[_select_clause(), _select_clause()],
-            operator=GroupOperator.AND,
-        )
-        assert group.phenotypic_only() is None
-
-    def test_strips_recursively_in_nested_group(self):
-        inner = ClauseGroup(
-            clauses=[_age_clause(), _select_clause()],
-            operator=GroupOperator.OR,
-        )
-        outer = ClauseGroup(
-            clauses=[_sex_clause(), _select_clause(), inner],
-            operator=GroupOperator.AND,
-        )
-        stripped = outer.phenotypic_only()
-        assert stripped is not None
-        assert len(stripped.clauses) == 2  # _sex_clause() and stripped inner
-        nested = stripped.clauses[1]
-        assert isinstance(nested, ClauseGroup)
-        assert len(nested.clauses) == 1
-        assert isinstance(nested.clauses[0], Clause)
-        assert nested.clauses[0].type == PhenotypicFilterType.FILTER
-
-    def test_drops_nested_group_that_becomes_empty(self):
-        inner = ClauseGroup(
-            clauses=[_select_clause(), _select_clause()],
-            operator=GroupOperator.OR,
-        )
-        outer = ClauseGroup(
-            clauses=[_sex_clause(), inner],
-            operator=GroupOperator.AND,
-        )
-        stripped = outer.phenotypic_only()
-        assert stripped is not None
-        assert len(stripped.clauses) == 1
-        assert isinstance(stripped.clauses[0], Clause)
-        assert stripped.clauses[0].type == PhenotypicFilterType.FILTER
-
-    def test_returns_none_when_everything_strips(self):
-        inner = ClauseGroup(
-            clauses=[_select_clause()],
-            operator=GroupOperator.AND,
-        )
-        outer = ClauseGroup(
-            clauses=[_select_clause(), inner],
-            operator=GroupOperator.AND,
-        )
-        assert outer.phenotypic_only() is None
-
-    def test_pure_phenotypic_group_returned_as_equivalent(self):
-        group = ClauseGroup(
-            clauses=[_sex_clause(), _age_clause()],
-            operator=GroupOperator.AND,
-        )
-        stripped = group.phenotypic_only()
-        assert stripped is not None
-        assert stripped.operator == GroupOperator.AND
-        assert len(stripped.clauses) == 2
-
-    def test_to_query_json_works_on_stripped_group(self):
-        group = ClauseGroup(
-            clauses=[_sex_clause(), _select_clause(), _age_clause()],
-            operator=GroupOperator.AND,
-        )
-        stripped = group.phenotypic_only()
-        assert stripped is not None
-        result = stripped.to_query_json()
-        assert result["operator"] == "AND"
-        assert len(result["phenotypicClauses"]) == 2  # type: ignore[arg-type]

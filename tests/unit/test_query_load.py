@@ -3,6 +3,7 @@ import pytest
 
 from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
+from picsure._models.query import Query
 from picsure._services.query_load import _parse_phenotypic
 from picsure.errors import PicSureQueryError, PicSureValidationError
 
@@ -202,30 +203,26 @@ class TestToQuery:
 
     def test_single_select_only(self):
         result = _to_query(["\\phs1\\out\\"], None)
-        assert isinstance(result, Clause)
-        assert result.type == PhenotypicFilterType.SELECT
-        assert result.keys == ["\\phs1\\out\\"]
+        assert isinstance(result, Query)
+        assert result.phenotypicFilter is None
+        assert result.includeConcepts == ("\\phs1\\out\\",)
 
     def test_multiple_selects_only(self):
         result = _to_query(["\\phs1\\out_a\\", "\\phs1\\out_b\\"], None)
-        assert isinstance(result, ClauseGroup)
-        assert result.operator == GroupOperator.AND
-        assert len(result.clauses) == 2
-        for c in result.clauses:
-            assert isinstance(c, Clause)
-            assert c.type == PhenotypicFilterType.SELECT
+        assert isinstance(result, Query)
+        assert result.phenotypicFilter is None
+        assert result.includeConcepts == ("\\phs1\\out_a\\", "\\phs1\\out_b\\")
 
-    def test_selects_plus_phenotypic_returns_and_group(self):
+    def test_selects_plus_phenotypic_returns_query(self):
         result = _to_query(["\\phs1\\out\\"], self._filter("\\phs1\\sex\\", "Male"))
-        assert isinstance(result, ClauseGroup)
-        assert result.operator == GroupOperator.AND
-        assert len(result.clauses) == 2  # one SELECT + the phenotypic clause
-        types = sorted(c.type.name for c in result.clauses if isinstance(c, Clause))
-        assert types == ["FILTER", "SELECT"]
+        assert isinstance(result, Query)
+        assert result.includeConcepts == ("\\phs1\\out\\",)
+        assert isinstance(result.phenotypicFilter, Clause)
+        assert result.phenotypicFilter.type == PhenotypicFilterType.FILTER
 
     def test_selects_plus_phenotypic_round_trips_through_to_query_json(self):
-        # The reconstructed group must be passable to runQuery — i.e. its
-        # phenotypic_only() must serialize without error.
+        # The reconstructed Query must be passable to runQuery — i.e. its
+        # filter tree must serialize without error.
         result = _to_query(
             ["\\phs1\\out\\"],
             {
@@ -237,11 +234,10 @@ class TestToQuery:
                 "not": False,
             },
         )
-        assert isinstance(result, ClauseGroup)
-        assert result.select_paths() == ["\\phs1\\out\\"]
-        stripped = result.phenotypic_only()
-        assert stripped is not None
-        json_body = stripped.to_query_json()
+        assert isinstance(result, Query)
+        assert result.includeConcepts == ("\\phs1\\out\\",)
+        assert isinstance(result.phenotypicFilter, ClauseGroup)
+        json_body = result.phenotypicFilter.to_query_json()
         assert json_body["operator"] == "AND"
 
     def test_empty_query_raises(self):
@@ -336,8 +332,8 @@ class TestLoadQueryHappyPath:
         )
         respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
         result = load_query(_make_client(), QUERY_ID)
-        assert isinstance(result, ClauseGroup)
-        assert result.select_paths() == ["\\phs1\\out\\"]
+        assert isinstance(result, Query)
+        assert result.includeConcepts == ("\\phs1\\out\\",)
 
     @respx.mock
     def test_inner_query_arrives_as_json_string(self):
@@ -361,8 +357,8 @@ class TestLoadQueryHappyPath:
         )
         respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
         result = load_query(_make_client(), QUERY_ID)
-        assert isinstance(result, ClauseGroup)
-        assert result.select_paths() == ["\\phs1\\out\\"]
+        assert isinstance(result, Query)
+        assert result.includeConcepts == ("\\phs1\\out\\",)
 
     @respx.mock
     def test_always_uses_legacy_path(self):

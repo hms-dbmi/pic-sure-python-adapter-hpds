@@ -14,6 +14,8 @@ from picsure.errors import PicSureValidationError
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from picsure._models.clause import Clause
+    from picsure._models.clause_group import ClauseGroup
     from picsure._models.count_result import CountResult
     from picsure._models.facet import FacetSet
     from picsure._models.query import Query
@@ -241,13 +243,15 @@ class Session:
     @timed("session.runQuery")
     def runQuery(  # noqa: N802
         self,
-        query: Query,
+        query: Query | Clause | ClauseGroup,
         type: QueryType | str = "count",  # noqa: A002
     ) -> CountResult | dict[str, CountResult] | pd.DataFrame:
         """Execute a query and return the result.
 
         Args:
-            query: A Clause or ClauseGroup built with createSubQuery/buildQuery.
+            query: A Query (from buildQuery), or a bare Clause/ClauseGroup
+                (from buildClause/buildClauseGroup) for a filter with no
+                explicitly-included output concepts.
             type: Result type. Pass either a :class:`QueryType` member
                 (e.g. ``QueryType.COUNT``) or one of the strings:
 
@@ -284,7 +288,7 @@ class Session:
     @timed("session.exportAsPFB")
     def exportAsPFB(  # noqa: N802
         self,
-        query: Query,
+        query: Query | Clause | ClauseGroup,
         path: str | Path,
     ) -> None:
         """Execute a query and write the result as a PFB file.
@@ -295,7 +299,7 @@ class Session:
         the BDC API gateway rejects without a token.
 
         Args:
-            query: A Clause or ClauseGroup.
+            query: A Query, Clause, or ClauseGroup.
             path: File path to write the PFB data to.
 
         Raises:
@@ -321,7 +325,7 @@ class Session:
     @timed("session.saveQueryByName")
     def saveQueryByName(  # noqa: N802
         self,
-        query: Query,
+        query: Query | Clause | ClauseGroup,
         name: str,
         *,
         overwrite: bool = False,
@@ -332,7 +336,7 @@ class Session:
         passed to :meth:`loadQueryByID` or :meth:`runQueryByID` later.
 
         Args:
-            query: A Clause or ClauseGroup.
+            query: A Query, Clause, or ClauseGroup.
             name: Display name to associate with the query.
             overwrite: When ``False`` (default), refuse if a named query
                 with that name already exists for this user. When ``True``,
@@ -425,15 +429,18 @@ class Session:
         return self.runQuery(query, type)
 
     @timed("session.loadQueryByID")
-    def loadQueryByID(self, query_id: str) -> Query:  # noqa: N802
+    def loadQueryByID(  # noqa: N802
+        self, query_id: str
+    ) -> Query | Clause | ClauseGroup:
         """Load a previously-saved PIC-SURE query by its query ID.
 
         Args:
             query_id: The UUID string of a previous query.
 
         Returns:
-            A Clause or ClauseGroup that can be passed back into runQuery,
-            exportAsPFB, or composed with buildQuery.
+            A Query (when the saved query selects output concepts) or a bare
+            Clause/ClauseGroup, suitable for runQuery, exportAsPFB, or — for a
+            bare filter — composing with buildClauseGroup.
 
         Raises:
             PicSureValidationError: If the ID is empty, the query was not

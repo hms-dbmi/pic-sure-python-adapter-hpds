@@ -10,6 +10,7 @@ from picsure._models.clause import (
 )
 from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure._models.dictionary import coerce_float
+from picsure._models.query import Query
 from picsure._services._errors import rate_limit_message
 from picsure._transport.errors import (
     TransportAuthenticationError,
@@ -115,27 +116,25 @@ def _parse_subquery(node: dict[str, object]) -> ClauseGroup:
 def _to_query(
     select_paths: list[str],
     phenotypic_node: object | None,
-) -> Clause | ClauseGroup:
-    """Combine the saved SELECT paths and phenotypic tree into a single Query."""
-    selects: list[Clause | ClauseGroup] = [
-        Clause(keys=[p], type=PhenotypicFilterType.SELECT) for p in select_paths
-    ]
+) -> Query | Clause | ClauseGroup:
+    """Combine the saved include-concept paths and phenotypic tree.
+
+    Returns a bare ``Clause`` / ``ClauseGroup`` when the saved query has no
+    ``select`` paths, or a :class:`Query` wrapping the filter tree (possibly
+    ``None``) plus the include concepts otherwise.
+    """
     phenotypic: Clause | ClauseGroup | None = (
         _parse_phenotypic(phenotypic_node) if phenotypic_node is not None else None
     )
 
-    if phenotypic is None and not selects:
+    if phenotypic is None and not select_paths:
         raise PicSureQueryError(
             "Server returned an empty saved query: no select paths and no "
             "phenotypic clause."
         )
-    if phenotypic is None:
-        if len(selects) == 1:
-            return selects[0]
-        return ClauseGroup(clauses=selects, operator=GroupOperator.AND)
-    if not selects:
-        return phenotypic
-    return ClauseGroup(clauses=[*selects, phenotypic], operator=GroupOperator.AND)
+    if not select_paths:
+        return phenotypic  # type: ignore[return-value]  # guarded non-None above
+    return Query(phenotypicFilter=phenotypic, includeConcepts=tuple(select_paths))
 
 
 # Always use the legacy /picsure/query/{id}/metadata path.  The v3
@@ -147,7 +146,7 @@ _PICSURE_QUERY_METADATA_PATH = "/picsure/query/{query_id}/metadata"
 def load_query(
     client: PicSureClient,
     query_id: str,
-) -> Clause | ClauseGroup:
+) -> Query | Clause | ClauseGroup:
     """Load a previously-saved query by ID and rebuild it as a Query.
 
     Always uses ``/picsure/query/{id}/metadata`` (legacy) — the v3
@@ -203,7 +202,7 @@ def load_query(
     return _build_query_from_response(response)
 
 
-def _build_query_from_response(response: object) -> Clause | ClauseGroup:
+def _build_query_from_response(response: object) -> Query | Clause | ClauseGroup:
     if not isinstance(response, dict):
         raise PicSureQueryError(
             f"Expected a JSON object from the metadata endpoint, got "

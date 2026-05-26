@@ -29,11 +29,11 @@ One package replaces both the client and the adapter.
 | `PicSureHpdsLib.Adapter(conn)` | *(not needed — `connect` returns a Session directly)* |
 | `adapter.useResource(uuid)` | `session.setResourceID(uuid)` |
 | `resource.dictionary().find("sex")` | `session.searchDictionary("sex")` |
-| `resource.query()` | `picsure.createSubQuery(...)` |
-| `query.filter().add(path, values)` | `picsure.createSubQuery(path, type=PhenotypicFilterType.FILTER, categories=values)` |
-| `query.require().add(path)` | `picsure.createSubQuery(path, type=PhenotypicFilterType.REQUIRE)` |
-| `query.anyRecordOf().add(path)` | `picsure.createSubQuery(path, type=PhenotypicFilterType.ANYRECORD)` |
-| `query.select().add(path)` | `picsure.createSubQuery(path, type=PhenotypicFilterType.SELECT)` |
+| `resource.query()` | `picsure.buildClause(...)` |
+| `query.filter().add(path, values)` | `picsure.buildClause(path, type=PhenotypicFilterType.FILTER, categories=values)` |
+| `query.require().add(path)` | `picsure.buildClause(path, type=PhenotypicFilterType.REQUIRE)` |
+| `query.anyRecordOf().add(path)` | `picsure.buildClause(path, type=PhenotypicFilterType.ANYRECORD)` |
+| `query.select().add(path)` | `picsure.buildQuery(includeConcepts=path)` |
 | `query.getCount()` | `session.runQuery(query, type="count")` |
 | `query.getResults()` | `session.runQuery(query, type="participant")` |
 | `query.getResultsDataFrame()` | `session.runQuery(query, type="participant")` |
@@ -98,13 +98,13 @@ query.require().add("\\phs1\\bmi\\")
 **New:**
 
 ```python
-from picsure import createSubQuery, buildQuery, PhenotypicFilterType, GroupOperator
+from picsure import buildClause, buildClauseGroup, PhenotypicFilterType, GroupOperator
 
-sex = createSubQuery("\\phs1\\sex\\", type=PhenotypicFilterType.FILTER, categories="Male")
-age = createSubQuery("\\phs1\\age\\", type=PhenotypicFilterType.FILTER, min=40)
-bmi = createSubQuery("\\phs1\\bmi\\", type=PhenotypicFilterType.REQUIRE)
+sex = buildClause("\\phs1\\sex\\", type=PhenotypicFilterType.FILTER, categories="Male")
+age = buildClause("\\phs1\\age\\", type=PhenotypicFilterType.FILTER, min=40)
+bmi = buildClause("\\phs1\\bmi\\", type=PhenotypicFilterType.REQUIRE)
 
-query = buildQuery([sex, age, bmi], operator=GroupOperator.AND)
+query = buildClauseGroup([sex, age, bmi], operator=GroupOperator.AND)
 ```
 
 ### Running a Query
