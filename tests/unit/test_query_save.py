@@ -202,6 +202,37 @@ class TestSaveQueryByNameDuplicates:
         }
 
     @respx.mock
+    def test_overwrite_matched_record_without_uuid_raises_query_error(self):
+        # A matched record lacking a uuid must raise a clean PicSureQueryError
+        # instead of crashing with KeyError on existing["uuid"].
+        respx.get(LIST_URL).mock(
+            return_value=httpx.Response(
+                200,
+                json=[
+                    {
+                        "name": "fun",
+                        "queryId": "qid-old",
+                        "archived": False,
+                        "metadata": {},
+                    }
+                ],
+            )
+        )
+        respx.post(SUBMIT_URL).mock(
+            return_value=httpx.Response(200, json={"picsureResultId": "qid-new"})
+        )
+
+        with pytest.raises(PicSureQueryError, match="missing its identifier"):
+            save_query_by_name(
+                _client(),
+                RESOURCE_UUID,
+                _clause(),
+                "fun",
+                use_legacy_query_path=False,
+                overwrite=True,
+            )
+
+    @respx.mock
     def test_overwrite_true_creates_when_no_existing_record(self):
         # overwrite=True should still create-via-POST if there is no match.
         respx.get(LIST_URL).mock(return_value=httpx.Response(200, json=[]))
@@ -246,6 +277,23 @@ class TestSaveQueryByNameNameValidation:
         ],
     )
     def test_rejects_bad_characters(self, bad_name):
+        with pytest.raises(PicSureValidationError, match="unsupported characters"):
+            save_query_by_name(
+                _client(),
+                RESOURCE_UUID,
+                _clause(),
+                bad_name,
+                use_legacy_query_path=False,
+            )
+
+    @pytest.mark.parametrize(
+        "bad_name",
+        [
+            "My Query\n",
+            "trailing newline\n",
+        ],
+    )
+    def test_rejects_trailing_newline(self, bad_name):
         with pytest.raises(PicSureValidationError, match="unsupported characters"):
             save_query_by_name(
                 _client(),
