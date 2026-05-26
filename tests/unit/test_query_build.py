@@ -219,6 +219,16 @@ class TestBuildClauseGroup:
         with pytest.raises(PicSureValidationError, match="at least one"):
             buildClauseGroup([])
 
+    def test_copies_caller_list(self):
+        c1 = buildClause("\\p1\\", type=PhenotypicFilterType.FILTER, categories="A")
+        c2 = buildClause("\\p2\\", type=PhenotypicFilterType.FILTER, categories="B")
+        clauses = [c1, c2]
+        group = buildClauseGroup(clauses, operator=GroupOperator.AND)
+        clauses.append(
+            buildClause("\\p3\\", type=PhenotypicFilterType.FILTER, categories="C")
+        )
+        assert len(group.clauses) == 2
+
     def test_serializes_end_to_end(self):
         sex = buildClause(
             "\\sex\\", type=PhenotypicFilterType.FILTER, categories="Male"
