@@ -31,6 +31,9 @@ docs/superpowers/
 *.ipynb
 !notebooks/**/*.ipynb
 
+# Generated PFB / Avro export artifacts from the export notebooks (nb 7)
+*.avro
+
 # XDG trash directory created when a container process "deletes" a file
 .Trash-*/
 
