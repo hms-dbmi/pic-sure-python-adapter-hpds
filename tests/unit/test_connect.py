@@ -168,6 +168,32 @@ class TestConnectConnectionErrors:
         assert "resources" in msg.lower()
 
     @respx.mock
+    def test_null_resources_payload_raises_connection_error(self, profile_response):
+        respx.get(f"{BASE_URL}/psama/user/me").mock(
+            return_value=httpx.Response(200, json=profile_response)
+        )
+        respx.get(f"{BASE_URL}/picsure/info/resources").mock(
+            return_value=httpx.Response(
+                200, content=b"null", headers={"content-type": "application/json"}
+            )
+        )
+
+        with pytest.raises(PicSureConnectionError, match="unexpected resources"):
+            connect(platform=BASE_URL, token=TOKEN)
+
+    @respx.mock
+    def test_string_resources_payload_raises_connection_error(self, profile_response):
+        respx.get(f"{BASE_URL}/psama/user/me").mock(
+            return_value=httpx.Response(200, json=profile_response)
+        )
+        respx.get(f"{BASE_URL}/picsure/info/resources").mock(
+            return_value=httpx.Response(200, json="not-a-list")
+        )
+
+        with pytest.raises(PicSureConnectionError, match="unexpected resources"):
+            connect(platform=BASE_URL, token=TOKEN)
+
+    @respx.mock
     def test_concepts_prefetch_failure_raises_connection_error(
         self, profile_response, resources_response
     ):

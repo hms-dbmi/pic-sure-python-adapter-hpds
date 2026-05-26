@@ -291,4 +291,11 @@ def _fetch_resources(
             for uuid, name in data.items()
         ]
 
-    return [Resource.from_dict(r) for r in data]
+    if not isinstance(data, list):
+        raise PicSureConnectionError(
+            f"Connected to {display_name} but received an unexpected "
+            "resources response from the server. The server may be "
+            "misconfigured or temporarily unavailable."
+        )
+
+    return [Resource.from_dict(r) for r in data if isinstance(r, dict)]
