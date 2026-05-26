@@ -24,11 +24,12 @@ _STATUS_PATH_TEMPLATE = "/picsure/v3/query/{query_id}/status"
 _RESULT_PATH_TEMPLATE = "/picsure/v3/query/{query_id}/result"
 
 # Terminal status values returned by PIC-SURE's ``PicSureStatus`` enum.
-# AVAILABLE is the success terminal; ERROR is the failure terminal.
-# QUEUED / PENDING are in-progress; HPDS also uses RUNNING in some paths.
+# Only AVAILABLE (success) and ERROR (failure) are terminal; every other
+# status (QUEUED, PENDING, RUNNING, STARTED, PROCESSING, or any future HPDS
+# value surfaced via ``resourceStatus``) is treated as in-progress and we
+# keep polling, bounded by ``_TOTAL_TIMEOUT_SECONDS`` (10 minutes).
 _STATUS_AVAILABLE = "AVAILABLE"
 _STATUS_ERROR = "ERROR"
-_IN_PROGRESS_STATUSES = frozenset({"QUEUED", "PENDING", "RUNNING"})
 
 # Polling parameters.  The sequence is 1s, 2s, 4s, 8s, 16s, 32s, 60s, 60s, ...
 # (doubling, capped at 60s per poll).  Cumulative elapsed time is bounded
@@ -147,12 +148,8 @@ def _poll_until_available(
             raise PicSureQueryError(
                 f"PFB export failed on the server (query {query_id} status=ERROR)."
             )
-        if status not in _IN_PROGRESS_STATUSES:
-            # Unknown status — treat as failure rather than spin forever.
-            raise PicSureQueryError(
-                f"PFB export returned an unexpected status '{status}' for "
-                f"query {query_id}."
-            )
+        # Any other status is treated as in-progress; keep polling. The
+        # 10-minute total timeout below protects against an infinite loop.
 
         elapsed = time.monotonic() - start
         if elapsed >= _TOTAL_TIMEOUT_SECONDS:
