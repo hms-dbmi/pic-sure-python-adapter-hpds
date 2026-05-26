@@ -37,7 +37,7 @@ Tab completion the IPython kernel provides out of the box.
 JupyterLab opens with **File → New Notebook** defaulting to
 `/workspace/notebooks/`. That directory is the only place where
 `*.ipynb` files are tracked by git — see
-[`notebooks/README.md`](../../notebooks/README.md) for the convention.
+[`notebooks/README.md`](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/blob/main/notebooks/README.md) for the convention.
 Scratch notebooks created anywhere else (the repo root, inside `src/`,
 etc.) are gitignored automatically, so you can experiment freely
 without polluting commits.

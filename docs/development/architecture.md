@@ -164,7 +164,7 @@ The rule is purely syntactic:
 
 - **Public:** anything attached to the `picsure` package itself —
   i.e. anything re-exported from
-  [`src/picsure/__init__.py`](../../src/picsure/__init__.py) (the
+  [`src/picsure/__init__.py`](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/blob/main/src/picsure/__init__.py) (the
   `__all__` list). Treat these as load-bearing. Renaming, removing,
   or changing the signature of one of these is a breaking change and
   requires a major version bump under SemVer.
