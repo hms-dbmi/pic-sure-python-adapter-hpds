@@ -6,7 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING:** The query builders are renamed to a `build*` triplet whose names match their return types: `createSubQuery` → `buildClause` (returns `Clause`), the clause-combining `buildQuery` → `buildClauseGroup` (returns `ClauseGroup`). The name `buildQuery` is now the query *assembler* `buildQuery(phenotypicFilter=None, includeConcepts=())` and returns a `Query`.
+- **BREAKING:** `Query` is now a dataclass (`phenotypicFilter`, `includeConcepts`) rather than a `Clause | ClauseGroup` type alias. `runQuery`/`exportAsPFB`/`saveQueryByName` accept a `Query` or a bare `Clause`/`ClauseGroup`. A saved query that selects output concepts now loads as a `Query` (previously a `ClauseGroup` of `SELECT` clauses).
+
+### Removed
+- **BREAKING:** `PhenotypicFilterType.SELECT` is removed. To include concept paths in the output without filtering, pass them to `buildQuery(includeConcepts=...)` instead of building a `SELECT` clause.
+
 ### Added
+- `picsure.buildQuery(phenotypicFilter=None, includeConcepts=())` assembles a `Query` from a filter tree plus the concept paths to return as output columns. `includeConcepts` preserves order and de-duplicates.
 - `picsure.removeSubQuery(query, target)` returns a copy of `query` with every structurally-equal occurrence of `target` removed, recursively through nested groups. Emptied `ClauseGroup`s are dropped. Raises `PicSureValidationError` if the whole tree would be removed.
 - `picsure.replaceClause(query, target, replacement)` returns a copy of `query` with every structurally-equal occurrence of `target` swapped for `replacement`.
 - `Session.saveQueryByName(query, name, *, overwrite=False)` submits the query via `POST /picsure/v3/query` and associates `name` with it via `POST /dataset/named/`. With `overwrite=True`, an existing record with the same name is `PUT`-updated to point at the freshly-submitted query. The backend's `NamedDataset` constraints (`name` max 255 chars, allowed: letters, digits, spaces, ``- _ \ / ? + = [ ] . ( ) : " '``) are validated client-side. Refused on open-access deployments. Returns the new query ID — pass it to `loadQueryByID` / `runQueryByID` later.

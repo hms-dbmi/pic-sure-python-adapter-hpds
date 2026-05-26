@@ -17,11 +17,13 @@ typical session flows:
    returns a :class:`Session`.
 2. **Search / build.** `session.searchDictionary(...)` and
    `session.facets(...)` go through the search service; users build
-   filters with the standalone helpers `picsure.createSubQuery(...)`
-   and `picsure.buildQuery(...)`.
+   filters with the standalone helpers `picsure.buildClause(...)` and
+   `picsure.buildClauseGroup(...)`, then optionally wrap a filter with
+   the output concepts to return via `picsure.buildQuery(...)`.
 3. **Run.** `session.runQuery(query, type=...)` calls the query-run
-   service, which serializes the `Clause` / `ClauseGroup` to v3 wire
-   format, POSTs to `/picsure/v3/query/sync`, and parses the response
+   service, which splits the `Query` (or bare `Clause` / `ClauseGroup`)
+   into a phenotypic filter tree and `includeConcepts`, serializes to v3
+   wire format, POSTs to `/picsure/v3/query/sync`, and parses the response
    into a `CountResult`, a `dict[str, CountResult]`, or a
    `DataFrame`.
 4. **Export.** `session.exportAsPFB(...)` uses the async flow
@@ -85,9 +87,9 @@ src/picsure/
 |--------------------|------------------------------------------------------------------------------|
 | `session.py`       | `Session` class. Holds the HTTP client, resource list, consents, dictionary size, and the dev-mode config. Public methods (`searchDictionary`, `runQuery`, `runQueryByID`, `loadQueryByID`, `saveQueryByName`, `exportAsPFB`, `exportCSV`, `exportTSV`, `setResourceID`, `setResourceIDByName`, `getResourceID`, `facets`, `showAllFacets`, …) delegate to `_services/*`. |
 | `resource.py`      | `Resource` dataclass (`uuid`, `name`, `description`) with a `from_dict` constructor for `/picsure/info/resources` payloads. |
-| `clause.py`        | `Clause` dataclass + `PhenotypicFilterType` enum (`FILTER`, `ANYRECORD`, `SELECT`, `REQUIRE`). Each `Clause.to_query_json()` emits the v3 `PhenotypicClause` shape; `SELECT` raises and is extracted separately via `select_paths()`. |
-| `clause_group.py`  | `ClauseGroup` dataclass + `GroupOperator` enum (`AND`, `OR`). Recursively serializes to a v3 `PhenotypicSubquery`. Refuses to embed `SELECT` children inline (symmetry with `Clause`). |
-| `query.py`         | `Query` type alias: `Clause | ClauseGroup`. The single type that runs through the query path. |
+| `clause.py`        | `Clause` dataclass + `PhenotypicFilterType` enum (`FILTER`, `ANYRECORD`, `REQUIRE`). Each `Clause.to_query_json()` emits the v3 `PhenotypicClause` shape. |
+| `clause_group.py`  | `ClauseGroup` dataclass + `GroupOperator` enum (`AND`, `OR`). Recursively serializes to a v3 `PhenotypicSubquery`. |
+| `query.py`         | `Query` dataclass: a `phenotypicFilter` (`Clause | ClauseGroup | None`) plus `includeConcepts` (output concept paths). `runQuery` also accepts a bare `Clause` / `ClauseGroup` (filter, no extra output columns). |
 | `query_type.py`    | `QueryType` enum (`COUNT`, `PARTICIPANT`, `TIMESTAMP`, `CROSS_COUNT`). Public API also accepts equivalent lowercase strings. |
 | `count_result.py`  | `CountResult` dataclass — preserves `value`, `margin`, `cap`, `raw`. Encodes exact / noisy / suppressed shapes from open-access backends. `obfuscated` property is a convenience. |
 | `dictionary.py`    | `DictionaryEntry` dataclass — one row of `searchDictionary` output, mapped from the backend `Concept` payload. |
@@ -99,7 +101,7 @@ src/picsure/
 |------------------|------------------------------------------------------------------------------|
 | `connect.py`     | `connect(platform, token, …)`. Resolves the platform, hits `/psama/user/me` (skipped on open-access), fetches resources, consents, dictionary size, and constructs the `Session`. Also handles the dev-mode toggle and the success/expiration banner. |
 | `search.py`      | `searchDictionary`, `fetch_facets`, `show_all_facets`, plus the smaller helpers that build dictionary-api request bodies, dedupe entries, and turn results into DataFrames. Also `fetch_total_concepts` (used by connect to pre-size search pages). |
-| `query_build.py` | `createSubQuery` and `buildQuery` — the public constructors for `Clause` and `ClauseGroup` with input validation (rejects mutually-exclusive arguments before they reach the wire). |
+| `query_build.py` | `buildClause`, `buildClauseGroup`, and `buildQuery` — the public constructors for `Clause`, `ClauseGroup`, and `Query` with input validation (rejects mutually-exclusive arguments before they reach the wire). |
 | `query_edit.py`  | `removeSubQuery(query, target)` and `replaceClause(query, target, replacement)`. Pure local tree edits — no network calls. Matching is structural (frozen-dataclass equality). Removals that empty a `ClauseGroup` prune the parent; removing the whole tree raises `PicSureValidationError`. |
 | `query_run.py`   | `run_query(client, resource_uuid, query, type)`. Serializes via `build_query_body`, posts to the v3 sync endpoint (or the legacy path on open-only deployments), and parses each response shape. Also `parse_count_string` for the obfuscated-count regexes. |
 | `query_load.py`  | `load_query(client, query_id)`. Hits the saved-query endpoint and reconstructs a `Clause` / `ClauseGroup` from the response so it can be re-run via `runQueryByID`. |
@@ -162,7 +164,7 @@ The rule is purely syntactic:
 
 - **Public:** anything attached to the `picsure` package itself —
   i.e. anything re-exported from
-  [`src/picsure/__init__.py`](../../src/picsure/__init__.py) (the
+  [`src/picsure/__init__.py`](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/blob/main/src/picsure/__init__.py) (the
   `__all__` list). Treat these as load-bearing. Renaming, removing,
   or changing the signature of one of these is a breaking change and
   requires a major version bump under SemVer.

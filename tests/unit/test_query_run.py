@@ -5,6 +5,7 @@ import respx
 from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure._models.count_result import CountResult
+from picsure._models.query import Query
 from picsure._models.query_type import QueryType
 from picsure._models.resource import Resource
 from picsure._models.session import Session
@@ -421,21 +422,19 @@ class TestRunQueryWithClauseGroup:
         assert len(pheno["phenotypicClauses"]) == 2
 
     @respx.mock
-    def test_mixed_group_with_select_lifts_selects(self):
-        # A ClauseGroup whose direct children include both a SELECT clause and
-        # a phenotypic clause is now accepted: SELECTs are lifted to the
-        # top-level ``select`` array and the phenotypic content is serialized
-        # normally.  This is the shape ``loadQueryByID`` produces.
+    def test_query_with_filter_and_include_concepts(self):
+        # A Query carrying both a phenotypic filter and includeConcepts lifts
+        # the concepts to the top-level ``select`` array and serializes the
+        # filter as ``phenotypicClause``.
         route = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"100")
         )
-        out = Clause(keys=["\\out_a\\", "\\out_b\\"], type=PhenotypicFilterType.SELECT)
-        group = ClauseGroup(
-            clauses=[_simple_clause(), out],
-            operator=GroupOperator.AND,
+        query = Query(
+            phenotypicFilter=_simple_clause(),
+            includeConcepts=("\\out_a\\", "\\out_b\\"),
         )
         client = _make_client()
-        run_query(client, RESOURCE_UUID, group, "count")
+        run_query(client, RESOURCE_UUID, query, "count")
 
         import json
 
@@ -443,21 +442,16 @@ class TestRunQueryWithClauseGroup:
         assert body["query"]["select"] == ["\\out_a\\", "\\out_b\\"]
         pheno = body["query"]["phenotypicClause"]
         assert pheno is not None
-        assert len(pheno["phenotypicClauses"]) == 1
+        assert pheno["phenotypicFilterType"] == "FILTER"
 
     @respx.mock
-    def test_group_with_only_selects_yields_null_phenotypic(self):
+    def test_include_only_query_yields_null_phenotypic(self):
         route = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"100")
         )
-        select_a = Clause(keys=["\\a\\"], type=PhenotypicFilterType.SELECT)
-        select_b = Clause(keys=["\\b\\"], type=PhenotypicFilterType.SELECT)
-        group = ClauseGroup(
-            clauses=[select_a, select_b],
-            operator=GroupOperator.AND,
-        )
+        query = Query(includeConcepts=("\\a\\", "\\b\\"))
         client = _make_client()
-        run_query(client, RESOURCE_UUID, group, "count")
+        run_query(client, RESOURCE_UUID, query, "count")
 
         import json
 
@@ -466,19 +460,18 @@ class TestRunQueryWithClauseGroup:
         assert body["query"]["select"] == ["\\a\\", "\\b\\"]
 
     @respx.mock
-    def test_single_select_clause_yields_null_phenotypic(self):
+    def test_bare_clause_has_empty_select(self):
         route = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"100")
         )
-        select = Clause(keys=["\\a\\"], type=PhenotypicFilterType.SELECT)
         client = _make_client()
-        run_query(client, RESOURCE_UUID, select, "count")
+        run_query(client, RESOURCE_UUID, _simple_clause(), "count")
 
         import json
 
         body = json.loads(route.calls[0].request.content)
-        assert body["query"]["phenotypicClause"] is None
-        assert body["query"]["select"] == ["\\a\\"]
+        assert body["query"]["select"] == []
+        assert body["query"]["phenotypicClause"] is not None
 
 
 class TestRunQueryValidation:
@@ -499,7 +492,7 @@ class TestRunQueryValidation:
         client = _make_client()
         with pytest.raises(
             PicSureValidationError,
-            match="Clause or ClauseGroup",
+            match="Clause, ClauseGroup, or Query",
         ):
             run_query(
                 client,
@@ -735,16 +728,15 @@ class TestRunQueryLegacyPath:
         assert legacy.call_count == 0
 
 
-class TestRunQueryAcceptsMixedTopLevelGroup:
-    """A ClauseGroup whose direct children include both SELECT clauses and a
-    phenotypic subtree must be serializable.  ``loadQueryByID`` produces this
-    shape when a saved query had both ``select`` and ``phenotypicClause``.
+class TestRunQueryAcceptsQueryContainer:
+    """A Query carrying both includeConcepts and a phenotypic filter tree must
+    serialize with the concepts lifted to ``select`` and the filter under
+    ``phenotypicClause``.  ``loadQueryByID`` produces this shape when a saved
+    query had both ``select`` and ``phenotypicClause``.
     """
 
     @respx.mock
-    def test_select_lifted_phenotypic_serialized(self):
-        select_a = Clause(keys=["\\phs1\\out_a\\"], type=PhenotypicFilterType.SELECT)
-        select_b = Clause(keys=["\\phs1\\out_b\\"], type=PhenotypicFilterType.SELECT)
+    def test_include_concepts_lifted_phenotypic_serialized(self):
         sex = Clause(
             keys=["\\phs1\\sex\\"],
             type=PhenotypicFilterType.FILTER,
@@ -752,15 +744,15 @@ class TestRunQueryAcceptsMixedTopLevelGroup:
         )
         age = Clause(keys=["\\phs1\\age\\"], type=PhenotypicFilterType.FILTER, min=40.0)
         pheno_group = ClauseGroup(clauses=[sex, age], operator=GroupOperator.AND)
-        top = ClauseGroup(
-            clauses=[select_a, select_b, pheno_group],
-            operator=GroupOperator.AND,
+        query = Query(
+            phenotypicFilter=pheno_group,
+            includeConcepts=("\\phs1\\out_a\\", "\\phs1\\out_b\\"),
         )
         route = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"42")
         )
         client = _make_client()
-        run_query(client, RESOURCE_UUID, top, "count")
+        run_query(client, RESOURCE_UUID, query, "count")
 
         import json
 
@@ -768,25 +760,18 @@ class TestRunQueryAcceptsMixedTopLevelGroup:
         assert body["query"]["select"] == ["\\phs1\\out_a\\", "\\phs1\\out_b\\"]
         pheno = body["query"]["phenotypicClause"]
         assert pheno["operator"] == "AND"
-        # The top group has SELECTs stripped, leaving one child: the nested
-        # pheno_group (which itself has 2 clauses).
-        assert len(pheno["phenotypicClauses"]) == 1
-        nested = pheno["phenotypicClauses"][0]
-        assert nested["operator"] == "AND"
-        assert len(nested["phenotypicClauses"]) == 2
-        assert nested["phenotypicClauses"][0]["conceptPath"] == "\\phs1\\sex\\"
+        assert len(pheno["phenotypicClauses"]) == 2
+        assert pheno["phenotypicClauses"][0]["conceptPath"] == "\\phs1\\sex\\"
 
     @respx.mock
-    def test_select_only_top_level_group_omits_phenotypic(self):
-        select_a = Clause(keys=["\\phs1\\out_a\\"], type=PhenotypicFilterType.SELECT)
-        select_b = Clause(keys=["\\phs1\\out_b\\"], type=PhenotypicFilterType.SELECT)
-        top = ClauseGroup(clauses=[select_a, select_b], operator=GroupOperator.AND)
+    def test_include_only_query_omits_phenotypic(self):
+        query = Query(includeConcepts=("\\phs1\\out_a\\", "\\phs1\\out_b\\"))
         route = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"")
         )
         client = _make_client()
         # DATAFRAME endpoint returns empty CSV → empty DataFrame, not an error.
-        run_query(client, RESOURCE_UUID, top, "participant")
+        run_query(client, RESOURCE_UUID, query, "participant")
 
         import json
 

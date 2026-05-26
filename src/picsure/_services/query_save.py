@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+from picsure._models.clause import Clause
+from picsure._models.clause_group import ClauseGroup
 from picsure._models.query import Query
 from picsure._services._errors import translate_stage_error
 from picsure._services.query_run import build_query_body
@@ -27,7 +29,7 @@ _NAME_MAX_LEN = 255
 def save_query_by_name(
     client: PicSureClient,
     resource_uuid: str,
-    query: Query,
+    query: Query | Clause | ClauseGroup,
     name: str,
     *,
     use_legacy_query_path: bool,

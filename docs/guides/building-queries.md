@@ -1,40 +1,58 @@
 # Building Queries
 
-This guide covers creating filter clauses and combining them into
-nested AND/OR query groups.
+This guide covers creating filter clauses, combining them into nested
+AND/OR query groups, and assembling a complete query with the output
+concepts to include.
+
+## The build\* pipeline
+
+Queries are built in three tiers, each builder named after what it returns:
+
+| Builder | Returns | Purpose |
+|---|---|---|
+| `buildClause` | `Clause` | A single filter leaf |
+| `buildClauseGroup` | `ClauseGroup` | Combine clauses/groups under AND/OR (nestable) |
+| `buildQuery` | `Query` | Assemble a filter tree + output concepts to return |
+
+A bare `Clause` or `ClauseGroup` can be run directly (filter only, no extra
+output columns); use `buildQuery` when you also want to choose which concept
+paths appear in the result.
 
 ## Clause Types
 
-PIC-SURE supports four types of clauses:
+PIC-SURE supports three filter clause types:
 
 | Type | Purpose | Example |
 |---|---|---|
 | `FILTER` | Filter by value or range | Males only, age > 40 |
 | `ANYRECORD` | Match any record with a value | Has any BMI measurement |
-| `SELECT` | Include in output, no filtering | Add height to results |
 | `REQUIRE` | Require non-null value | Must have blood pressure |
+
+To **include a concept path in the output without filtering** (what the old
+`SELECT` clause did), pass it to `buildQuery(includeConcepts=...)` instead —
+output columns are no longer a clause type.
 
 ## Creating Clauses
 
 ```python
-from picsure import createSubQuery, PhenotypicFilterType
+from picsure import buildClause, PhenotypicFilterType
 
 # Categorical filter
-sex = createSubQuery(
+sex = buildClause(
     "\\phs1\\pht1\\phv1\\sex\\",
     type=PhenotypicFilterType.FILTER,
     categories="Male",
 )
 
 # Multiple categorical values
-asthma = createSubQuery(
+asthma = buildClause(
     "\\phs1\\pht2\\phv3\\asthma\\",
     type=PhenotypicFilterType.FILTER,
     categories=["Yes, recent", "Yes, since childhood"],
 )
 
 # Numeric range filter
-age = createSubQuery(
+age = buildClause(
     "\\phs1\\pht1\\phv5\\age\\",
     type=PhenotypicFilterType.FILTER,
     min=40,
@@ -42,40 +60,34 @@ age = createSubQuery(
 )
 
 # Min only (no upper bound)
-age_over_40 = createSubQuery(
+age_over_40 = buildClause(
     "\\phs1\\pht1\\phv5\\age\\",
     type=PhenotypicFilterType.FILTER,
     min=40,
 )
 
 # Any record of a variable
-has_sleep_data = createSubQuery(
+has_sleep_data = buildClause(
     "\\phs1\\pht3\\phv8\\trouble_sleeping\\",
     type=PhenotypicFilterType.ANYRECORD,
-)
-
-# Select for output without filtering
-include_height = createSubQuery(
-    "\\phs1\\pht1\\phv10\\height\\",
-    type=PhenotypicFilterType.SELECT,
 )
 ```
 
 ## Combining Clauses with AND/OR
 
-Use `buildQuery` to combine clauses:
+Use `buildClauseGroup` to combine clauses:
 
 ```python
-from picsure import buildQuery, GroupOperator
+from picsure import buildClauseGroup, GroupOperator
 
 # AND: all conditions must be true
-males_over_40 = buildQuery(
+males_over_40 = buildClauseGroup(
     [sex, age_over_40],
     operator=GroupOperator.AND,
 )
 
 # OR: at least one condition must be true
-copd_or_asthma = buildQuery(
+copd_or_asthma = buildClauseGroup(
     [copd, asthma],
     operator=GroupOperator.OR,
 )
@@ -87,7 +99,7 @@ Groups can contain other groups for complex logic:
 
 ```python
 # Find males over 40 with COPD or asthma
-full_query = buildQuery(
+filters = buildClauseGroup(
     [males_over_40, copd_or_asthma],
     operator=GroupOperator.AND,
 )
@@ -99,28 +111,57 @@ This produces the logical expression:
 (sex = Male AND age >= 40) AND (COPD = Yes OR asthma in [Yes, recent; Yes, since childhood])
 ```
 
+## Assembling a Query and Choosing Output Concepts
+
+`buildQuery` bundles a filter tree with the concept paths to return as
+output columns:
+
+```python
+from picsure import buildQuery
+
+# Filter + the columns you want back
+query = buildQuery(
+    phenotypicFilter=filters,
+    includeConcepts=["\\phs1\\pht1\\phv10\\height\\", "\\phs1\\pht1\\phv11\\bmi\\"],
+)
+df = session.runQuery(query, type="participant")
+
+# Include-only — return these concepts for every matching record, no filter
+heights = buildQuery(includeConcepts=["\\phs1\\pht1\\phv10\\height\\"])
+
+# Filter only — bare ClauseGroup/Clause works without buildQuery
+count = session.runQuery(filters, type="count")
+```
+
+`includeConcepts` preserves order and drops duplicates.
+
 ### Full Example from the Product Spec
 
 Select participants who are male, over 40, and have either
-COPD/asthma or sleep problems:
+COPD/asthma or sleep problems, returning their height in the output:
 
 ```python
 import picsure
-from picsure import createSubQuery, buildQuery, PhenotypicFilterType, GroupOperator
+from picsure import buildClause, buildClauseGroup, buildQuery, PhenotypicFilterType, GroupOperator
 
-sex_filter = createSubQuery("\\phs1\\sex\\", type=PhenotypicFilterType.FILTER, categories="Male")
-age_filter = createSubQuery("\\phs1\\age\\", type=PhenotypicFilterType.FILTER, min=40)
-copd_filter = createSubQuery("\\phs1\\copd\\", type=PhenotypicFilterType.FILTER, categories="Yes")
-asthma_filter = createSubQuery("\\phs1\\asthma\\", type=PhenotypicFilterType.FILTER, categories="Yes")
-sleep_filter = createSubQuery("\\phs1\\trouble_sleeping\\", type=PhenotypicFilterType.ANYRECORD)
-insomnia_filter = createSubQuery("\\phs1\\insomnia\\", type=PhenotypicFilterType.ANYRECORD)
+sex_filter = buildClause("\\phs1\\sex\\", type=PhenotypicFilterType.FILTER, categories="Male")
+age_filter = buildClause("\\phs1\\age\\", type=PhenotypicFilterType.FILTER, min=40)
+copd_filter = buildClause("\\phs1\\copd\\", type=PhenotypicFilterType.FILTER, categories="Yes")
+asthma_filter = buildClause("\\phs1\\asthma\\", type=PhenotypicFilterType.FILTER, categories="Yes")
+sleep_filter = buildClause("\\phs1\\trouble_sleeping\\", type=PhenotypicFilterType.ANYRECORD)
+insomnia_filter = buildClause("\\phs1\\insomnia\\", type=PhenotypicFilterType.ANYRECORD)
 
-copd_or_asthma = buildQuery([copd_filter, asthma_filter], operator=GroupOperator.OR)
-sleep_or_insomnia = buildQuery([sleep_filter, insomnia_filter], operator=GroupOperator.OR)
+copd_or_asthma = buildClauseGroup([copd_filter, asthma_filter], operator=GroupOperator.OR)
+sleep_or_insomnia = buildClauseGroup([sleep_filter, insomnia_filter], operator=GroupOperator.OR)
 
-full_query = buildQuery(
+filters = buildClauseGroup(
     [sex_filter, age_filter, copd_or_asthma, sleep_or_insomnia],
     operator=GroupOperator.AND,
+)
+
+full_query = buildQuery(
+    phenotypicFilter=filters,
+    includeConcepts=["\\phs1\\height\\"],
 )
 ```
 
@@ -131,17 +172,18 @@ rebuilding it from scratch. Both return a **new** query — the input is
 not mutated. Matching is structural (frozen-dataclass equality): a node
 matches when every field is equal, including nested children.
 
+They accept a bare `Clause`/`ClauseGroup` or a `Query`; for a `Query` the
+edit applies to its `phenotypicFilter` tree and the `includeConcepts` are
+preserved.
+
 ```python
 from picsure import removeSubQuery, replaceClause
 
-# Start with the nested query built above:
-#   full_query = AND(sex, age, OR(copd, asthma), OR(sleep, insomnia))
-
-# Drop the sleep/insomnia OR group entirely
+# Drop the sleep/insomnia OR group entirely (preserving includeConcepts)
 without_sleep = removeSubQuery(full_query, sleep_or_insomnia)
 
 # Swap "Male" for "Female"
-female_filter = createSubQuery(
+female_filter = buildClause(
     "\\phs1\\sex\\", type=PhenotypicFilterType.FILTER, categories="Female"
 )
 female_query = replaceClause(full_query, sex_filter, female_filter)
@@ -159,13 +201,13 @@ error messages:
 
 ```python
 # ANYRECORD with categories raises an error
-createSubQuery("\\path\\", type=PhenotypicFilterType.ANYRECORD, categories="Male")
+buildClause("\\path\\", type=PhenotypicFilterType.ANYRECORD, categories="Male")
 # PicSureValidationError: ANYRECORD clauses cannot have categories.
 # ANYRECORD matches the presence of any value for the variable.
 # Remove the categories argument.
 
 # FILTER without any criteria raises an error
-createSubQuery("\\path\\", type=PhenotypicFilterType.FILTER)
+buildClause("\\path\\", type=PhenotypicFilterType.FILTER)
 # PicSureValidationError: FILTER clauses require at least one of:
 # categories, min, or max.
 ```
@@ -176,5 +218,5 @@ Every clause and group can serialize to the v3 query JSON format:
 
 ```python
 import json
-print(json.dumps(full_query.to_query_json(), indent=2))
+print(json.dumps(filters.to_query_json(), indent=2))
 ```

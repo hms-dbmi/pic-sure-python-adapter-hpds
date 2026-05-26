@@ -117,9 +117,9 @@ You can pass a single clause directly to `runQuery` — you don't have
 to wrap it in a group first:
 
 ```python
-sex = picsure.createSubQuery("\\phs1\\sex\\", type=PhenotypicFilterType.FILTER, categories="Male")
+sex = picsure.buildClause("\\phs1\\sex\\", type=PhenotypicFilterType.FILTER, categories="Male")
 
-# This works — no buildQuery needed for simple queries
+# This works — no buildClauseGroup needed for simple queries
 count_result = session.runQuery(sex, type="count")
 count = count_result.value  # None if suppressed; check count_result.cap
 ```

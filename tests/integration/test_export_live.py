@@ -1,7 +1,7 @@
 import pytest
 
 import picsure
-from picsure import PhenotypicFilterType, createSubQuery
+from picsure import PhenotypicFilterType, buildClause
 
 from .conftest import requires_auth
 
@@ -14,7 +14,7 @@ class TestExportLive:
                 "which is authorized-only."
             )
         session = picsure.connect(platform=test_platform, token=test_token)
-        clause = createSubQuery(test_concept_path, type=PhenotypicFilterType.REQUIRE)
+        clause = buildClause(test_concept_path, type=PhenotypicFilterType.REQUIRE)
         df = session.runQuery(clause, type="participant")
         output = tmp_path / "test.csv"
         session.exportCSV(df, output)
@@ -28,7 +28,7 @@ class TestExportLive:
                 "which is authorized-only."
             )
         session = picsure.connect(platform=test_platform, token=test_token)
-        clause = createSubQuery(test_concept_path, type=PhenotypicFilterType.REQUIRE)
+        clause = buildClause(test_concept_path, type=PhenotypicFilterType.REQUIRE)
         df = session.runQuery(clause, type="participant")
         output = tmp_path / "test.tsv"
         session.exportTSV(df, output)

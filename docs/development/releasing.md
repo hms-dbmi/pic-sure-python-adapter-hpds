@@ -20,12 +20,12 @@ to PyPI, the docs site, and post-release housekeeping.
   is a judgement call — if user code can break, it's a major bump.
 
 The "public surface" is exactly the `__all__` list in
-[`src/picsure/__init__.py`](../../src/picsure/__init__.py). Anything
+[`src/picsure/__init__.py`](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/blob/main/src/picsure/__init__.py). Anything
 prefixed with `_` (the `_models/`, `_services/`, `_transport/`, and
 `_dev/` subpackages) can change without a major bump.
 
 The current version lives in
-[`pyproject.toml`](../../pyproject.toml) under `[project].version`.
+[`pyproject.toml`](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/blob/main/pyproject.toml) under `[project].version`.
 
 ## Pre-release checklist
 

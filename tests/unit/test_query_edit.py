@@ -7,8 +7,10 @@ from picsure import (
     ClauseGroup,
     GroupOperator,
     PhenotypicFilterType,
+    Query,
+    buildClause,
+    buildClauseGroup,
     buildQuery,
-    createSubQuery,
     removeSubQuery,
     replaceClause,
 )
@@ -16,7 +18,7 @@ from picsure.errors import PicSureValidationError
 
 
 def _clause(path: str, category: str) -> Clause:
-    return createSubQuery(path, type=PhenotypicFilterType.FILTER, categories=category)
+    return buildClause(path, type=PhenotypicFilterType.FILTER, categories=category)
 
 
 def _flatten(node: Clause | ClauseGroup) -> list[Clause]:
@@ -29,7 +31,7 @@ class TestRemoveSubQuery:
     def test_removes_match_at_top_level(self):
         a = _clause("\\a\\", "x")
         b = _clause("\\b\\", "y")
-        q = buildQuery([a, b], operator=GroupOperator.AND)
+        q = buildClauseGroup([a, b], operator=GroupOperator.AND)
 
         pruned = removeSubQuery(q, a)
 
@@ -41,8 +43,8 @@ class TestRemoveSubQuery:
         a = _clause("\\a\\", "x")
         b = _clause("\\b\\", "y")
         c = _clause("\\c\\", "z")
-        inner = buildQuery([a, b], operator=GroupOperator.OR)
-        outer = buildQuery([inner, c], operator=GroupOperator.AND)
+        inner = buildClauseGroup([a, b], operator=GroupOperator.OR)
+        outer = buildClauseGroup([inner, c], operator=GroupOperator.AND)
 
         pruned = removeSubQuery(outer, a)
 
@@ -58,8 +60,8 @@ class TestRemoveSubQuery:
     def test_emptied_inner_group_is_dropped(self):
         a = _clause("\\a\\", "x")
         c = _clause("\\c\\", "z")
-        inner = buildQuery([a], operator=GroupOperator.AND)
-        outer = buildQuery([inner, c], operator=GroupOperator.AND)
+        inner = buildClauseGroup([a], operator=GroupOperator.AND)
+        outer = buildClauseGroup([inner, c], operator=GroupOperator.AND)
 
         pruned = removeSubQuery(outer, a)
 
@@ -74,15 +76,15 @@ class TestRemoveSubQuery:
 
     def test_removing_only_child_collapses_to_empty_and_raises(self):
         a = _clause("\\a\\", "x")
-        q = buildQuery([a], operator=GroupOperator.AND)
+        q = buildClauseGroup([a], operator=GroupOperator.AND)
 
         with pytest.raises(PicSureValidationError, match="entire query"):
             removeSubQuery(q, a)
 
     def test_removing_all_nested_clauses_raises(self):
         a = _clause("\\a\\", "x")
-        inner = buildQuery([a], operator=GroupOperator.OR)
-        outer = buildQuery([inner], operator=GroupOperator.AND)
+        inner = buildClauseGroup([a], operator=GroupOperator.OR)
+        outer = buildClauseGroup([inner], operator=GroupOperator.AND)
 
         with pytest.raises(PicSureValidationError, match="entire query"):
             removeSubQuery(outer, a)
@@ -91,7 +93,7 @@ class TestRemoveSubQuery:
         a = _clause("\\a\\", "x")
         b = _clause("\\b\\", "y")
         missing = _clause("\\zz\\", "q")
-        q = buildQuery([a, b], operator=GroupOperator.AND)
+        q = buildClauseGroup([a, b], operator=GroupOperator.AND)
 
         pruned = removeSubQuery(q, missing)
 
@@ -113,8 +115,8 @@ class TestReplaceClause:
         a = _clause("\\a\\", "x")
         b = _clause("\\b\\", "y")
         c = _clause("\\c\\", "z")
-        inner = buildQuery([a, b], operator=GroupOperator.OR)
-        outer = buildQuery([a, inner], operator=GroupOperator.AND)
+        inner = buildClauseGroup([a, b], operator=GroupOperator.OR)
+        outer = buildClauseGroup([a, inner], operator=GroupOperator.AND)
 
         replaced = replaceClause(outer, a, c)
 
@@ -136,7 +138,7 @@ class TestReplaceClause:
         b = _clause("\\b\\", "y")
         missing = _clause("\\zz\\", "q")
         replacement = _clause("\\rr\\", "r")
-        q = buildQuery([a, b], operator=GroupOperator.AND)
+        q = buildClauseGroup([a, b], operator=GroupOperator.AND)
 
         replaced = replaceClause(q, missing, replacement)
 
@@ -146,7 +148,7 @@ class TestReplaceClause:
         a = _clause("\\a\\", "x")
         b = _clause("\\b\\", "y")
         c = _clause("\\c\\", "z")
-        q = buildQuery([a, b], operator=GroupOperator.OR)
+        q = buildClauseGroup([a, b], operator=GroupOperator.OR)
 
         replaced = replaceClause(q, a, c)
 
@@ -159,8 +161,8 @@ class TestReplaceClause:
         b = _clause("\\b\\", "y")
         c = _clause("\\c\\", "z")
         d = _clause("\\d\\", "w")
-        sub = buildQuery([c, d], operator=GroupOperator.OR)
-        q = buildQuery([a, b], operator=GroupOperator.AND)
+        sub = buildClauseGroup([c, d], operator=GroupOperator.OR)
+        q = buildClauseGroup([a, b], operator=GroupOperator.AND)
 
         replaced = replaceClause(q, a, sub)
 
@@ -171,6 +173,48 @@ class TestReplaceClause:
     def test_rejects_non_query_replacement(self):
         a = _clause("\\a\\", "x")
         b = _clause("\\b\\", "y")
-        q = buildQuery([a, b], operator=GroupOperator.AND)
+        q = buildClauseGroup([a, b], operator=GroupOperator.AND)
         with pytest.raises(PicSureValidationError, match="`replacement` must be"):
             replaceClause(q, a, None)  # type: ignore[arg-type]
+
+
+class TestEditQueryContainer:
+    def test_remove_unwraps_and_preserves_include_concepts(self):
+        a = _clause("\\a\\", "x")
+        b = _clause("\\b\\", "y")
+        group = buildClauseGroup([a, b], operator=GroupOperator.AND)
+        query = buildQuery(phenotypicFilter=group, includeConcepts=["\\out\\"])
+
+        pruned = removeSubQuery(query, a)
+
+        assert isinstance(pruned, Query)
+        assert pruned.includeConcepts == ("\\out\\",)
+        assert isinstance(pruned.phenotypicFilter, ClauseGroup)
+        assert pruned.phenotypicFilter.clauses == [b]
+
+    def test_replace_unwraps_and_preserves_include_concepts(self):
+        a = _clause("\\a\\", "x")
+        b = _clause("\\b\\", "y")
+        c = _clause("\\c\\", "z")
+        group = buildClauseGroup([a, b], operator=GroupOperator.OR)
+        query = buildQuery(phenotypicFilter=group, includeConcepts=["\\out\\"])
+
+        replaced = replaceClause(query, a, c)
+
+        assert isinstance(replaced, Query)
+        assert replaced.includeConcepts == ("\\out\\",)
+        assert isinstance(replaced.phenotypicFilter, ClauseGroup)
+        assert replaced.phenotypicFilter.clauses == [c, b]
+
+    def test_remove_on_include_only_query_raises(self):
+        a = _clause("\\a\\", "x")
+        query = buildQuery(includeConcepts=["\\out\\"])
+        with pytest.raises(PicSureValidationError, match="no phenotypic filter"):
+            removeSubQuery(query, a)
+
+    def test_replace_on_include_only_query_raises(self):
+        a = _clause("\\a\\", "x")
+        c = _clause("\\c\\", "z")
+        query = buildQuery(includeConcepts=["\\out\\"])
+        with pytest.raises(PicSureValidationError, match="no phenotypic filter"):
+            replaceClause(query, a, c)
