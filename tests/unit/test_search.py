@@ -293,7 +293,7 @@ class TestSearch:
     @respx.mock
     def test_last_missing_but_counts_match_ok(self):
         # If last is missing but totalElements matches content length,
-        # treat as truncated (strict policy).
+        # there is no positive evidence of more pages -> complete.
         response = {
             "content": [{"conceptPath": "\\x\\", "name": "x"}],
             "totalElements": 1,
@@ -301,8 +301,18 @@ class TestSearch:
         respx.post(_concepts_url(100)).mock(
             return_value=httpx.Response(200, json=response)
         )
-        with pytest.raises(PicSureQueryError, match="truncated"):
-            searchDictionary(_make_client(), term="x")
+        df = searchDictionary(_make_client(), term="x")
+        assert len(df) == 1
+
+    @respx.mock
+    def test_last_and_total_both_missing_ok(self):
+        # No last, no totalElements -> no evidence of truncation -> complete.
+        response = {"content": [{"conceptPath": "\\x\\", "name": "x"}]}
+        respx.post(_concepts_url(100)).mock(
+            return_value=httpx.Response(200, json=response)
+        )
+        df = searchDictionary(_make_client(), term="x")
+        assert len(df) == 1
 
     @respx.mock
     def test_total_elements_mismatch_raises_even_when_last_true(self):
