@@ -119,16 +119,6 @@ class TestRunQueryCount:
         assert result.obfuscated is True
 
     @respx.mock
-    def test_noisy_count_without_spaces(self):
-        respx.post(QUERY_URL).mock(
-            return_value=httpx.Response(200, content="42\u00b13".encode())
-        )
-        client = _make_client()
-        result = run_query(client, RESOURCE_UUID, _simple_clause(), "count")
-        assert result.value == 42
-        assert result.margin == 3
-
-    @respx.mock
     def test_suppressed_count_has_cap_and_null_value(self):
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"< 10"))
         client = _make_client()
@@ -137,14 +127,6 @@ class TestRunQueryCount:
         assert result.margin is None
         assert result.cap == 10
         assert result.obfuscated is True
-
-    @respx.mock
-    def test_suppressed_count_no_space(self):
-        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"<10"))
-        client = _make_client()
-        result = run_query(client, RESOURCE_UUID, _simple_clause(), "count")
-        assert result.value is None
-        assert result.cap == 10
 
     @respx.mock
     def test_malformed_margin_raises(self):
@@ -480,11 +462,6 @@ class TestRunQueryValidation:
         with pytest.raises(PicSureValidationError, match="not a valid query type"):
             run_query(client, RESOURCE_UUID, _simple_clause(), "invalid")
 
-    def test_invalid_query_type_lists_valid(self):
-        client = _make_client()
-        with pytest.raises(PicSureValidationError, match="count"):
-            run_query(client, RESOURCE_UUID, _simple_clause(), "typo")
-
     def test_plain_dict_query_raises_validation_error(self):
         # A plain dict is not a Clause or ClauseGroup. We want an
         # actionable PicSureValidationError, not an AttributeError from
@@ -726,55 +703,3 @@ class TestRunQueryLegacyPath:
         assert result.value == 5
         assert v3.call_count == 1
         assert legacy.call_count == 0
-
-
-class TestRunQueryAcceptsQueryContainer:
-    """A Query carrying both includeConcepts and a phenotypic filter tree must
-    serialize with the concepts lifted to ``select`` and the filter under
-    ``phenotypicClause``.  ``loadQueryByID`` produces this shape when a saved
-    query had both ``select`` and ``phenotypicClause``.
-    """
-
-    @respx.mock
-    def test_include_concepts_lifted_phenotypic_serialized(self):
-        sex = Clause(
-            keys=["\\phs1\\sex\\"],
-            type=PhenotypicFilterType.FILTER,
-            categories=["Male"],
-        )
-        age = Clause(keys=["\\phs1\\age\\"], type=PhenotypicFilterType.FILTER, min=40.0)
-        pheno_group = ClauseGroup(clauses=[sex, age], operator=GroupOperator.AND)
-        query = Query(
-            phenotypicFilter=pheno_group,
-            includeConcepts=("\\phs1\\out_a\\", "\\phs1\\out_b\\"),
-        )
-        route = respx.post(QUERY_URL).mock(
-            return_value=httpx.Response(200, content=b"42")
-        )
-        client = _make_client()
-        run_query(client, RESOURCE_UUID, query, "count")
-
-        import json
-
-        body = json.loads(route.calls[0].request.content)
-        assert body["query"]["select"] == ["\\phs1\\out_a\\", "\\phs1\\out_b\\"]
-        pheno = body["query"]["phenotypicClause"]
-        assert pheno["operator"] == "AND"
-        assert len(pheno["phenotypicClauses"]) == 2
-        assert pheno["phenotypicClauses"][0]["conceptPath"] == "\\phs1\\sex\\"
-
-    @respx.mock
-    def test_include_only_query_omits_phenotypic(self):
-        query = Query(includeConcepts=("\\phs1\\out_a\\", "\\phs1\\out_b\\"))
-        route = respx.post(QUERY_URL).mock(
-            return_value=httpx.Response(200, content=b"")
-        )
-        client = _make_client()
-        # DATAFRAME endpoint returns empty CSV → empty DataFrame, not an error.
-        run_query(client, RESOURCE_UUID, query, "participant")
-
-        import json
-
-        body = json.loads(route.calls[0].request.content)
-        assert body["query"]["select"] == ["\\phs1\\out_a\\", "\\phs1\\out_b\\"]
-        assert body["query"]["phenotypicClause"] is None

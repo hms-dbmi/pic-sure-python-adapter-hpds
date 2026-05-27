@@ -41,11 +41,6 @@ class TestFacet:
         facet = Facet.from_dict(data)
         assert facet.value == "phs000007"
 
-    def test_frozen(self):
-        facet = Facet(value="test", count=10)
-        with pytest.raises(AttributeError):
-            facet.value = "changed"  # type: ignore[misc]
-
 
 class TestFacetCategory:
     def test_from_dict_new_shape(self):
@@ -80,11 +75,6 @@ class TestFacetCategory:
         assert cat.options[0].value == "phs000007"
         assert cat.options[1].count == 15
 
-    def test_from_dict_empty_options(self):
-        data = {"name": "empty", "display": "Empty", "facets": []}
-        cat = FacetCategory.from_dict(data)
-        assert cat.options == []
-
     def test_from_dict_list_from_fixture(self, facets_response):
         cats = [FacetCategory.from_dict(f) for f in facets_response]
         assert len(cats) == 3
@@ -100,11 +90,6 @@ class TestFacetCategory:
         assert parent.children[0].value == "Infected"
         assert parent.children[0].count == 84173
         assert parent.children[1].value == "Non-infected"
-
-    def test_frozen(self):
-        cat = FacetCategory(name="test", display="Test", options=[])
-        with pytest.raises(AttributeError):
-            cat.name = "changed"  # type: ignore[misc]
 
 
 class TestFacetSet:

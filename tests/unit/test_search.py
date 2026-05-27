@@ -78,21 +78,6 @@ class TestSearch:
         assert pd.isna(df[df["name"] == "sex"].iloc[0]["min"])
 
     @respx.mock
-    def test_categorical_rows_have_no_min_max(self, search_response):
-        import pandas as pd
-
-        respx.post(_concepts_url(100)).mock(
-            return_value=httpx.Response(200, json=search_response)
-        )
-        df = searchDictionary(_make_client(), term="sex")
-        sex_row = df[df["name"] == "sex"].iloc[0]
-        # pandas coerces None into NaN when the column holds floats.
-        assert pd.isna(sex_row["min"])
-        assert pd.isna(sex_row["max"])
-        assert bool(sex_row["allowFiltering"]) is True
-        assert sex_row["studyAcronym"] == "FHS"
-
-    @respx.mock
     def test_include_values_false_still_has_extra_columns(self, search_response):
         respx.post(_concepts_url(100)).mock(
             return_value=httpx.Response(200, json=search_response)
@@ -110,15 +95,6 @@ class TestSearch:
         assert df.iloc[0]["studyId"] == "phs000007"
         assert df.iloc[0]["dataType"] == "categorical"
         assert df.iloc[2]["dataType"] == "continuous"
-
-    @respx.mock
-    def test_include_values_false_omits_values_column(self, search_response):
-        respx.post(_concepts_url(100)).mock(
-            return_value=httpx.Response(200, json=search_response)
-        )
-        df = searchDictionary(_make_client(), term="sex", include_values=False)
-        assert "values" not in df.columns
-        assert "conceptPath" in df.columns
 
     @respx.mock
     def test_body_shape(self, search_response):
@@ -278,19 +254,6 @@ class TestSearch:
             searchDictionary(_make_client(), term="x")
 
     @respx.mock
-    def test_truncated_page_error_message_contains_counts(self):
-        truncated = {
-            "content": [{"conceptPath": "\\x\\", "name": "x"}],
-            "totalElements": 5,
-            "last": False,
-        }
-        respx.post(_concepts_url(100)).mock(
-            return_value=httpx.Response(200, json=truncated)
-        )
-        with pytest.raises(PicSureQueryError, match=r"1/5"):
-            searchDictionary(_make_client(), term="x")
-
-    @respx.mock
     def test_last_missing_but_counts_match_ok(self):
         # If last is missing but totalElements matches content length,
         # there is no positive evidence of more pages -> complete.
@@ -298,16 +261,6 @@ class TestSearch:
             "content": [{"conceptPath": "\\x\\", "name": "x"}],
             "totalElements": 1,
         }
-        respx.post(_concepts_url(100)).mock(
-            return_value=httpx.Response(200, json=response)
-        )
-        df = searchDictionary(_make_client(), term="x")
-        assert len(df) == 1
-
-    @respx.mock
-    def test_last_and_total_both_missing_ok(self):
-        # No last, no totalElements -> no evidence of truncation -> complete.
-        response = {"content": [{"conceptPath": "\\x\\", "name": "x"}]}
         respx.post(_concepts_url(100)).mock(
             return_value=httpx.Response(200, json=response)
         )

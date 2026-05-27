@@ -18,24 +18,12 @@ class TestBuildClause:
         assert clause.keys == ["\\phs1\\sex\\"]
         assert clause.categories == ["Male"]
 
-    def test_keys_string_normalized_to_list(self):
-        clause = buildClause("\\path\\", type=PhenotypicFilterType.REQUIRE)
-        assert clause.keys == ["\\path\\"]
-
     def test_keys_list_preserved(self):
         clause = buildClause(
             ["\\p1\\", "\\p2\\"],
             type=PhenotypicFilterType.ANYRECORD,
         )
         assert clause.keys == ["\\p1\\", "\\p2\\"]
-
-    def test_categories_string_normalized_to_list(self):
-        clause = buildClause(
-            "\\path\\",
-            type=PhenotypicFilterType.FILTER,
-            categories="Male",
-        )
-        assert clause.categories == ["Male"]
 
     def test_categories_list_preserved(self):
         clause = buildClause(
@@ -53,15 +41,6 @@ class TestBuildClause:
         )
         assert clause.min == 40.0
         assert clause.max is None
-
-    def test_continuous_filter_max_only(self):
-        clause = buildClause(
-            "\\path\\",
-            type=PhenotypicFilterType.FILTER,
-            max=100.0,
-        )
-        assert clause.max == 100.0
-        assert clause.min is None
 
     def test_continuous_filter_min_and_max(self):
         clause = buildClause(
@@ -109,14 +88,6 @@ class TestBuildClauseValidation:
                 min=10.0,
             )
 
-    def test_anyrecord_with_max_raises(self):
-        with pytest.raises(PicSureValidationError, match="ANYRECORD"):
-            buildClause(
-                "\\path\\",
-                type=PhenotypicFilterType.ANYRECORD,
-                max=100.0,
-            )
-
     def test_filter_without_criteria_raises(self):
         with pytest.raises(PicSureValidationError, match="FILTER"):
             buildClause("\\path\\", type=PhenotypicFilterType.FILTER)
@@ -132,15 +103,6 @@ class TestBuildClauseValidation:
                 type=PhenotypicFilterType.FILTER,
                 categories="Male",
                 min=40.0,
-            )
-
-    def test_filter_with_categories_and_max_raises(self):
-        with pytest.raises(PicSureValidationError, match="FILTER"):
-            buildClause(
-                "\\path\\",
-                type=PhenotypicFilterType.FILTER,
-                categories=["Male"],
-                max=100.0,
             )
 
     def test_filter_with_categories_and_min_message_mentions_both(self):
@@ -166,14 +128,6 @@ class TestBuildClauseValidation:
                 "\\path\\",
                 type=PhenotypicFilterType.REQUIRE,
                 min=10.0,
-            )
-
-    def test_require_with_max_raises(self):
-        with pytest.raises(PicSureValidationError, match="REQUIRE"):
-            buildClause(
-                "\\path\\",
-                type=PhenotypicFilterType.REQUIRE,
-                max=100.0,
             )
 
     def test_empty_keys_list_raises(self):

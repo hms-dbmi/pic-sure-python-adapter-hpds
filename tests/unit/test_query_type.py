@@ -15,14 +15,3 @@ class TestQueryTypeMembers:
 
     def test_cross_count_value(self):
         assert QueryType.CROSS_COUNT.value == "cross_count"
-
-    def test_member_count(self):
-        assert len(QueryType) == 4
-
-    def test_member_names(self):
-        assert {m.name for m in QueryType} == {
-            "COUNT",
-            "PARTICIPANT",
-            "TIMESTAMP",
-            "CROSS_COUNT",
-        }

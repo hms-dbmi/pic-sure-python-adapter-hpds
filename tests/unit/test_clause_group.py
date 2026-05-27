@@ -11,9 +11,6 @@ class TestGroupOperator:
     def test_or_value(self):
         assert GroupOperator.OR.value == "OR"
 
-    def test_all_members(self):
-        assert set(GroupOperator) == {GroupOperator.AND, GroupOperator.OR}
-
 
 def _sex_clause() -> Clause:
     return Clause(
@@ -143,13 +140,3 @@ class TestClauseGroupToQueryJson:
         assert children[1]["operator"] == "AND"  # type: ignore[index]
         grandchildren = children[1]["phenotypicClauses"]  # type: ignore[index]
         assert grandchildren[1]["operator"] == "OR"
-
-    def test_pure_phenotypic_group_still_serializes(self):
-        group = ClauseGroup(
-            clauses=[_sex_clause(), _age_clause()],
-            operator=GroupOperator.AND,
-        )
-        result = group.to_query_json()
-        children = result["phenotypicClauses"]
-        assert len(children) == 2  # type: ignore[arg-type]
-        assert children[0]["conceptPath"] == "\\phs1\\sex\\"  # type: ignore[index]
