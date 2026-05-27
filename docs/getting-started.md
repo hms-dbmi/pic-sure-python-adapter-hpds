@@ -15,7 +15,7 @@ dictionary, building a query, and exporting results.
 import picsure
 
 session = picsure.connect(
-    platform="BDC Authorized",
+    platform=picsure.Platform.BDC_AUTHORIZED,
     token="your-api-token",
 )
 ```
@@ -27,9 +27,12 @@ You're successfully connected to BDC Authorized as user you@email.com!
 Your token expires on 2026-06-15T00:00:00Z.
 ```
 
-The `platform` parameter accepts named platforms (`"BDC Authorized"`,
-`"BDC Open"`, `"Demo"`) or a custom URL for other
-PIC-SURE instances.
+The `platform` parameter accepts a `Platform` enum member (e.g.
+`picsure.Platform.BDC_AUTHORIZED`, `picsure.Platform.BDC_OPEN`) or a
+custom URL string (e.g. `"https://my-picsure.example.com"`) for other
+PIC-SURE instances. The full list of members is on the `picsure.Platform`
+enum. Passing a human-readable label like `"BDC Authorized"` raises
+`PicSureValidationError`.
 
 ### Explicit Cleanup (Recommended)
 
@@ -37,7 +40,7 @@ PIC-SURE instances.
 use `with` so the underlying HTTP connection pool is released promptly:
 
 ```python
-with picsure.connect(platform="BDC Authorized", token="your-api-token") as session:
+with picsure.connect(platform=picsure.Platform.BDC_AUTHORIZED, token="your-api-token") as session:
     df = session.searchDictionary("blood pressure")
     # connection released on exit
 ```

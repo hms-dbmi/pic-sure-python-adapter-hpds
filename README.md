@@ -23,7 +23,7 @@ import picsure
 from picsure import PhenotypicFilterType, GroupOperator
 
 # Connect to PIC-SURE
-session = picsure.connect(platform="BDC Authorized", token="your-token")
+session = picsure.connect(platform=picsure.Platform.BDC_AUTHORIZED, token="your-token")
 
 # Search the data dictionary
 results = session.searchDictionary("blood pressure")
