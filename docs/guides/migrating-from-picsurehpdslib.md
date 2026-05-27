@@ -65,7 +65,7 @@ resource = adapter.useResource(resource_uuid)
 ```python
 import picsure
 
-session = picsure.connect(platform="BDC Authorized", token=my_token)
+session = picsure.connect(platform=picsure.Platform.BDC_AUTHORIZED, token=my_token)
 ```
 
 ### Searching the Dictionary
@@ -160,7 +160,8 @@ session.exportAsPFB(query, "output.pfb")
 
 - **Facet filtering** — narrow search results by study, data type, etc.
 - **Nested AND/OR queries** — build complex cohort logic with clause groups.
-- **Named platforms** — connect with `"BDC Authorized"` instead of a URL.
+- **Named platforms** — connect with a `Platform` enum member (e.g.
+  `picsure.Platform.BDC_AUTHORIZED`) instead of a URL.
 - **PFB export** — export query results in PFB format.
 - **Time series queries** — retrieve longitudinal data.
 - **Actionable error messages** — every error tells you what went wrong
