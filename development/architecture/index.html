@@ -1356,13 +1356,13 @@ small:</p>
 </ul>
 <p>Resources are resolved by UUID by default. Two name-based helpers
 exist for ergonomics: <code>setResourceIDByName(name)</code> looks up by the
-backend's <code>name</code> field on <code>Resource</code>. Platform "names" like
-<code>BDC Authorized</code>, <code>BDC Open</code>, and <code>Demo</code> are user-facing labels;
-internally <code>Platform</code> enum members and custom URLs are the only
-inputs <code>resolve_platform</code> accepts. (Confirm with maintainers whether
-string aliases like <code>"BDC Authorized"</code> are intended to resolve to a
-<code>Platform</code> member — they appear in user-facing examples but
-<code>resolve_platform</code> only matches <code>Platform</code> instances or full URLs.)</p>
+backend's <code>name</code> field on <code>Resource</code>. Platform labels like
+<code>BDC Authorized</code> and <code>BDC Open</code> are display-only (printed on connect,
+returned by <code>Platform.label</code>); <code>resolve_platform</code> accepts <strong>only</strong> a
+<code>Platform</code> enum member or a full <code>http(s)</code> URL. Passing a label string
+raises <code>PicSureValidationError</code> whose message lists the valid
+<code>Platform.&lt;NAME&gt;</code> access forms — so connect examples must use enum
+members (<code>Platform.BDC_AUTHORIZED</code>) or a URL, never the label.</p>
 
 
 

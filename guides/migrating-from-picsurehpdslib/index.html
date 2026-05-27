@@ -1175,7 +1175,7 @@ that case).</p>
 <p><strong>New:</strong></p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">picsure</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">session</span> <span class="o">=</span> <span class="n">picsure</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">platform</span><span class="o">=</span><span class="s2">&quot;BDC Authorized&quot;</span><span class="p">,</span> <span class="n">token</span><span class="o">=</span><span class="n">my_token</span><span class="p">)</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">session</span> <span class="o">=</span> <span class="n">picsure</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">platform</span><span class="o">=</span><span class="n">picsure</span><span class="o">.</span><span class="n">Platform</span><span class="o">.</span><span class="n">BDC_AUTHORIZED</span><span class="p">,</span> <span class="n">token</span><span class="o">=</span><span class="n">my_token</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="searching-the-dictionary">Searching the Dictionary<a class="headerlink" href="#searching-the-dictionary" title="Permanent link">&para;</a></h3>
 <p><strong>Old:</strong></p>
@@ -1240,7 +1240,8 @@ that case).</p>
 <ul>
 <li><strong>Facet filtering</strong> — narrow search results by study, data type, etc.</li>
 <li><strong>Nested AND/OR queries</strong> — build complex cohort logic with clause groups.</li>
-<li><strong>Named platforms</strong> — connect with <code>"BDC Authorized"</code> instead of a URL.</li>
+<li><strong>Named platforms</strong> — connect with a <code>Platform</code> enum member (e.g.
+  <code>picsure.Platform.BDC_AUTHORIZED</code>) instead of a URL.</li>
 <li><strong>PFB export</strong> — export query results in PFB format.</li>
 <li><strong>Time series queries</strong> — retrieve longitudinal data.</li>
 <li><strong>Actionable error messages</strong> — every error tells you what went wrong

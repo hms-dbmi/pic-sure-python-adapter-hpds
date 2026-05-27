@@ -996,7 +996,7 @@ dictionary, building a query, and exporting results.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">picsure</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">session</span> <span class="o">=</span> <span class="n">picsure</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">platform</span><span class="o">=</span><span class="s2">&quot;BDC Authorized&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">platform</span><span class="o">=</span><span class="n">picsure</span><span class="o">.</span><span class="n">Platform</span><span class="o">.</span><span class="n">BDC_AUTHORIZED</span><span class="p">,</span>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">token</span><span class="o">=</span><span class="s2">&quot;your-api-token&quot;</span><span class="p">,</span>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="p">)</span>
 </code></pre></div>
@@ -1004,13 +1004,16 @@ dictionary, building a query, and exporting results.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>You&#39;re successfully connected to BDC Authorized as user you@email.com!
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>Your token expires on 2026-06-15T00:00:00Z.
 </code></pre></div>
-<p>The <code>platform</code> parameter accepts named platforms (<code>"BDC Authorized"</code>,
-<code>"BDC Open"</code>, <code>"Demo"</code>) or a custom URL for other
-PIC-SURE instances.</p>
+<p>The <code>platform</code> parameter accepts a <code>Platform</code> enum member (e.g.
+<code>picsure.Platform.BDC_AUTHORIZED</code>, <code>picsure.Platform.BDC_OPEN</code>) or a
+custom URL string (e.g. <code>"https://my-picsure.example.com"</code>) for other
+PIC-SURE instances. The full list of members is on the <code>picsure.Platform</code>
+enum. Passing a human-readable label like <code>"BDC Authorized"</code> raises
+<code>PicSureValidationError</code>.</p>
 <h3 id="explicit-cleanup-recommended">Explicit Cleanup (Recommended)<a class="headerlink" href="#explicit-cleanup-recommended" title="Permanent link">&para;</a></h3>
 <p><code>Session</code> is a context manager. In scripts or long-running processes,
 use <code>with</code> so the underlying HTTP connection pool is released promptly:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="k">with</span> <span class="n">picsure</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">platform</span><span class="o">=</span><span class="s2">&quot;BDC Authorized&quot;</span><span class="p">,</span> <span class="n">token</span><span class="o">=</span><span class="s2">&quot;your-api-token&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">session</span><span class="p">:</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="k">with</span> <span class="n">picsure</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">platform</span><span class="o">=</span><span class="n">picsure</span><span class="o">.</span><span class="n">Platform</span><span class="o">.</span><span class="n">BDC_AUTHORIZED</span><span class="p">,</span> <span class="n">token</span><span class="o">=</span><span class="s2">&quot;your-api-token&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">session</span><span class="p">:</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">df</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">searchDictionary</span><span class="p">(</span><span class="s2">&quot;blood pressure&quot;</span><span class="p">)</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="c1"># connection released on exit</span>
 </code></pre></div>
