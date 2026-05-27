@@ -169,10 +169,9 @@ def resolve_platform(
             requires_auth=True if requires_auth is None else requires_auth,
         )
 
-    valid = ", ".join(p.label for p in Platform)
+    valid = ", ".join(f"Platform.{p.name}" for p in Platform)
     raise PicSureValidationError(
-        f"'{platform}' is not a recognized platform. "
-        f"Valid platforms: {valid}. "
-        "You can also pass a Platform enum member or a full URL "
-        "(e.g. 'https://my-picsure.example.com')."
+        f"{platform!r} is not a recognized platform. "
+        f"Pass a Platform enum member (one of: {valid}) or a full URL "
+        "string (e.g. 'https://my-picsure.example.com')."
     )

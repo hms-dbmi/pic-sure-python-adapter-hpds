@@ -7,6 +7,17 @@ from typing import cast
 from picsure.errors import PicSureValidationError
 
 
+def _coerce_count(raw: object) -> int:
+    if isinstance(raw, bool):
+        return 0
+    if isinstance(raw, int):
+        return raw
+    try:
+        return int(float(raw))  # type: ignore[arg-type]  # handles "5.0", 5.0, "1234"
+    except (TypeError, ValueError):
+        return 0
+
+
 @dataclass(frozen=True)
 class Facet:
     """A single facet option with its count.
@@ -55,10 +66,12 @@ class Facet:
             child_indices = children_of.get(idx, [])
             own_children = [cast(Facet, facets[i]) for i in child_indices]
             raw_count = node.get("count", 0)
-            raw_value = node.get("name", node.get("value"))
+            raw_value = node.get("name")
+            if raw_value is None:
+                raw_value = node.get("value")
             facets[idx] = cls(
                 value=str(raw_value) if raw_value is not None else "",
-                count=int(cast(int, raw_count)),
+                count=_coerce_count(raw_count),
                 display=str(node.get("display") or ""),
                 description=str(node.get("description") or ""),
                 children=own_children,

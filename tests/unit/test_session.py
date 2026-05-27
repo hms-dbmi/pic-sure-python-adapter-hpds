@@ -175,9 +175,27 @@ class TestSessionDefaultResourceUuid:
         )
         assert session._default_resource_uuid() == "uuid-2"
 
-    def test_returns_first_resource_when_not_set(self):
+    def test_returns_single_resource_when_not_set(self):
+        session = _make_session(
+            resources=[Resource(uuid="only-uuid", name="Solo", description="")]
+        )
+        assert session._default_resource_uuid() == "only-uuid"
+
+    def test_raises_when_multiple_resources_unselected(self):
+        import pytest
+
+        from picsure.errors import PicSureValidationError
+
         session = _make_session()
-        assert session._default_resource_uuid() == "uuid-1"
+        with pytest.raises(PicSureValidationError) as exc_info:
+            session._default_resource_uuid()
+        msg = str(exc_info.value)
+        assert "setResourceID" in msg
+        assert "Available resources:" in msg
+        assert "uuid-1" in msg
+        assert "Resource A" in msg
+        assert "uuid-2" in msg
+        assert "Resource B" in msg
 
     def test_raises_when_no_resources(self):
         session = _make_session(resources=[])

@@ -25,6 +25,22 @@ class TestFacet:
         assert facet.count == 42
         assert facet.display == ""
 
+    def test_from_dict_null_count(self):
+        data = {"name": "phs000007", "count": None}
+        facet = Facet.from_dict(data)
+        assert facet.count == 0
+        assert facet.value == "phs000007"
+
+    def test_from_dict_string_float_count(self):
+        data = {"name": "phs000007", "count": "5.0"}
+        facet = Facet.from_dict(data)
+        assert facet.count == 5
+
+    def test_from_dict_null_name_uses_value(self):
+        data = {"name": None, "value": "phs000007", "count": 3}
+        facet = Facet.from_dict(data)
+        assert facet.value == "phs000007"
+
     def test_frozen(self):
         facet = Facet(value="test", count=10)
         with pytest.raises(AttributeError):

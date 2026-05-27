@@ -504,4 +504,12 @@ class Session:
                 "No resources are available on this connection. "
                 "Check with your administrator."
             )
-        return self._resources[0].uuid
+        if len(self._resources) == 1:
+            return self._resources[0].uuid
+        listing = "\n".join(f"  {r.uuid}  {r.name}" for r in self._resources)
+        raise PicSureValidationError(
+            "This connection has multiple resources and none has been "
+            "selected. Call session.setResourceID(uuid) to choose one "
+            "before searching or querying.\n\n"
+            f"Available resources:\n{listing}"
+        )

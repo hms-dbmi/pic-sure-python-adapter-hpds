@@ -156,16 +156,19 @@ def searchDictionary(  # noqa: N802
         ) from exc
 
     content = data.get("content", [])
-    total_elements = data.get("totalElements", len(content) if content else 0)
+    total_elements = data.get("totalElements")  # may be None
     last = data.get("last")
     # The "one big page" strategy assumes the single request returned every
-    # match. If the server paginated (``last`` missing or False) or the
-    # counts disagree, surface loudly — a stale ``total_concepts`` from
-    # connect-time or a server-side page-size cap would otherwise silently
-    # truncate results.
-    if last is not True or len(content) != total_elements:
+    # match. Only treat as truncated when there is positive evidence of more
+    # pages: an explicit ``last: false`` or a present-but-mismatched
+    # ``totalElements``. Missing fields must not trigger a false failure.
+    truncated = last is False or (
+        total_elements is not None and len(content) != total_elements
+    )
+    if truncated:
+        total_repr = total_elements if total_elements is not None else "unknown"
         raise PicSureQueryError(
-            f"Search returned a truncated page ({len(content)}/{total_elements} "
+            f"Search returned a truncated page ({len(content)}/{total_repr} "
             "entries). Reconnect to refresh the concept count."
         )
 

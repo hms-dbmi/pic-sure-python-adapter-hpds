@@ -50,7 +50,10 @@ def redact_for_log(
     if _is_psama_path(path):
         return json.dumps(_redact_psama_secrets(body))
 
-    if _is_query_sync_path(path) and _body_is_participant_like(body):
+    # Suppress based on body SHAPE, not path: the async PFB export posts the
+    # same participant-bearing query body to /picsure/v3/query (and
+    # /status, /result), none of which end in /query/sync.
+    if _body_is_participant_like(body):
         return None
 
     # Default: safe to log
@@ -69,16 +72,11 @@ def body_is_sensitive(
     """
     if body is None:
         return False
-    return _is_query_sync_path(path) and _body_is_participant_like(body)
+    return _body_is_participant_like(body)
 
 
 def _is_psama_path(path: str) -> bool:
     return path.startswith("/psama/")
-
-
-def _is_query_sync_path(path: str) -> bool:
-    # Matches both /picsure/query/sync and /picsure/v3/query/sync.
-    return path.endswith("/query/sync")
 
 
 def _body_is_participant_like(body: Any) -> bool:
