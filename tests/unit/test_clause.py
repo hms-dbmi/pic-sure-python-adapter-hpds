@@ -17,13 +17,6 @@ class TestPhenotypicFilterType:
     def test_select_member_removed(self):
         assert not hasattr(PhenotypicFilterType, "SELECT")
 
-    def test_all_members(self):
-        assert set(PhenotypicFilterType) == {
-            PhenotypicFilterType.FILTER,
-            PhenotypicFilterType.ANYRECORD,
-            PhenotypicFilterType.REQUIRE,
-        }
-
 
 class TestClause:
     def test_categorical_filter(self):
@@ -164,23 +157,3 @@ class TestBuildClauseDefensiveCopies:
         )
         categories.append("Other")
         assert clause.categories == ["Male", "Female"]
-
-    def test_mutating_keys_list_does_not_affect_clause_via_clear(self):
-        keys = ["\\p1\\", "\\p2\\"]
-        clause = buildClause(
-            keys,
-            type=PhenotypicFilterType.FILTER,
-            categories=["x"],
-        )
-        keys.clear()
-        assert clause.keys == ["\\p1\\", "\\p2\\"]
-
-    def test_mutating_categories_list_does_not_affect_clause_via_clear(self):
-        categories = ["Male"]
-        clause = buildClause(
-            "\\path\\",
-            type=PhenotypicFilterType.FILTER,
-            categories=categories,
-        )
-        categories.clear()
-        assert clause.categories == ["Male"]

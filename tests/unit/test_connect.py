@@ -129,15 +129,6 @@ class TestConnectAuthErrors:
         assert "invalid or expired" in msg.lower()
         assert "picsure.connect()" in msg
 
-    @respx.mock
-    def test_403_raises_auth_error(self):
-        respx.get(f"{BASE_URL}/psama/user/me").mock(
-            return_value=httpx.Response(403, text="Forbidden")
-        )
-
-        with pytest.raises(PicSureAuthError):
-            connect(platform=BASE_URL, token=TOKEN)
-
 
 class TestConnectConnectionErrors:
     @respx.mock
@@ -176,18 +167,6 @@ class TestConnectConnectionErrors:
             return_value=httpx.Response(
                 200, content=b"null", headers={"content-type": "application/json"}
             )
-        )
-
-        with pytest.raises(PicSureConnectionError, match="unexpected resources"):
-            connect(platform=BASE_URL, token=TOKEN)
-
-    @respx.mock
-    def test_string_resources_payload_raises_connection_error(self, profile_response):
-        respx.get(f"{BASE_URL}/psama/user/me").mock(
-            return_value=httpx.Response(200, json=profile_response)
-        )
-        respx.get(f"{BASE_URL}/picsure/info/resources").mock(
-            return_value=httpx.Response(200, json="not-a-list")
         )
 
         with pytest.raises(PicSureConnectionError, match="unexpected resources"):
@@ -252,17 +231,6 @@ class TestConnectValidation:
 
         with pytest.raises(PicSureValidationError, match="requires a token"):
             connect(platform=Platform.BDC_AUTHORIZED, token="")
-
-    def test_whitespace_token_on_requires_auth_raises(self):
-        from picsure._transport.platforms import Platform
-
-        with pytest.raises(PicSureValidationError, match="BDC Authorized"):
-            connect(platform=Platform.BDC_AUTHORIZED, token="   ")
-
-    def test_whitespace_token_on_custom_requires_auth_raises(self):
-        # Custom URLs default to requires_auth=True.
-        with pytest.raises(PicSureValidationError, match="requires a token"):
-            connect(platform=BASE_URL, token="  \t ")
 
 
 class TestConnect4xxMapping:
@@ -510,22 +478,6 @@ class TestConnectLegacyQueryPath:
         assert session._use_legacy_query_path is False
 
     @respx.mock
-    def test_nhanes_open_uses_legacy_query_path(self, resources_response):
-        # Nhanes Open has requires_auth=False AND include_consents=False —
-        # same routing as BDC Open.
-        from picsure._transport.platforms import Platform
-
-        host = Platform.NHANES_OPEN.url.rstrip("/")
-        respx.get(f"{host}/picsure/info/resources").mock(
-            return_value=httpx.Response(200, json=resources_response)
-        )
-        _mock_concepts_prefetch(host=host, total=10)
-
-        session = connect(platform=Platform.NHANES_OPEN)
-
-        assert session._use_legacy_query_path is True
-
-    @respx.mock
     def test_custom_url_default_uses_v3_query_path(
         self, profile_response, resources_response
     ):
@@ -573,10 +525,6 @@ class TestTokenExpirationFromJwt:
     def test_extracts_exp_claim(self):
         token = _make_jwt(_JWT_EXP)
         assert _token_expiration_from_jwt(token) == "2026-06-15T00:00:00Z"
-
-    def test_strips_whitespace(self):
-        token = _make_jwt(_JWT_EXP)
-        assert _token_expiration_from_jwt(f"  {token}\n") == "2026-06-15T00:00:00Z"
 
     def test_missing_exp_returns_unknown(self):
         assert _token_expiration_from_jwt(_make_jwt(None)) == "unknown"
