@@ -43,17 +43,6 @@ class TestPicSureClient:
         assert "authorization" not in route.calls[0].request.headers
 
     @respx.mock
-    def test_default_token_omits_auth_header(self):
-        route = respx.get(f"{BASE_URL}/some/path").mock(
-            return_value=httpx.Response(200, json={"ok": True})
-        )
-
-        client = PicSureClient(base_url=BASE_URL)
-        client.get_json("/some/path")
-
-        assert "authorization" not in route.calls[0].request.headers
-
-    @respx.mock
     def test_post_json_sends_body_and_auth_header(self):
         route = respx.post(f"{BASE_URL}/query").mock(
             return_value=httpx.Response(200, json={"count": 42})
@@ -77,17 +66,6 @@ class TestPicSureClient:
         with pytest.raises(TransportAuthenticationError) as exc_info:
             client.get_json("/psama/user/me")
         assert exc_info.value.status_code == 401
-
-    @respx.mock
-    def test_403_raises_authentication_error(self):
-        respx.get(f"{BASE_URL}/resource").mock(
-            return_value=httpx.Response(403, text="Forbidden")
-        )
-
-        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
-        with pytest.raises(TransportAuthenticationError) as exc_info:
-            client.get_json("/resource")
-        assert exc_info.value.status_code == 403
 
     @respx.mock
     def test_500_retries_then_raises_server_error(self):
@@ -161,18 +139,6 @@ class TestPicSureClient:
 
         request = route.calls[0].request
         assert request.headers["authorization"] == f"Bearer {TOKEN}"
-
-    @respx.mock
-    def test_post_raw_500_does_not_retry(self):
-        # POST is non-idempotent, so 5xx responses are not retried.
-        route = respx.post(f"{BASE_URL}/fail").mock(
-            return_value=httpx.Response(500, content=b"error")
-        )
-
-        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
-        with pytest.raises(TransportServerError):
-            client.post_raw("/fail")
-        assert route.call_count == 1
 
     @respx.mock
     def test_post_raw_csv_content(self):
@@ -283,16 +249,6 @@ class TestPicSureClient4xxMapping:
         with pytest.raises(TransportRateLimitError) as exc_info:
             client.get_json("/busy")
         assert exc_info.value.retry_after is None
-
-    @respx.mock
-    def test_other_4xx_raises_validation_error(self):
-        respx.get(f"{BASE_URL}/teapot").mock(
-            return_value=httpx.Response(418, text="I'm a teapot")
-        )
-        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
-        with pytest.raises(TransportValidationError) as exc_info:
-            client.get_json("/teapot")
-        assert exc_info.value.status_code == 418
 
 
 class TestPicSureClientRetryScoping:

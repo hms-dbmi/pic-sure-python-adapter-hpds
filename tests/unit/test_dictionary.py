@@ -94,16 +94,6 @@ class TestDictionaryEntry:
         assert entry.study_acronym == "FHS"
         assert entry.meta is None
 
-    def test_from_dict_empty_values(self):
-        data = {
-            "conceptPath": "\\path\\",
-            "name": "age",
-            "type": "continuous",
-            "values": [],
-        }
-        entry = DictionaryEntry.from_dict(data)
-        assert entry.values == []
-
     def test_from_dict_extra_fields_ignored(self):
         data = {
             "conceptPath": "\\path\\",

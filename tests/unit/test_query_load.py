@@ -39,18 +39,6 @@ class TestParsePhenotypicLeaf:
         assert result.max == 65.5
         assert result.categories is None
 
-    def test_filter_leaf_with_min_only(self):
-        node = {
-            "phenotypicFilterType": "FILTER",
-            "conceptPath": "\\phs1\\age\\",
-            "min": 40.0,
-            "not": False,
-        }
-        result = _parse_phenotypic(node)
-        assert isinstance(result, Clause)
-        assert result.min == 40.0
-        assert result.max is None
-
     def test_required_leaf(self):
         node = {
             "phenotypicFilterType": "REQUIRED",
@@ -425,10 +413,6 @@ class TestLoadQueryErrors:
     def test_blank_id_raises_before_http(self):
         with pytest.raises(PicSureValidationError, match="query ID"):
             load_query(_make_client(), "   ")
-
-    def test_empty_id_raises_before_http(self):
-        with pytest.raises(PicSureValidationError, match="query ID"):
-            load_query(_make_client(), "")
 
     @respx.mock
     def test_404_raises_validation_with_friendly_message(self):

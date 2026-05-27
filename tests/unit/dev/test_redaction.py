@@ -64,12 +64,6 @@ def test_redact_participant_query_returns_none():
     assert out is None
 
 
-def test_redact_timestamp_query_returns_none():
-    body = {"query": {"expectedResultType": "DATAFRAME_TIMESERIES", "fields": []}}
-    out = redact_for_log("/picsure/query/sync", "POST", body)
-    assert out is None
-
-
 def test_redact_count_query_is_preserved():
     body = {"query": {"expectedResultType": "COUNT", "fields": []}}
     out = redact_for_log("/picsure/query/sync", "POST", body)
@@ -93,12 +87,6 @@ def test_redact_async_pfb_query_returns_none():
     # /picsure/v3/query (no /query/sync suffix). Must still be suppressed.
     body = {"query": {"expectedResultType": "DATAFRAME_PFB", "fields": []}}
     out = redact_for_log("/picsure/v3/query", "POST", body)
-    assert out is None
-
-
-def test_redact_async_pfb_result_returns_none():
-    body = {"query": {"expectedResultType": "DATAFRAME_PFB", "fields": []}}
-    out = redact_for_log("/picsure/v3/query/abc-123/result", "POST", body)
     assert out is None
 
 

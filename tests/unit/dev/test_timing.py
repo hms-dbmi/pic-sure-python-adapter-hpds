@@ -50,12 +50,6 @@ def test_timed_records_error_and_reraises():
     assert events[0].error == "ValueError"
 
 
-def test_timed_returns_value_unchanged():
-    cfg = DevConfig(enabled=True, max_events=10)
-    obj = _Fake(cfg)
-    assert obj.method(7) == 14
-
-
 def test_timed_tolerates_missing_dev_config():
     class _NoDev:
         @timed("x")

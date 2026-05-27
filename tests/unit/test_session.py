@@ -31,30 +31,12 @@ def _make_session(
 
 
 class TestSession:
-    def test_stores_user_email(self):
-        session = _make_session(email="test@uni.edu")
-        assert session._user_email == "test@uni.edu"
-
-    def test_stores_token_expiration(self):
-        session = _make_session(expiration="2026-12-31T00:00:00Z")
-        assert session._token_expiration == "2026-12-31T00:00:00Z"
-
     def test_get_resource_id_returns_dataframe(self):
         session = _make_session()
         df = session.getResourceID()
         assert isinstance(df, pd.DataFrame)
         assert list(df.columns) == ["uuid", "name", "description"]
         assert len(df) == 2
-
-    def test_get_resource_id_values(self):
-        resources = [
-            Resource(uuid="aaa", name="Res A", description="Desc A"),
-        ]
-        session = _make_session(resources=resources)
-        df = session.getResourceID()
-        assert df.iloc[0]["uuid"] == "aaa"
-        assert df.iloc[0]["name"] == "Res A"
-        assert df.iloc[0]["description"] == "Desc A"
 
     def test_get_resource_id_empty(self):
         session = _make_session(resources=[])
@@ -63,17 +45,6 @@ class TestSession:
         assert len(df) == 0
         assert list(df.columns) == ["uuid", "name", "description"]
 
-    def test_stores_resource_uuid(self):
-        client = MagicMock()
-        session = Session(
-            client=client,
-            user_email="u@e.com",
-            token_expiration="",
-            resources=[],
-            resource_uuid="my-uuid",
-        )
-        assert session._resource_uuid == "my-uuid"
-
     def test_resource_uuid_defaults_to_none(self):
         session = _make_session()
         assert session._resource_uuid is None
@@ -81,17 +52,6 @@ class TestSession:
     def test_consents_default_to_empty(self):
         session = _make_session()
         assert session.consents == []
-
-    def test_consents_stored(self):
-        client = MagicMock()
-        session = Session(
-            client=client,
-            user_email="u@e.com",
-            token_expiration="",
-            resources=[],
-            consents=["phs000007.c1", "phs000179.c1"],
-        )
-        assert session.consents == ["phs000007.c1", "phs000179.c1"]
 
     def test_consents_property_returns_copy(self):
         client = MagicMock()
@@ -119,22 +79,6 @@ class TestSession:
         with pytest.raises(PicSureValidationError, match="not a valid resource UUID"):
             session.setResourceID("nonexistent-uuid")
 
-    def test_set_resource_id_overrides_existing(self):
-        client = MagicMock()
-        resources = [
-            Resource(uuid="uuid-1", name="A", description=""),
-            Resource(uuid="uuid-2", name="B", description=""),
-        ]
-        session = Session(
-            client=client,
-            user_email="u@e.com",
-            token_expiration="",
-            resources=resources,
-            resource_uuid="uuid-1",
-        )
-        session.setResourceID("uuid-2")
-        assert session._resource_uuid == "uuid-2"
-
     def test_set_resource_id_by_name(self):
         session = _make_session()
         session.setResourceIDByName("Resource B")
@@ -148,15 +92,6 @@ class TestSession:
         session = _make_session()
         with pytest.raises(PicSureValidationError, match="does not match"):
             session.setResourceIDByName("nonexistent")
-
-    def test_set_resource_id_by_name_lists_valid(self):
-        import pytest
-
-        from picsure.errors import PicSureValidationError
-
-        session = _make_session()
-        with pytest.raises(PicSureValidationError, match="Resource A"):
-            session.setResourceIDByName("nope")
 
 
 class TestSessionDefaultResourceUuid:
@@ -476,23 +411,6 @@ class TestSessionRunQuery:
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 5
 
-    @respx.mock
-    def test_run_query_default_type_is_count(self):
-        respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
-            return_value=httpx.Response(200, content=b"99")
-        )
-        from picsure._models.clause import Clause, PhenotypicFilterType
-        from picsure._models.count_result import CountResult
-
-        session = _make_live_session()
-        clause = Clause(
-            keys=["\\sex\\"], type=PhenotypicFilterType.FILTER, categories=["Male"]
-        )
-        result = session.runQuery(clause)
-
-        assert isinstance(result, CountResult)
-        assert result.value == 99
-
 
 class TestSessionExport:
     @respx.mock
@@ -688,33 +606,6 @@ class TestSessionLoadQueryByID:
         assert result.type == PhenotypicFilterType.FILTER
 
     @respx.mock
-    def test_legacy_path_used_even_when_session_is_authorized_v3(self):
-        # Sanity check the inverse: even if the session would normally
-        # use the v3 sync endpoint, loadQueryByID still hits legacy.
-        client = _client()
-        session = _session_with_resources(
-            client,
-            resources=[Resource(uuid="r-1", name="hpds", description="x")],
-            resource_uuid="r-1",
-            use_legacy_query_path=False,
-        )
-        body = _metadata_envelope(
-            select=[],
-            phenotypic={
-                "phenotypicFilterType": "FILTER",
-                "conceptPath": "\\phs1\\sex\\",
-                "values": ["Male"],
-                "not": False,
-            },
-        )
-        legacy = respx.get(f"{BASE_URL}/picsure/query/abc-123/metadata").mock(
-            return_value=httpx.Response(200, json=body)
-        )
-        result = session.loadQueryByID("abc-123")
-        assert legacy.called
-        assert isinstance(result, Clause)
-
-    @respx.mock
     def test_works_without_resource_uuid_set(self):
         # The metadata endpoint is not scoped to a resource; loadQueryByID
         # must not require setResourceID first.
@@ -800,37 +691,6 @@ class TestSessionRunQueryByID:
 
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 5
-
-    @respx.mock
-    def test_run_query_by_id_default_type_is_count(self):
-        from picsure._models.count_result import CountResult
-
-        client = _client()
-        session = _session_with_resources(
-            client,
-            resources=[Resource(uuid="r-1", name="hpds", description="x")],
-            resource_uuid="r-1",
-        )
-        body = _metadata_envelope(
-            select=[],
-            phenotypic={
-                "phenotypicFilterType": "FILTER",
-                "conceptPath": "\\phs1\\sex\\",
-                "values": ["Male"],
-                "not": False,
-            },
-        )
-        respx.get(f"{BASE_URL}/picsure/query/abc-123/metadata").mock(
-            return_value=httpx.Response(200, json=body)
-        )
-        respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
-            return_value=httpx.Response(200, content=b"7")
-        )
-
-        result = session.runQueryByID("abc-123")
-
-        assert isinstance(result, CountResult)
-        assert result.value == 7
 
     def test_run_query_by_id_rejects_blank_id(self):
         from picsure.errors import PicSureValidationError

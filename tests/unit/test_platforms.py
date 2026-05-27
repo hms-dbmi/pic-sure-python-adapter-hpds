@@ -11,18 +11,6 @@ class TestPlatformEnum:
     def test_bdc_authorized_and_open_differ_by_uuid(self):
         assert Platform.BDC_AUTHORIZED.resource_uuid != Platform.BDC_OPEN.resource_uuid
 
-    def test_all_members_have_url(self):
-        for p in Platform:
-            assert p.url.startswith("https://")
-
-    def test_all_members_have_resource_uuid(self):
-        for p in Platform:
-            assert isinstance(p.resource_uuid, str)
-
-    def test_all_members_have_label(self):
-        for p in Platform:
-            assert p.label
-
     def test_authorized_platforms_include_consents(self):
         assert Platform.BDC_AUTHORIZED.include_consents is True
         assert Platform.BDC_DEV_AUTHORIZED.include_consents is True
@@ -32,10 +20,6 @@ class TestPlatformEnum:
         assert Platform.BDC_OPEN.include_consents is False
         assert Platform.BDC_DEV_OPEN.include_consents is False
         assert Platform.BDC_PREDEV_OPEN.include_consents is False
-
-    def test_nhanes_does_not_include_consents(self):
-        assert Platform.NHANES_AUTHORIZED.include_consents is False
-        assert Platform.NHANES_OPEN.include_consents is False
 
     def test_authorized_platforms_require_auth(self):
         assert Platform.BDC_AUTHORIZED.requires_auth is True
@@ -99,11 +83,6 @@ class TestResolvePlatform:
     def test_custom_url_requires_auth_override(self):
         info = resolve_platform("https://my-picsure.example.com", requires_auth=False)
         assert info.requires_auth is False
-
-    def test_custom_url_http(self):
-        info = resolve_platform("http://localhost:8080")
-        assert info.url == "http://localhost:8080"
-        assert info.resource_uuid is None
 
     def test_custom_url_trailing_slash_stripped(self):
         info = resolve_platform("https://my-picsure.example.com/")

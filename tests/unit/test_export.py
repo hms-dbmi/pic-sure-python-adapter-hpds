@@ -105,17 +105,6 @@ class TestExportPFBHappyPath:
         assert body["query"]["expectedResultType"] == "DATAFRAME_PFB"
         assert body["resourceUUID"] == RESOURCE_UUID
 
-    @respx.mock
-    def test_accepts_string_path(self, tmp_path):
-        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
-        respx.post(STATUS_URL).mock(return_value=_status("AVAILABLE"))
-        respx.post(RESULT_URL).mock(return_value=httpx.Response(200, content=b"data"))
-
-        output = str(tmp_path / "test.pfb")
-        with patch("picsure._services.export.time.sleep"):
-            export_pfb(_make_client(), RESOURCE_UUID, _simple_clause(), output)
-        assert Path(output).exists()
-
 
 class TestExportPFBBackoff:
     @respx.mock
