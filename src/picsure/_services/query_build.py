@@ -129,7 +129,7 @@ def buildClauseGroup(  # noqa: N802
     if not clauses:
         raise PicSureValidationError("A clause group must contain at least one clause.")
 
-    return ClauseGroup(clauses=clauses, operator=operator)
+    return ClauseGroup(clauses=list(clauses), operator=operator)
 
 
 def buildQuery(  # noqa: N802

@@ -113,9 +113,17 @@ class TestResolvePlatform:
         with pytest.raises(PicSureValidationError, match="not a recognized platform"):
             resolve_platform("NonExistentPlatform")
 
-    def test_unknown_string_lists_valid_options(self):
-        with pytest.raises(PicSureValidationError, match="BDC Authorized"):
+    def test_unknown_string_lists_enum_member_forms(self):
+        with pytest.raises(PicSureValidationError, match=r"Platform\.BDC_AUTHORIZED"):
             resolve_platform("typo")
+
+    def test_unknown_string_does_not_list_labels_as_valid_input(self):
+        with pytest.raises(PicSureValidationError) as exc_info:
+            resolve_platform("typo")
+        msg = str(exc_info.value)
+        assert "full URL" in msg
+        # Human labels must not be presented as valid input forms.
+        assert "Valid platforms:" not in msg
 
     def test_nhanes_open_resolves(self):
         info = resolve_platform(Platform.NHANES_OPEN)

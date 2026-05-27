@@ -66,6 +66,26 @@ class TestExportPFBHappyPath:
         sleep_mock.assert_called_once_with(1.0)
 
     @respx.mock
+    def test_unknown_in_progress_status_keeps_polling(self, tmp_path):
+        # "STARTED" is a legitimate in-flight HPDS status that is not in the
+        # old hardcoded set; it must not abort the export.
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        respx.post(STATUS_URL).mock(
+            side_effect=[_status("STARTED"), _status("AVAILABLE")]
+        )
+        respx.post(RESULT_URL).mock(
+            return_value=httpx.Response(200, content=b"pfb_content")
+        )
+
+        output = tmp_path / "out.pfb"
+        with patch("picsure._services.export.time.sleep") as sleep_mock:
+            export_pfb(_make_client(), RESOURCE_UUID, _simple_clause(), output)
+
+        assert output.exists()
+        assert output.read_bytes() == b"pfb_content"
+        sleep_mock.assert_called_once_with(1.0)
+
+    @respx.mock
     def test_sends_pfb_result_type_and_resource_uuid(self, tmp_path):
         import json
 
@@ -152,6 +172,23 @@ class TestExportPFBBackoff:
         # After the 6th interval (32s), subsequent values must all be 60s.
         assert intervals[:6] == [1.0, 2.0, 4.0, 8.0, 16.0, 32.0]
         assert all(v == 60.0 for v in intervals[6:])
+
+
+class TestExportPFBErrorStatus:
+    @respx.mock
+    def test_error_status_raises_query_error(self, tmp_path):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        respx.post(STATUS_URL).mock(side_effect=[_status("STARTED"), _status("ERROR")])
+
+        output = tmp_path / "out.pfb"
+        with (
+            patch("picsure._services.export.time.sleep"),
+            pytest.raises(PicSureQueryError, match="status=ERROR"),
+        ):
+            export_pfb(_make_client(), RESOURCE_UUID, _simple_clause(), output)
+
+        assert not output.exists()
+        assert not (tmp_path / "out.pfb.part").exists()
 
 
 class TestExportPFBTimeout:

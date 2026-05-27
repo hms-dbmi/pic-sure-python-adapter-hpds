@@ -22,7 +22,7 @@ _NAMED_DATASET_COLLECTION_PATH = "/picsure/dataset/named"
 _NAMED_DATASET_ITEM_PATH = "/picsure/dataset/named/{named_dataset_id}"
 
 # Mirrors the @Pattern on NamedDatasetRequest.name in pic-sure-api-data.
-_NAME_PATTERN = re.compile(r"^[\w\d \-\\/?+=\[\]\.():\"']+$")
+_NAME_PATTERN = re.compile(r"\A[\w\d \-\\/?+=\[\]\.():\"']+\Z")
 _NAME_MAX_LEN = 255
 
 
@@ -69,13 +69,19 @@ def save_query_by_name(
     if existing is None:
         _create_named_dataset(client, query_id=query_id, name=name)
     else:
+        existing_uuid = existing.get("uuid")
+        if not existing_uuid:
+            raise PicSureQueryError(
+                f"The named query matching '{name}' is missing its identifier; "
+                "cannot overwrite it."
+            )
         metadata_raw = existing.get("metadata")
         metadata: dict[str, object] = (
             metadata_raw if isinstance(metadata_raw, dict) else {}
         )
         _update_named_dataset(
             client,
-            named_dataset_id=str(existing["uuid"]),
+            named_dataset_id=str(existing_uuid),
             query_id=query_id,
             name=name,
             archived=bool(existing.get("archived", False)),

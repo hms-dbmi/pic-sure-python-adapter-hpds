@@ -87,11 +87,17 @@ def connect(
     Example:
         >>> import picsure
         >>> session = picsure.connect(
-        ...     platform="BDC Authorized",
+        ...     platform=picsure.Platform.BDC_AUTHORIZED,
         ...     token="your-api-token",
         ... )
         You're successfully connected to BDC Authorized as user you@email.com!
         Your token expires on 2026-06-15T00:00:00Z.
+
+        >>> # Custom deployment: pass a full URL string
+        >>> session = picsure.connect(
+        ...     platform="https://my-picsure.example.com",
+        ...     token="your-api-token",
+        ... )
 
         >>> # Open-access: no token needed
         >>> session = picsure.connect(platform=picsure.Platform.BDC_OPEN)
@@ -291,4 +297,11 @@ def _fetch_resources(
             for uuid, name in data.items()
         ]
 
-    return [Resource.from_dict(r) for r in data]
+    if not isinstance(data, list):
+        raise PicSureConnectionError(
+            f"Connected to {display_name} but received an unexpected "
+            "resources response from the server. The server may be "
+            "misconfigured or temporarily unavailable."
+        )
+
+    return [Resource.from_dict(r) for r in data if isinstance(r, dict)]
