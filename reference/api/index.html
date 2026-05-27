@@ -560,6 +560,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#picsure.connect--custom-deployment-pass-a-full-url-string" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom deployment: pass a full URL string
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#picsure.connect--open-access-no-token-needed" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1715,6 +1726,17 @@
   
     <nav class="md-nav" aria-label="connect">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#picsure.connect--custom-deployment-pass-a-full-url-string" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom deployment: pass a full URL string
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#picsure.connect--open-access-no-token-needed" class="md-nav__link">
@@ -2878,11 +2900,16 @@ or the platform name is not recognized.</p>
 <blockquote>
 <p>import picsure
 session = picsure.connect(
-...     platform="BDC Authorized",
+...     platform=picsure.Platform.BDC_AUTHORIZED,
 ...     token="your-api-token",
 ... )
 You're successfully connected to BDC Authorized as user you@email.com!
 Your token expires on 2026-06-15T00:00:00Z.</p>
+<h3 id="picsure.connect--custom-deployment-pass-a-full-url-string">Custom deployment: pass a full URL string<a class="headerlink" href="#picsure.connect--custom-deployment-pass-a-full-url-string" title="Permanent link">&para;</a></h3>
+<p>session = picsure.connect(
+...     platform="https://my-picsure.example.com",
+...     token="your-api-token",
+... )</p>
 <h3 id="picsure.connect--open-access-no-token-needed">Open-access: no token needed<a class="headerlink" href="#picsure.connect--open-access-no-token-needed" title="Permanent link">&para;</a></h3>
 <p>session = picsure.connect(platform=picsure.Platform.BDC_OPEN)</p>
 </blockquote>
