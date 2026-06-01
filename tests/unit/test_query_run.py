@@ -270,6 +270,21 @@ class TestRunQueryCrossCount:
         assert body["query"]["expectedResultType"] == "CROSS_COUNT"
 
     @respx.mock
+    def test_cross_count_body_includes_filter_concepts(self):
+        # cross_count flows through the same select-folding, so the filter
+        # variable lands in the wire select and is therefore cross-counted
+        # alongside any includeConcepts (ALS-11934).
+        route = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b'{"\\\\phs1\\\\sex\\\\": "42"}')
+        )
+        run_query(_make_client(), RESOURCE_UUID, _simple_clause(), "cross_count")
+
+        import json
+
+        body = json.loads(route.calls[0].request.content)
+        assert body["query"]["select"] == ["\\phs1\\sex\\"]
+
+    @respx.mock
     def test_returns_dict_of_count_results(self):
         # Mirrors the real server shape: concept_path -> count string.
         # Includes one of each count shape (exact, noisy, suppressed).
@@ -506,14 +521,25 @@ class TestSelectIncludesFilterConcepts:
         assert self._select_for(query) == ["\\out_a\\", "\\phs1\\sex\\"]
 
     @respx.mock
-    def test_overlap_is_deduped_keeping_include_concept_slot(self):
-        # The filtered path is also explicitly included; it must appear once,
-        # in its includeConcepts position, not be appended a second time.
-        query = Query(
-            phenotypicFilter=_simple_clause(),
-            includeConcepts=("\\phs1\\sex\\", "\\out_b\\"),
-        )
-        assert self._select_for(query) == ["\\phs1\\sex\\", "\\out_b\\"]
+    def test_overlap_is_deduped_and_filter_only_var_appended(self):
+        # The group filters on sex AND age; age is also explicitly included.
+        # age must appear once in its includeConcepts slot (dedup), while the
+        # filter-only sex var is appended after — so both the append and the
+        # dedup are load-bearing (the assertion fails if either is dropped).
+        age = Clause(keys=["\\age\\"], type=PhenotypicFilterType.FILTER, min=40.0)
+        group = ClauseGroup(clauses=[_simple_clause(), age], operator=GroupOperator.AND)
+        query = Query(phenotypicFilter=group, includeConcepts=("\\age\\", "\\out_b\\"))
+        assert self._select_for(query) == ["\\age\\", "\\out_b\\", "\\phs1\\sex\\"]
+
+    @respx.mock
+    def test_duplicate_path_across_clauses_is_deduped(self):
+        # Two clauses filter the SAME concept path (age > 40 AND age < 80).
+        # The path must appear only once in select — this is the case the
+        # dict.fromkeys dedup in _split() exists to collapse.
+        low = Clause(keys=["\\age\\"], type=PhenotypicFilterType.FILTER, min=40.0)
+        high = Clause(keys=["\\age\\"], type=PhenotypicFilterType.FILTER, max=80.0)
+        group = ClauseGroup(clauses=[low, high], operator=GroupOperator.AND)
+        assert self._select_for(group) == ["\\age\\"]
 
     @respx.mock
     def test_include_only_query_unaffected(self):
