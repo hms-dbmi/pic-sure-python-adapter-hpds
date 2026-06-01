@@ -14,7 +14,12 @@ class Query:
     ``None`` for an include-only query (return the named concepts for all
     matching records). Bare ``Clause`` / ``ClauseGroup`` objects are still
     accepted directly by ``Session.runQuery()`` and friends — they mean
-    "filter, no extra output columns."
+    "filter, returning the filtered variables as output columns and no
+    others."
+
+    The variables referenced anywhere in ``phenotypicFilter`` are returned
+    as output columns automatically; ``includeConcepts`` names *additional*
+    columns beyond those (ALS-11934).
 
     A ``genomicFilter`` field is anticipated here in the future, alongside
     ``phenotypicFilter``.

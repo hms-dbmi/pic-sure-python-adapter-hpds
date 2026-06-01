@@ -135,6 +135,12 @@ count = session.runQuery(filters, type="count")
 
 `includeConcepts` preserves order and drops duplicates.
 
+Variables you filter on are returned automatically — you don't need to repeat
+them in `includeConcepts`. Use `includeConcepts` only for *additional* output
+columns that aren't already part of the filter. A bare `Clause`/`ClauseGroup`
+run as `participant` therefore returns its filtered variables as columns, not
+just the participant ID.
+
 ### Full Example from the Product Spec
 
 Select participants who are male, over 40, and have either

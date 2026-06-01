@@ -151,15 +151,29 @@ def build_query_body(
 def _split(
     query: Query | Clause | ClauseGroup,
 ) -> tuple[Clause | ClauseGroup | None, list[str]]:
-    """Normalize a runnable query into a (filter tree, select paths) pair."""
+    """Normalize a runnable query into a (filter tree, select paths) pair.
+
+    Every concept path referenced in the filter tree is folded into the
+    select paths, so a query's filter variables are returned as output
+    columns without being repeated in ``includeConcepts`` (ALS-11934).
+    Explicit ``includeConcepts`` keep their position; filter-derived paths
+    are appended in tree-traversal order; duplicates are dropped.
+    """
     if isinstance(query, Query):
-        return query.phenotypicFilter, list(query.includeConcepts)
-    if isinstance(query, (Clause, ClauseGroup)):
-        return query, []
-    raise PicSureValidationError(
-        "Query must be a Clause, ClauseGroup, or Query. Use "
-        "buildClause()/buildClauseGroup()/buildQuery() to construct one."
-    )
+        filter_tree: Clause | ClauseGroup | None = query.phenotypicFilter
+        select = list(query.includeConcepts)
+    elif isinstance(query, (Clause, ClauseGroup)):
+        filter_tree = query
+        select = []
+    else:
+        raise PicSureValidationError(
+            "Query must be a Clause, ClauseGroup, or Query. Use "
+            "buildClause()/buildClauseGroup()/buildQuery() to construct one."
+        )
+
+    if filter_tree is not None:
+        select.extend(filter_tree.concept_paths())
+    return filter_tree, list(dict.fromkeys(select))
 
 
 def _resolve_query_type(query_type: QueryType | str) -> str:

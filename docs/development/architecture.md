@@ -22,7 +22,8 @@ typical session flows:
    the output concepts to return via `picsure.buildQuery(...)`.
 3. **Run.** `session.runQuery(query, type=...)` calls the query-run
    service, which splits the `Query` (or bare `Clause` / `ClauseGroup`)
-   into a phenotypic filter tree and `includeConcepts`, serializes to v3
+   into a phenotypic filter tree and the output `select` — the filter's own
+   variables folded together with any `includeConcepts` — serializes to v3
    wire format, POSTs to `/picsure/v3/query/sync`, and parses the response
    into a `CountResult`, a `dict[str, CountResult]`, or a
    `DataFrame`.
@@ -89,7 +90,7 @@ src/picsure/
 | `resource.py`      | `Resource` dataclass (`uuid`, `name`, `description`) with a `from_dict` constructor for `/picsure/info/resources` payloads. |
 | `clause.py`        | `Clause` dataclass + `PhenotypicFilterType` enum (`FILTER`, `ANYRECORD`, `REQUIRE`). Each `Clause.to_query_json()` emits the v3 `PhenotypicClause` shape. |
 | `clause_group.py`  | `ClauseGroup` dataclass + `GroupOperator` enum (`AND`, `OR`). Recursively serializes to a v3 `PhenotypicSubquery`. |
-| `query.py`         | `Query` dataclass: a `phenotypicFilter` (`Clause | ClauseGroup | None`) plus `includeConcepts` (output concept paths). `runQuery` also accepts a bare `Clause` / `ClauseGroup` (filter, no extra output columns). |
+| `query.py`         | `Query` dataclass: a `phenotypicFilter` (`Clause | ClauseGroup | None`) plus `includeConcepts` (output concept paths). `runQuery` also accepts a bare `Clause` / `ClauseGroup` (filter; its variables are returned as output columns). `concept_paths()` on each collects the filter's variables to fold into `select`. |
 | `query_type.py`    | `QueryType` enum (`COUNT`, `PARTICIPANT`, `TIMESTAMP`, `CROSS_COUNT`). Public API also accepts equivalent lowercase strings. |
 | `count_result.py`  | `CountResult` dataclass — preserves `value`, `margin`, `cap`, `raw`. Encodes exact / noisy / suppressed shapes from open-access backends. `obfuscated` property is a convenience. |
 | `dictionary.py`    | `DictionaryEntry` dataclass — one row of `searchDictionary` output, mapped from the backend `Concept` payload. |

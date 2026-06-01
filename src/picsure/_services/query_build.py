@@ -34,8 +34,9 @@ def buildClause(  # noqa: N802
         PicSureValidationError: If the clause configuration is invalid.
 
     Note:
-        To include concept paths in the query output without filtering, use
-        ``buildQuery(includeConcepts=...)`` — output columns are no longer a
+        Variables you filter on are returned as output columns automatically.
+        To include *additional* concept paths in the output without filtering,
+        use ``buildQuery(includeConcepts=...)`` — output columns are not a
         clause type.
 
     Example:
@@ -142,8 +143,10 @@ def buildQuery(  # noqa: N802
         phenotypicFilter: A Clause or ClauseGroup (from ``buildClause()`` /
             ``buildClauseGroup()``) to filter on, or ``None`` for an
             include-only query.
-        includeConcepts: Concept path(s) to include as output columns. Order
-            is preserved and duplicates are dropped.
+        includeConcepts: *Additional* concept path(s) to include as output
+            columns, beyond the variables already named in
+            ``phenotypicFilter`` — those are returned automatically. Order is
+            preserved and duplicates are dropped.
 
     Returns:
         A Query suitable for ``Session.runQuery()``, ``Session.exportAsPFB()``,

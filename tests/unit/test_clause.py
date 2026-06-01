@@ -141,6 +141,29 @@ class TestClauseToQueryJson:
         assert leaf_a["phenotypicFilterType"] == "ANY_RECORD_OF"
 
 
+class TestClauseConceptPaths:
+    def test_single_key_returns_that_path(self):
+        clause = Clause(
+            keys=["\\phs1\\sex\\"],
+            type=PhenotypicFilterType.FILTER,
+            categories=["Male"],
+        )
+        assert clause.concept_paths() == ["\\phs1\\sex\\"]
+
+    def test_multi_key_returns_all_paths_in_order(self):
+        clause = Clause(
+            keys=["\\path_a\\", "\\path_b\\"],
+            type=PhenotypicFilterType.ANYRECORD,
+        )
+        assert clause.concept_paths() == ["\\path_a\\", "\\path_b\\"]
+
+    def test_returns_a_copy_not_the_keys_list(self):
+        clause = Clause(keys=["\\p\\"], type=PhenotypicFilterType.REQUIRE)
+        paths = clause.concept_paths()
+        paths.append("\\extra\\")
+        assert clause.keys == ["\\p\\"]
+
+
 class TestBuildClauseDefensiveCopies:
     def test_mutating_keys_list_after_construction_does_not_affect_clause(self):
         keys = ["\\p1\\", "\\p2\\"]

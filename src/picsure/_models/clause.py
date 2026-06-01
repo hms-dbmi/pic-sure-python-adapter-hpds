@@ -57,6 +57,15 @@ class Clause:
     min: float | None = None
     max: float | None = None
 
+    def concept_paths(self) -> list[str]:
+        """Concept paths this clause references, in order.
+
+        Used to fold a query's filter variables into the output ``select``
+        array so they are returned without being repeated in
+        ``includeConcepts``.
+        """
+        return list(self.keys)
+
     def to_query_json(self) -> dict[str, object]:
         """Serialize this clause as a v3 ``PhenotypicClause``.
 
