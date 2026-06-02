@@ -1038,7 +1038,8 @@ typical session flows:</p>
    the output concepts to return via <code>picsure.buildQuery(...)</code>.</li>
 <li><strong>Run.</strong> <code>session.runQuery(query, type=...)</code> calls the query-run
    service, which splits the <code>Query</code> (or bare <code>Clause</code> / <code>ClauseGroup</code>)
-   into a phenotypic filter tree and <code>includeConcepts</code>, serializes to v3
+   into a phenotypic filter tree and the output <code>select</code> — the filter's own
+   variables folded together with any <code>includeConcepts</code> — serializes to v3
    wire format, POSTs to <code>/picsure/v3/query/sync</code>, and parses the response
    into a <code>CountResult</code>, a <code>dict[str, CountResult]</code>, or a
    <code>DataFrame</code>.</li>
@@ -1117,7 +1118,7 @@ client and translates <code>TransportError</code> subclasses to the public
 </tr>
 <tr>
 <td><code>query.py</code></td>
-<td><code>Query</code> dataclass: a <code>phenotypicFilter</code> (<code>Clause | ClauseGroup | None</code>) plus <code>includeConcepts</code> (output concept paths). <code>runQuery</code> also accepts a bare <code>Clause</code> / <code>ClauseGroup</code> (filter, no extra output columns).</td>
+<td><code>Query</code> dataclass: a <code>phenotypicFilter</code> (<code>Clause | ClauseGroup | None</code>) plus <code>includeConcepts</code> (output concept paths). <code>runQuery</code> also accepts a bare <code>Clause</code> / <code>ClauseGroup</code> (filter; its variables are returned as output columns). <code>concept_paths()</code> on each collects the filter's variables to fold into <code>select</code>.</td>
 </tr>
 <tr>
 <td><code>query_type.py</code></td>

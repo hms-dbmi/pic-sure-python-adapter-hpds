@@ -3523,8 +3523,9 @@ to match the presence of any value, or
 
 <details class="note" open>
   <summary>Note</summary>
-  <p>To include concept paths in the query output without filtering, use
-<code>buildQuery(includeConcepts=...)</code> — output columns are no longer a
+  <p>Variables you filter on are returned as output columns automatically.
+To include <em>additional</em> concept paths in the output without filtering,
+use <code>buildQuery(includeConcepts=...)</code> — output columns are not a
 clause type.</p>
 </details>
 
@@ -3803,8 +3804,10 @@ include-only query.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Concept path(s) to include as output columns. Order
-is preserved and duplicates are dropped.</p>
+                <p><em>Additional</em> concept path(s) to include as output
+columns, beyond the variables already named in
+<code>phenotypicFilter</code> — those are returned automatically. Order is
+preserved and duplicates are dropped.</p>
               </div>
             </td>
             <td>
@@ -4436,7 +4439,11 @@ is not supported.</p>
 <code>None</code> for an include-only query (return the named concepts for all
 matching records). Bare <code>Clause</code> / <code>ClauseGroup</code> objects are still
 accepted directly by <code>Session.runQuery()</code> and friends — they mean
-"filter, no extra output columns."</p>
+"filter, returning the filtered variables as output columns and no
+others."</p>
+<p>The variables referenced anywhere in <code>phenotypicFilter</code> are returned
+as output columns automatically; <code>includeConcepts</code> names <em>additional</em>
+columns beyond those.</p>
 <p>A <code>genomicFilter</code> field is anticipated here in the future, alongside
 <code>phenotypicFilter</code>.</p>
 
@@ -5249,8 +5256,9 @@ were added to the current selection.</p>
             <td>
               <div class="doc-md-description">
                 <p>A Query (from buildQuery), or a bare Clause/ClauseGroup
-(from buildClause/buildClauseGroup) for a filter with no
-explicitly-included output concepts.</p>
+(from buildClause/buildClauseGroup). Variables referenced in
+the filter are returned as output columns automatically;
+<code>includeConcepts</code> adds further non-filtered columns.</p>
               </div>
             </td>
             <td>

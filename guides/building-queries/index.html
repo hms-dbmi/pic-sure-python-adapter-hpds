@@ -1145,6 +1145,11 @@ output columns:</p>
 <a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="n">count</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">runQuery</span><span class="p">(</span><span class="n">filters</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;count&quot;</span><span class="p">)</span>
 </code></pre></div>
 <p><code>includeConcepts</code> preserves order and drops duplicates.</p>
+<p>Variables you filter on are returned automatically — you don't need to repeat
+them in <code>includeConcepts</code>. Use <code>includeConcepts</code> only for <em>additional</em> output
+columns that aren't already part of the filter. A bare <code>Clause</code>/<code>ClauseGroup</code>
+run as <code>participant</code> therefore returns its filtered variables as columns, not
+just the participant ID.</p>
 <h3 id="full-example-from-the-product-spec">Full Example from the Product Spec<a class="headerlink" href="#full-example-from-the-product-spec" title="Permanent link">&para;</a></h3>
 <p>Select participants who are male, over 40, and have either
 COPD/asthma or sleep problems, returning their height in the output:</p>
