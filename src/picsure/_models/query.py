@@ -19,7 +19,7 @@ class Query:
 
     The variables referenced anywhere in ``phenotypicFilter`` are returned
     as output columns automatically; ``includeConcepts`` names *additional*
-    columns beyond those (ALS-11934).
+    columns beyond those.
 
     A ``genomicFilter`` field is anticipated here in the future, alongside
     ``phenotypicFilter``.

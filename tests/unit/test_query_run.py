@@ -63,7 +63,7 @@ class TestRunQueryCount:
         assert query["expectedResultType"] == "COUNT"
         # The clause's own concept path is folded into ``select`` so a
         # query's filter variables are returned without being repeated in
-        # includeConcepts (ALS-11934).
+        # includeConcepts.
         assert query["select"] == ["\\phs1\\sex\\"]
         assert query["genomicFilters"] == []
         assert query["picsureId"] is None
@@ -273,7 +273,7 @@ class TestRunQueryCrossCount:
     def test_cross_count_body_includes_filter_concepts(self):
         # cross_count flows through the same select-folding, so the filter
         # variable lands in the wire select and is therefore cross-counted
-        # alongside any includeConcepts (ALS-11934).
+        # alongside any includeConcepts.
         route = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b'{"\\\\phs1\\\\sex\\\\": "42"}')
         )
@@ -426,7 +426,7 @@ class TestRunQueryWithClauseGroup:
         # A Query carrying both a phenotypic filter and includeConcepts lifts
         # the concepts to the top-level ``select`` array and serializes the
         # filter as ``phenotypicClause``. The filter's own concept path is
-        # appended after the explicit includeConcepts (ALS-11934).
+        # appended after the explicit includeConcepts.
         route = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"100")
         )
@@ -464,7 +464,7 @@ class TestRunQueryWithClauseGroup:
     def test_bare_clause_selects_filter_concepts(self):
         # A bare clause with no includeConcepts still returns its filtered
         # variable as an output column — previously this select was empty
-        # and only the participant ID came back (ALS-11934).
+        # and only the participant ID came back.
         route = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"100")
         )
@@ -479,7 +479,7 @@ class TestRunQueryWithClauseGroup:
 
 
 class TestSelectIncludesFilterConcepts:
-    """ALS-11934: filter variables are returned without includeConcepts."""
+    """Filter variables are returned as output columns without includeConcepts."""
 
     def _select_for(self, query) -> list[str]:
         route = respx.post(QUERY_URL).mock(

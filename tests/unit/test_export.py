@@ -105,7 +105,7 @@ class TestExportPFBHappyPath:
         assert body["query"]["expectedResultType"] == "DATAFRAME_PFB"
         assert body["resourceUUID"] == RESOURCE_UUID
         # The filter variable is returned as a PFB column without being
-        # repeated in includeConcepts (ALS-11934).
+        # repeated in includeConcepts.
         assert body["query"]["select"] == ["\\phs1\\sex\\"]
 
 

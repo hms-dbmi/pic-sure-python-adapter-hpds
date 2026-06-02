@@ -155,7 +155,7 @@ def _split(
 
     Every concept path referenced in the filter tree is folded into the
     select paths, so a query's filter variables are returned as output
-    columns without being repeated in ``includeConcepts`` (ALS-11934).
+    columns without being repeated in ``includeConcepts``.
     Explicit ``includeConcepts`` keep their position; filter-derived paths
     are appended in tree-traversal order; duplicates are dropped.
     """
