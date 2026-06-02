@@ -250,8 +250,9 @@ class Session:
 
         Args:
             query: A Query (from buildQuery), or a bare Clause/ClauseGroup
-                (from buildClause/buildClauseGroup) for a filter with no
-                explicitly-included output concepts.
+                (from buildClause/buildClauseGroup). Variables referenced in
+                the filter are returned as output columns automatically;
+                ``includeConcepts`` adds further non-filtered columns.
             type: Result type. Pass either a :class:`QueryType` member
                 (e.g. ``QueryType.COUNT``) or one of the strings:
 

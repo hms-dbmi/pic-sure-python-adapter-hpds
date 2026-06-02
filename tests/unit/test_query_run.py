@@ -61,7 +61,10 @@ class TestRunQueryCount:
         assert body["resourceUUID"] == RESOURCE_UUID
         query = body["query"]
         assert query["expectedResultType"] == "COUNT"
-        assert query["select"] == []
+        # The clause's own concept path is folded into ``select`` so a
+        # query's filter variables are returned without being repeated in
+        # includeConcepts.
+        assert query["select"] == ["\\phs1\\sex\\"]
         assert query["genomicFilters"] == []
         assert query["picsureId"] is None
         assert query["id"] is None
@@ -267,6 +270,21 @@ class TestRunQueryCrossCount:
         assert body["query"]["expectedResultType"] == "CROSS_COUNT"
 
     @respx.mock
+    def test_cross_count_body_includes_filter_concepts(self):
+        # cross_count flows through the same select-folding, so the filter
+        # variable lands in the wire select and is therefore cross-counted
+        # alongside any includeConcepts.
+        route = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b'{"\\\\phs1\\\\sex\\\\": "42"}')
+        )
+        run_query(_make_client(), RESOURCE_UUID, _simple_clause(), "cross_count")
+
+        import json
+
+        body = json.loads(route.calls[0].request.content)
+        assert body["query"]["select"] == ["\\phs1\\sex\\"]
+
+    @respx.mock
     def test_returns_dict_of_count_results(self):
         # Mirrors the real server shape: concept_path -> count string.
         # Includes one of each count shape (exact, noisy, suppressed).
@@ -407,7 +425,8 @@ class TestRunQueryWithClauseGroup:
     def test_query_with_filter_and_include_concepts(self):
         # A Query carrying both a phenotypic filter and includeConcepts lifts
         # the concepts to the top-level ``select`` array and serializes the
-        # filter as ``phenotypicClause``.
+        # filter as ``phenotypicClause``. The filter's own concept path is
+        # appended after the explicit includeConcepts.
         route = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"100")
         )
@@ -421,7 +440,7 @@ class TestRunQueryWithClauseGroup:
         import json
 
         body = json.loads(route.calls[0].request.content)
-        assert body["query"]["select"] == ["\\out_a\\", "\\out_b\\"]
+        assert body["query"]["select"] == ["\\out_a\\", "\\out_b\\", "\\phs1\\sex\\"]
         pheno = body["query"]["phenotypicClause"]
         assert pheno is not None
         assert pheno["phenotypicFilterType"] == "FILTER"
@@ -442,7 +461,10 @@ class TestRunQueryWithClauseGroup:
         assert body["query"]["select"] == ["\\a\\", "\\b\\"]
 
     @respx.mock
-    def test_bare_clause_has_empty_select(self):
+    def test_bare_clause_selects_filter_concepts(self):
+        # A bare clause with no includeConcepts still returns its filtered
+        # variable as an output column — previously this select was empty
+        # and only the participant ID came back.
         route = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"100")
         )
@@ -452,8 +474,77 @@ class TestRunQueryWithClauseGroup:
         import json
 
         body = json.loads(route.calls[0].request.content)
-        assert body["query"]["select"] == []
+        assert body["query"]["select"] == ["\\phs1\\sex\\"]
         assert body["query"]["phenotypicClause"] is not None
+
+
+class TestSelectIncludesFilterConcepts:
+    """Filter variables are returned as output columns without includeConcepts."""
+
+    def _select_for(self, query) -> list[str]:
+        route = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"1")
+        )
+        run_query(_make_client(), RESOURCE_UUID, query, "participant")
+
+        import json
+
+        return json.loads(route.calls[0].request.content)["query"]["select"]
+
+    @respx.mock
+    def test_bare_clause_group_selects_all_filter_concepts(self):
+        age = Clause(keys=["\\age\\"], type=PhenotypicFilterType.FILTER, min=40.0)
+        group = ClauseGroup(clauses=[_simple_clause(), age], operator=GroupOperator.AND)
+        assert self._select_for(group) == ["\\phs1\\sex\\", "\\age\\"]
+
+    @respx.mock
+    def test_nested_group_collects_every_path_in_order(self):
+        age = Clause(keys=["\\age\\"], type=PhenotypicFilterType.FILTER, min=40.0)
+        bmi = Clause(keys=["\\bmi\\"], type=PhenotypicFilterType.FILTER, min=18.0)
+        inner = ClauseGroup(clauses=[age, bmi], operator=GroupOperator.OR)
+        outer = ClauseGroup(
+            clauses=[_simple_clause(), inner], operator=GroupOperator.AND
+        )
+        assert self._select_for(outer) == ["\\phs1\\sex\\", "\\age\\", "\\bmi\\"]
+
+    @respx.mock
+    def test_multi_key_clause_contributes_all_keys(self):
+        multi = Clause(keys=["\\a\\", "\\b\\"], type=PhenotypicFilterType.ANYRECORD)
+        assert self._select_for(multi) == ["\\a\\", "\\b\\"]
+
+    @respx.mock
+    def test_include_concepts_come_first_then_filter_vars(self):
+        query = Query(
+            phenotypicFilter=_simple_clause(),
+            includeConcepts=("\\out_a\\",),
+        )
+        assert self._select_for(query) == ["\\out_a\\", "\\phs1\\sex\\"]
+
+    @respx.mock
+    def test_overlap_is_deduped_and_filter_only_var_appended(self):
+        # The group filters on sex AND age; age is also explicitly included.
+        # age must appear once in its includeConcepts slot (dedup), while the
+        # filter-only sex var is appended after — so both the append and the
+        # dedup are load-bearing (the assertion fails if either is dropped).
+        age = Clause(keys=["\\age\\"], type=PhenotypicFilterType.FILTER, min=40.0)
+        group = ClauseGroup(clauses=[_simple_clause(), age], operator=GroupOperator.AND)
+        query = Query(phenotypicFilter=group, includeConcepts=("\\age\\", "\\out_b\\"))
+        assert self._select_for(query) == ["\\age\\", "\\out_b\\", "\\phs1\\sex\\"]
+
+    @respx.mock
+    def test_duplicate_path_across_clauses_is_deduped(self):
+        # Two clauses filter the SAME concept path (age > 40 AND age < 80).
+        # The path must appear only once in select — this is the case the
+        # dict.fromkeys dedup in _split() exists to collapse.
+        low = Clause(keys=["\\age\\"], type=PhenotypicFilterType.FILTER, min=40.0)
+        high = Clause(keys=["\\age\\"], type=PhenotypicFilterType.FILTER, max=80.0)
+        group = ClauseGroup(clauses=[low, high], operator=GroupOperator.AND)
+        assert self._select_for(group) == ["\\age\\"]
+
+    @respx.mock
+    def test_include_only_query_unaffected(self):
+        query = Query(includeConcepts=("\\a\\", "\\b\\"))
+        assert self._select_for(query) == ["\\a\\", "\\b\\"]
 
 
 class TestRunQueryValidation:
