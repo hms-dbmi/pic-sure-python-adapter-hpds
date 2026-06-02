@@ -81,6 +81,43 @@ class TestClauseGroup:
         assert isinstance(outer.clauses[2], ClauseGroup)
 
 
+class TestClauseGroupConceptPaths:
+    def test_flat_group_returns_paths_in_order(self):
+        group = ClauseGroup(
+            clauses=[_sex_clause(), _age_clause()],
+            operator=GroupOperator.AND,
+        )
+        assert group.concept_paths() == ["\\phs1\\sex\\", "\\phs1\\age\\"]
+
+    def test_nested_group_flattens_depth_first_in_order(self):
+        inner = ClauseGroup(
+            clauses=[_copd_clause(), _asthma_clause()],
+            operator=GroupOperator.OR,
+        )
+        outer = ClauseGroup(
+            clauses=[_sex_clause(), _age_clause(), inner],
+            operator=GroupOperator.AND,
+        )
+        assert outer.concept_paths() == [
+            "\\phs1\\sex\\",
+            "\\phs1\\age\\",
+            "\\phs1\\copd\\",
+            "\\phs1\\asthma\\",
+        ]
+
+    def test_multi_key_clause_contributes_all_keys(self):
+        multi = Clause(
+            keys=["\\path_a\\", "\\path_b\\"],
+            type=PhenotypicFilterType.ANYRECORD,
+        )
+        group = ClauseGroup(clauses=[_sex_clause(), multi], operator=GroupOperator.AND)
+        assert group.concept_paths() == [
+            "\\phs1\\sex\\",
+            "\\path_a\\",
+            "\\path_b\\",
+        ]
+
+
 class TestClauseGroupToQueryJson:
     def test_simple_and_group(self):
         group = ClauseGroup(

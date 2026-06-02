@@ -34,6 +34,14 @@ class ClauseGroup:
     clauses: list[Clause | ClauseGroup]
     operator: GroupOperator
 
+    def concept_paths(self) -> list[str]:
+        """All concept paths referenced anywhere in this group, depth-first.
+
+        Recurses uniformly through nested groups because each child —
+        ``Clause`` or ``ClauseGroup`` — implements ``concept_paths()``.
+        """
+        return [path for child in self.clauses for path in child.concept_paths()]
+
     def to_query_json(self) -> dict[str, object]:
         """Serialize this group as a v3 ``PhenotypicSubquery``."""
         return {
