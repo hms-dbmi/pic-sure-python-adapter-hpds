@@ -256,3 +256,53 @@ class TestBuildQuery:
         q = buildQuery(includeConcepts="\\bmi\\")
         with pytest.raises((AttributeError, TypeError)):
             q.includeConcepts = ("\\x\\",)  # type: ignore[misc]
+
+
+class TestBuildGenomicFilter:
+    def test_categorical(self):
+        from picsure._models.genomic_filter import GenomicFilter
+        from picsure._services.query_build import buildGenomicFilter
+
+        gf = buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
+        assert gf == GenomicFilter(key="Gene_with_variant", values=("BRCA1",))
+
+    def test_single_string_value_normalized(self):
+        from picsure._services.query_build import buildGenomicFilter
+
+        gf = buildGenomicFilter("Gene_with_variant", values="BRCA1")
+        assert gf.values == ("BRCA1",)
+
+    def test_enum_value_coerced(self):
+        from picsure._models.genomic_filter import VariantFrequency
+        from picsure._services.query_build import buildGenomicFilter
+
+        gf = buildGenomicFilter(
+            "Variant_frequency_as_text", values=VariantFrequency.RARE
+        )
+        assert gf.values == ("Rare",)
+
+    def test_range(self):
+        from picsure._services.query_build import buildGenomicFilter
+
+        gf = buildGenomicFilter("Variant_frequency_in_gnomAD", min=0.0, max=0.01)
+        assert gf.min == 0.0
+        assert gf.max == 0.01
+        assert gf.values is None
+
+    def test_rejects_values_and_range(self):
+        from picsure._services.query_build import buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError):
+            buildGenomicFilter("X", values=["a"], min=0.1)
+
+    def test_rejects_neither(self):
+        from picsure._services.query_build import buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError):
+            buildGenomicFilter("X")
+
+    def test_rejects_empty_key(self):
+        from picsure._services.query_build import buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError):
+            buildGenomicFilter("", values=["a"])

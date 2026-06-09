@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+from enum import Enum
+
 from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
+from picsure._models.genomic_filter import GenomicFilter
 from picsure._models.query import Query
 from picsure.errors import PicSureValidationError
 
@@ -186,3 +190,78 @@ def buildQuery(  # noqa: N802
         phenotypicFilter=phenotypicFilter,
         includeConcepts=tuple(dict.fromkeys(cols)),
     )
+
+
+def buildGenomicFilter(  # noqa: N802
+    key: str,
+    *,
+    values: str | Sequence[str] | None = None,
+    min: float | None = None,  # noqa: A002
+    max: float | None = None,  # noqa: A002
+) -> GenomicFilter:
+    """Create a single genomic (variant-annotation) filter for a query.
+
+    Args:
+        key: The genomic annotation to filter on. Known keys include
+            ``"Gene_with_variant"``, ``"Variant_consequence_calculated"``,
+            ``"Variant_frequency_as_text"`` (use :class:`VariantFrequency`),
+            numeric frequency keys like ``"Variant_frequency_in_gnomAD"``,
+            and SNP variant specs like ``"chr5:148481541:T:A"`` (use
+            :class:`Zygosity` for the genotype values). The exact set is
+            platform-dependent and validated server-side.
+        values: For categorical filters — one value or a sequence. Mutually
+            exclusive with ``min``/``max``. :class:`VariantFrequency` /
+            :class:`Zygosity` members are accepted and coerced to their
+            string value.
+        min: For numeric-range filters, the inclusive lower bound.
+        max: For numeric-range filters, the inclusive upper bound.
+
+    Returns:
+        A :class:`GenomicFilter` to pass to ``buildQuery(genomicFilters=...)``.
+
+    Raises:
+        PicSureValidationError: If ``key`` is empty, if both ``values`` and
+            ``min``/``max`` are given, or if neither is given.
+
+    Example:
+        >>> from picsure import buildGenomicFilter, VariantFrequency
+        >>> gene = buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
+        >>> rare = buildGenomicFilter(
+        ...     "Variant_frequency_as_text", values=VariantFrequency.RARE
+        ... )
+        >>> freq = buildGenomicFilter(
+        ...     "Variant_frequency_in_gnomAD", min=0.0, max=0.01
+        ... )
+    """
+    if not isinstance(key, str) or not key.strip():
+        raise PicSureValidationError(
+            "buildGenomicFilter requires a non-empty 'key' string."
+        )
+
+    has_values = values is not None
+    has_range = min is not None or max is not None
+
+    if has_values and has_range:
+        raise PicSureValidationError(
+            "A genomic filter is either categorical (values) or a numeric "
+            "range (min/max), not both."
+        )
+    if not has_values and not has_range:
+        raise PicSureValidationError(
+            "buildGenomicFilter requires either values (categorical) or "
+            "min/max (numeric range)."
+        )
+
+    normalized: tuple[str, ...] | None = None
+    if values is not None:
+        items = [values] if isinstance(values, str) else list(values)
+        if not items:
+            raise PicSureValidationError(
+                "buildGenomicFilter 'values' must be a non-empty string or "
+                "sequence."
+            )
+        normalized = tuple(
+            str(v.value) if isinstance(v, Enum) else str(v) for v in items
+        )
+
+    return GenomicFilter(key=key, values=normalized, min=min, max=max)
