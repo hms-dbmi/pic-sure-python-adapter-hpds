@@ -245,7 +245,7 @@ class Session:
         self,
         query: Query | Clause | ClauseGroup,
         type: QueryType | str = "count",  # noqa: A002
-    ) -> CountResult | dict[str, CountResult] | pd.DataFrame:
+    ) -> CountResult | dict[str, CountResult] | pd.DataFrame | int | list[str]:
         """Execute a query and return the result.
 
         Args:
@@ -263,10 +263,14 @@ class Session:
                   by concept path.
                 - ``"participant"`` → :class:`pandas.DataFrame`.
                 - ``"timestamp"`` → :class:`pandas.DataFrame`.
+                - ``"variant_count"`` → ``int``.
+                - ``"variant_list"`` → ``list[str]``.
+                - ``"vcf_excerpt"`` / ``"aggregate_vcf_excerpt"`` →
+                  :class:`pandas.DataFrame`.
 
         Returns:
-            A :class:`CountResult`, a ``dict[str, CountResult]``, or a
-            DataFrame depending on ``type``.
+            A :class:`CountResult`, a ``dict[str, CountResult]``, a
+            DataFrame, an ``int``, or a ``list[str]`` depending on ``type``.
 
         Example:
             >>> count = session.runQuery(my_query, type="count")
@@ -398,7 +402,7 @@ class Session:
         self,
         query_id: str,
         type: QueryType | str = "count",  # noqa: A002
-    ) -> CountResult | dict[str, CountResult] | pd.DataFrame:
+    ) -> CountResult | dict[str, CountResult] | pd.DataFrame | int | list[str]:
         """Load a saved query by ID and execute it in one call.
 
         Convenience wrapper around :meth:`loadQueryByID` + :meth:`runQuery`.
@@ -407,12 +411,14 @@ class Session:
             query_id: The UUID string of a previous PIC-SURE query.
             type: Result type, as accepted by :meth:`runQuery` —
                 ``"count"`` (default), ``"cross_count"``, ``"participant"``,
-                or ``"timestamp"`` (or the equivalent :class:`QueryType`
-                member).
+                ``"timestamp"``, ``"variant_count"``, ``"variant_list"``,
+                ``"vcf_excerpt"``, or ``"aggregate_vcf_excerpt"`` (or the
+                equivalent :class:`QueryType` member).
 
         Returns:
-            A :class:`CountResult`, ``dict[str, CountResult]``, or
-            :class:`pandas.DataFrame` depending on ``type``.
+            A :class:`CountResult`, ``dict[str, CountResult]``,
+            :class:`pandas.DataFrame`, ``int``, or ``list[str]`` depending
+            on ``type``.
 
         Raises:
             PicSureValidationError: If the ID is blank, the saved query

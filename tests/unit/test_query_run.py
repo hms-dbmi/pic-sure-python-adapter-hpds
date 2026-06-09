@@ -824,3 +824,60 @@ class TestBuildQueryBodyGenomic:
         q = buildQuery(genomicFilters=gf, includeConcepts=["\\bmi\\"])
         body = build_query_body(q, "uuid-1", "DATAFRAME")
         assert body["query"]["select"] == ["\\bmi\\"]
+
+
+class TestVariantResultParsing:
+    def test_resolve_new_query_types(self):
+        from picsure._services.query_run import _resolve_query_type
+
+        assert _resolve_query_type("variant_count") == "VARIANT_COUNT_FOR_QUERY"
+        assert _resolve_query_type("variant_list") == "VARIANT_LIST_FOR_QUERY"
+        assert _resolve_query_type(QueryType.VCF_EXCERPT) == "VCF_EXCERPT"
+        assert (
+            _resolve_query_type(QueryType.AGGREGATE_VCF_EXCERPT)
+            == "AGGREGATE_VCF_EXCERPT"
+        )
+
+    def test_parse_variant_count(self):
+        from picsure._services.query_run import _parse_variant_count
+
+        assert _parse_variant_count(b"123") == 123
+
+    def test_parse_variant_count_not_allowed(self):
+        from picsure._services.query_run import _parse_variant_count
+
+        with pytest.raises(PicSureQueryError):
+            _parse_variant_count(b"VARIANT_COUNT_FOR_QUERY query type not allowed")
+
+    def test_parse_variant_list(self):
+        from picsure._services.query_run import _parse_variant_list
+
+        assert _parse_variant_list(b"[chr1:1:A:T, chr2:2:G:C]") == [
+            "chr1:1:A:T",
+            "chr2:2:G:C",
+        ]
+
+    def test_parse_variant_list_empty(self):
+        from picsure._services.query_run import _parse_variant_list
+
+        assert _parse_variant_list(b"[]") == []
+
+    def test_parse_vcf_excerpt(self):
+        from picsure._services.query_run import _parse_vcf_excerpt
+
+        raw = b"CHROM\tPOSITION\tREF\tALT\n1\t100\tA\tT\n"
+        df = _parse_vcf_excerpt(raw)
+        assert list(df.columns) == ["CHROM", "POSITION", "REF", "ALT"]
+        assert len(df) == 1
+
+    def test_parse_vcf_excerpt_no_variants(self):
+        from picsure._services.query_run import _parse_vcf_excerpt
+
+        df = _parse_vcf_excerpt(b"No Variants Found\n")
+        assert df.empty
+
+    def test_parse_vcf_excerpt_not_allowed(self):
+        from picsure._services.query_run import _parse_vcf_excerpt
+
+        with pytest.raises(PicSureQueryError):
+            _parse_vcf_excerpt(b"VCF_EXCERPT query type not allowed")

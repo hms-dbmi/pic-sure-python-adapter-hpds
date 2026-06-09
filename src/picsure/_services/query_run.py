@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from io import BytesIO
+from io import BytesIO, StringIO
 
 import pandas as pd
 
@@ -37,6 +37,10 @@ _VALID_QUERY_TYPES: dict[str, str] = {
     "participant": "DATAFRAME",
     "timestamp": "DATAFRAME_TIMESERIES",
     "cross_count": "CROSS_COUNT",
+    "variant_count": "VARIANT_COUNT_FOR_QUERY",
+    "variant_list": "VARIANT_LIST_FOR_QUERY",
+    "vcf_excerpt": "VCF_EXCERPT",
+    "aggregate_vcf_excerpt": "AGGREGATE_VCF_EXCERPT",
 }
 
 _COUNT_EXACT = re.compile(r"^(\d+)$")
@@ -51,7 +55,7 @@ def run_query(
     query_type: QueryType | str,
     *,
     use_legacy_query_path: bool = False,
-) -> CountResult | dict[str, CountResult] | pd.DataFrame:
+) -> CountResult | dict[str, CountResult] | pd.DataFrame | int | list[str]:
     """Execute a query against PIC-SURE and return the result.
 
     Args:
@@ -73,6 +77,9 @@ def run_query(
         - ``cross_count``  → ``dict[str, CountResult]`` keyed by concept path
         - ``participant``  → :class:`pandas.DataFrame`
         - ``timestamp``    → :class:`pandas.DataFrame`
+        - ``variant_count`` → ``int``
+        - ``variant_list``  → ``list[str]``
+        - ``vcf_excerpt`` / ``aggregate_vcf_excerpt`` → :class:`pandas.DataFrame`
 
     Note:
         For ``participant`` and ``timestamp`` queries, a patient with multiple
@@ -114,6 +121,12 @@ def run_query(
         return _parse_count(raw)
     if resolved_type == "CROSS_COUNT":
         return _parse_cross_count(raw)
+    if resolved_type == "VARIANT_COUNT_FOR_QUERY":
+        return _parse_variant_count(raw)
+    if resolved_type == "VARIANT_LIST_FOR_QUERY":
+        return _parse_variant_list(raw)
+    if resolved_type in ("VCF_EXCERPT", "AGGREGATE_VCF_EXCERPT"):
+        return _parse_vcf_excerpt(raw)
     return _parse_dataframe(raw)
 
 
@@ -280,4 +293,82 @@ def _parse_dataframe(raw: bytes) -> pd.DataFrame:
     except (pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
         raise PicSureQueryError(
             f"Server returned a malformed CSV response: {raw[:200]!r}"
+        ) from exc
+
+
+_QUERY_TYPE_NOT_ALLOWED = "query type not allowed"
+_NO_VARIANTS_FOUND = "No Variants Found"
+
+
+def _parse_variant_count(raw: bytes) -> int:
+    """Parse a VARIANT_COUNT_FOR_QUERY response into an integer.
+
+    The server returns the count of distinct matching variant specs as a
+    plain integer string. (Unlike patient counts, variant counts are not
+    obfuscated; the integration test confirms this against the live server.)
+    """
+    text = raw.decode("utf-8").strip()
+    if _QUERY_TYPE_NOT_ALLOWED in text:
+        raise PicSureQueryError(
+            f"The server rejected the variant-count query: '{text[:200]}'. "
+            "This result type may be disabled on this deployment."
+        )
+    try:
+        return int(text)
+    except ValueError as exc:
+        raise PicSureQueryError(
+            f"Expected an integer variant count, but got: '{text[:200]}'"
+        ) from exc
+
+
+def _parse_variant_list(raw: bytes) -> list[str]:
+    """Parse a VARIANT_LIST_FOR_QUERY response into a list of variant specs.
+
+    The server returns ``"[" + specs.join(", ") + "]"`` — variant specs
+    (``CHROM:POS:REF:ALT``) contain no commas, so splitting on ``", "`` is safe.
+    """
+    text = raw.decode("utf-8").strip()
+    if _QUERY_TYPE_NOT_ALLOWED in text:
+        raise PicSureQueryError(
+            f"The server rejected the variant-list query: '{text[:200]}'. "
+            "This result type may be disabled on this deployment."
+        )
+    if not (text.startswith("[") and text.endswith("]")):
+        raise PicSureQueryError(
+            "Expected a bracketed variant list like '[chr1:1:A:T, ...]', "
+            f"but got: '{text[:200]}'"
+        )
+    inner = text[1:-1].strip()
+    if not inner:
+        return []
+    return [tok.strip() for tok in inner.split(",") if tok.strip()]
+
+
+def _parse_vcf_excerpt(raw: bytes) -> pd.DataFrame:
+    """Parse a (AGGREGATE_)VCF_EXCERPT tab-separated response into a DataFrame.
+
+    Maps the ``"No Variants Found"`` sentinel to an empty DataFrame and
+    raises on the ``"... query type not allowed"`` body. The column set is
+    server-driven (info columns vary by deployment), so no fixed schema is
+    assumed.
+    """
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise PicSureQueryError(
+            f"Server returned a malformed VCF excerpt: {raw[:200]!r}"
+        ) from exc
+    stripped = text.strip()
+    if not stripped or stripped.startswith(_NO_VARIANTS_FOUND):
+        return pd.DataFrame()
+    if _QUERY_TYPE_NOT_ALLOWED in stripped:
+        raise PicSureQueryError(
+            f"The server rejected the VCF-excerpt query: '{stripped[:200]}'. "
+            "This result type may be disabled on this deployment."
+        )
+    try:
+        return pd.read_csv(StringIO(text), sep="\t")
+    except (pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
+        raise PicSureQueryError(
+            f"Server returned a malformed VCF excerpt: {raw[:200]!r}"
         ) from exc
