@@ -31,3 +31,9 @@ class TestGenomicQueryLive:
         result = session.runQuery(buildQuery(genomicFilters=gf), type="variant_list")
         assert isinstance(result, list)
         assert all(isinstance(v, str) for v in result)
+        # Each element must be a whole variant spec, not a fragment: the server
+        # serializes specs as ``chromosome,offset,ref,alt,gene,consequence``.
+        # If the list joiner were mis-split, specs would arrive shredded into
+        # single fields. Require the spec shape (>= the 4 core VCF fields).
+        for spec in result:
+            assert len(spec.split(",")) >= 4, f"variant spec looks fragmented: {spec!r}"

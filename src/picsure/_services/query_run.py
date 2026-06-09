@@ -324,8 +324,12 @@ def _parse_variant_count(raw: bytes) -> int:
 def _parse_variant_list(raw: bytes) -> list[str]:
     """Parse a VARIANT_LIST_FOR_QUERY response into a list of variant specs.
 
-    The server returns ``"[" + specs.join(", ") + "]"`` — variant specs
-    (``CHROM:POS:REF:ALT``) contain no commas, so splitting on ``", "`` is safe.
+    The server returns ``"[" + specs.join(", ") + "]"``. Each spec is itself
+    six comma-separated fields
+    (``chromosome,offset,ref,alt,gene,consequence``), so the specs must be
+    split on the joiner's ``", "`` (comma-space) — splitting on a bare ``","``
+    would shred each spec into its fields. Within a spec the commas have no
+    trailing space, so ``", "`` only occurs between specs.
     """
     text = raw.decode("utf-8").strip()
     if _QUERY_TYPE_NOT_ALLOWED in text:
@@ -335,13 +339,14 @@ def _parse_variant_list(raw: bytes) -> list[str]:
         )
     if not (text.startswith("[") and text.endswith("]")):
         raise PicSureQueryError(
-            "Expected a bracketed variant list like '[chr1:1:A:T, ...]', "
+            "Expected a bracketed variant list like "
+            "'[7,100000,A,T,CHD8,missense_variant, ...]', "
             f"but got: '{text[:200]}'"
         )
     inner = text[1:-1].strip()
     if not inner:
         return []
-    return [tok.strip() for tok in inner.split(",") if tok.strip()]
+    return [tok.strip() for tok in inner.split(", ") if tok.strip()]
 
 
 def _parse_vcf_excerpt(raw: bytes) -> pd.DataFrame:

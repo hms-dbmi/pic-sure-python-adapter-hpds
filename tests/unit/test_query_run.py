@@ -852,10 +852,21 @@ class TestVariantResultParsing:
     def test_parse_variant_list(self):
         from picsure._services.query_run import _parse_variant_list
 
-        assert _parse_variant_list(b"[chr1:1:A:T, chr2:2:G:C]") == [
-            "chr1:1:A:T",
-            "chr2:2:G:C",
+        # Real variant specs are 6 comma-separated fields
+        # (chromosome,offset,ref,alt,gene,consequence) joined with ", ".
+        # The internal commas must NOT split the spec apart.
+        raw = b"[7,100000,A,T,CHD8,missense_variant, 8,200000,G,C,GENE2,stop_gained]"
+        assert _parse_variant_list(raw) == [
+            "7,100000,A,T,CHD8,missense_variant",
+            "8,200000,G,C,GENE2,stop_gained",
         ]
+
+    def test_parse_variant_list_single_spec(self):
+        from picsure._services.query_run import _parse_variant_list
+
+        # A single spec has no ", " separator; it must come back intact.
+        raw = b"[7,100000,A,T,CHD8,missense_variant]"
+        assert _parse_variant_list(raw) == ["7,100000,A,T,CHD8,missense_variant"]
 
     def test_parse_variant_list_empty(self):
         from picsure._services.query_run import _parse_variant_list
