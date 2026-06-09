@@ -10,6 +10,7 @@ from picsure._models.clause import (
 )
 from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure._models.dictionary import coerce_float
+from picsure._models.genomic_filter import GenomicFilter
 from picsure._models.query import Query
 from picsure._services._errors import rate_limit_message
 from picsure._transport.errors import (
@@ -113,28 +114,62 @@ def _parse_subquery(node: dict[str, object]) -> ClauseGroup:
     )
 
 
+def _parse_genomic_filters(raw: object) -> tuple[GenomicFilter, ...]:
+    """Rebuild the saved ``genomicFilters`` array into GenomicFilter objects."""
+    if not isinstance(raw, list):
+        return ()
+    filters: list[GenomicFilter] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise PicSureQueryError(
+                f"Expected a genomic filter object, got {type(item).__name__}."
+            )
+        key = item.get("key")
+        if not isinstance(key, str):
+            raise PicSureQueryError("Genomic filter is missing a 'key' string.")
+        raw_values = item.get("values")
+        values: tuple[str, ...] | None = None
+        if isinstance(raw_values, list) and raw_values:
+            values = tuple(str(v) for v in raw_values)
+        filters.append(
+            GenomicFilter(
+                key=key,
+                values=values,
+                min=coerce_float(item.get("min")),
+                max=coerce_float(item.get("max")),
+            )
+        )
+    return tuple(filters)
+
+
 def _to_query(
     select_paths: list[str],
     phenotypic_node: object | None,
+    genomic_filters: tuple[GenomicFilter, ...] = (),
 ) -> Query | Clause | ClauseGroup:
-    """Combine the saved include-concept paths and phenotypic tree.
+    """Combine the saved include paths, phenotypic tree, and genomic filters.
 
     Returns a bare ``Clause`` / ``ClauseGroup`` when the saved query has no
-    ``select`` paths, or a :class:`Query` wrapping the filter tree (possibly
-    ``None``) plus the include concepts otherwise.
+    ``select`` paths and no genomic filters, or a :class:`Query` wrapping the
+    filter tree (possibly ``None``) plus the include concepts / genomic
+    filters otherwise.
     """
     phenotypic: Clause | ClauseGroup | None = (
         _parse_phenotypic(phenotypic_node) if phenotypic_node is not None else None
     )
 
-    if phenotypic is None and not select_paths:
+    if phenotypic is None and not select_paths and not genomic_filters:
         raise PicSureQueryError(
-            "Server returned an empty saved query: no select paths and no "
-            "phenotypic clause."
+            "Server returned an empty saved query: no select paths, no "
+            "phenotypic clause, and no genomic filters."
         )
-    if not select_paths:
+    if not select_paths and not genomic_filters:
         return phenotypic  # type: ignore[return-value]  # guarded non-None above
-    return Query(phenotypicFilter=phenotypic, includeConcepts=tuple(select_paths))
+    return Query(
+        phenotypicFilter=phenotypic,
+        includeConcepts=tuple(select_paths),
+        genomicFilters=genomic_filters,
+    )
 
 
 # Always use the legacy /picsure/query/{id}/metadata path.  The v3
@@ -165,7 +200,7 @@ def load_query(
     Raises:
         PicSureValidationError: If the ID is blank, the query was not
             found, or the saved query uses features this adapter cannot
-            yet represent (NOT clauses, genomic filters).
+            yet represent (NOT clauses).
         PicSureAuthError: On 401 / 403.
         PicSureConnectionError: On network failures or 5xx.
         PicSureQueryError: If the response shape is malformed.
@@ -229,15 +264,10 @@ def _build_query_from_response(response: object) -> Query | Clause | ClauseGroup
         raise PicSureQueryError(
             "Metadata response is missing 'resultMetadata.queryJson.query' object."
         )
-    genomic = inner.get("genomicFilters")
-    if isinstance(genomic, list) and genomic:
-        raise PicSureValidationError(
-            "This adapter cannot yet represent genomic filters; the saved "
-            "query was likely built with the UI."
-        )
+    genomic_filters = _parse_genomic_filters(inner.get("genomicFilters"))
     raw_select = inner.get("select")
     select_paths: list[str] = (
         [str(p) for p in raw_select] if isinstance(raw_select, list) else []
     )
     phenotypic_node = inner.get("phenotypicClause")
-    return _to_query(select_paths, phenotypic_node)
+    return _to_query(select_paths, phenotypic_node, genomic_filters)

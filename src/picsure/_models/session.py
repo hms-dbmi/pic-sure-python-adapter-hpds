@@ -452,7 +452,7 @@ class Session:
         Raises:
             PicSureValidationError: If the ID is empty, the query was not
                 found, or the saved query uses features this adapter cannot
-                yet represent (NOT clauses, genomic filters).
+                yet represent (NOT clauses).
             PicSureAuthError: On 401 / 403.
             PicSureConnectionError: If the server is unreachable.
             PicSureQueryError: If the response cannot be parsed.

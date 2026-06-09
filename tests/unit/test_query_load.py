@@ -393,7 +393,7 @@ class TestLoadQueryStrictness:
             load_query(_make_client(), QUERY_ID)
 
     @respx.mock
-    def test_genomic_filters_non_empty_raises_validation(self):
+    def test_malformed_genomic_filter_missing_key_raises(self):
         body = _envelope(
             {
                 "select": [],
@@ -405,8 +405,56 @@ class TestLoadQueryStrictness:
             }
         )
         respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
-        with pytest.raises(PicSureValidationError, match="genomic"):
+        with pytest.raises(PicSureQueryError, match="key"):
             load_query(_make_client(), QUERY_ID)
+
+
+class TestLoadQueryGenomic:
+    @respx.mock
+    def test_round_trips_categorical_genomic_filter(self):
+        from picsure._models.genomic_filter import GenomicFilter
+
+        body = _envelope(
+            {
+                "select": [],
+                "phenotypicClause": None,
+                "genomicFilters": [
+                    {"key": "Gene_with_variant", "values": ["BRCA1"]}
+                ],
+                "expectedResultType": "COUNT",
+                "picsureId": None,
+                "id": None,
+            }
+        )
+        respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
+        result = load_query(_make_client(), QUERY_ID)
+        assert isinstance(result, Query)
+        assert result.phenotypicFilter is None
+        assert result.genomicFilters == (
+            GenomicFilter(key="Gene_with_variant", values=("BRCA1",)),
+        )
+
+    @respx.mock
+    def test_round_trips_range_genomic_filter_with_phenotypic(self):
+        body = _envelope(
+            {
+                "select": ["\\bmi\\"],
+                "phenotypicClause": _filter_leaf("\\phs1\\sex\\", "Male"),
+                "genomicFilters": [
+                    {"key": "Variant_frequency_in_gnomAD", "min": 0.0, "max": 0.01}
+                ],
+                "expectedResultType": "DATAFRAME",
+                "picsureId": None,
+                "id": None,
+            }
+        )
+        respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
+        result = load_query(_make_client(), QUERY_ID)
+        assert isinstance(result, Query)
+        assert result.genomicFilters[0].key == "Variant_frequency_in_gnomAD"
+        assert result.genomicFilters[0].min == 0.0
+        assert result.genomicFilters[0].max == 0.01
+        assert result.genomicFilters[0].values is None
 
 
 class TestLoadQueryErrors:
