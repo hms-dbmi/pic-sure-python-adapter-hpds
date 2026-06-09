@@ -9,6 +9,7 @@ import pandas as pd
 from picsure._models.clause import Clause
 from picsure._models.clause_group import ClauseGroup
 from picsure._models.count_result import CountResult
+from picsure._models.genomic_filter import GenomicFilter
 from picsure._models.query import Query
 from picsure._models.query_type import QueryType
 from picsure._services._errors import rate_limit_message
@@ -133,13 +134,13 @@ def build_query_body(
         client-asserted list (especially with a long-term token) is
         treated as tampering and can be rejected with a 401.
     """
-    filter_tree, select_paths = _split(query)
+    filter_tree, select_paths, genomic = _split(query)
     phenotypic = filter_tree.to_query_json() if filter_tree is not None else None
     return {
         "query": {
             "select": select_paths,
             "phenotypicClause": phenotypic,
-            "genomicFilters": [],
+            "genomicFilters": [g.to_query_json() for g in genomic],
             "expectedResultType": expected_result_type,
             "picsureId": None,
             "id": None,
@@ -150,21 +151,24 @@ def build_query_body(
 
 def _split(
     query: Query | Clause | ClauseGroup,
-) -> tuple[Clause | ClauseGroup | None, list[str]]:
-    """Normalize a runnable query into a (filter tree, select paths) pair.
+) -> tuple[Clause | ClauseGroup | None, list[str], tuple[GenomicFilter, ...]]:
+    """Normalize a runnable query into (filter tree, select paths, genomic).
 
     Every concept path referenced in the filter tree is folded into the
     select paths, so a query's filter variables are returned as output
-    columns without being repeated in ``includeConcepts``.
+    columns without being repeated in ``includeConcepts``. Genomic filters
+    do not contribute to ``select``.
     Explicit ``includeConcepts`` keep their position; filter-derived paths
     are appended in tree-traversal order; duplicates are dropped.
     """
     if isinstance(query, Query):
         filter_tree: Clause | ClauseGroup | None = query.phenotypicFilter
         select = list(query.includeConcepts)
+        genomic: tuple[GenomicFilter, ...] = query.genomicFilters
     elif isinstance(query, (Clause, ClauseGroup)):
         filter_tree = query
         select = []
+        genomic = ()
     else:
         raise PicSureValidationError(
             "Query must be a Clause, ClauseGroup, or Query. Use "
@@ -173,7 +177,7 @@ def _split(
 
     if filter_tree is not None:
         select.extend(filter_tree.concept_paths())
-    return filter_tree, list(dict.fromkeys(select))
+    return filter_tree, list(dict.fromkeys(select)), genomic
 
 
 def _resolve_query_type(query_type: QueryType | str) -> str:

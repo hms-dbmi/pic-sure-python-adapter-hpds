@@ -794,3 +794,33 @@ class TestRunQueryLegacyPath:
         assert result.value == 5
         assert v3.call_count == 1
         assert legacy.call_count == 0
+
+
+class TestBuildQueryBodyGenomic:
+    def test_includes_genomic_filters(self):
+        from picsure._services.query_build import buildGenomicFilter, buildQuery
+        from picsure._services.query_run import build_query_body
+
+        gf = buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
+        q = buildQuery(genomicFilters=gf, includeConcepts=["\\bmi\\"])
+        body = build_query_body(q, "uuid-1", "COUNT")
+        assert body["query"]["genomicFilters"] == [
+            {"key": "Gene_with_variant", "values": ["BRCA1"]}
+        ]
+
+    def test_no_genomic_filters_is_empty(self):
+        from picsure._services.query_build import buildClause
+        from picsure._services.query_run import build_query_body
+
+        c = buildClause("\\path\\", type=PhenotypicFilterType.FILTER, categories="X")
+        body = build_query_body(c, "uuid-1", "COUNT")
+        assert body["query"]["genomicFilters"] == []
+
+    def test_genomic_filters_do_not_affect_select(self):
+        from picsure._services.query_build import buildGenomicFilter, buildQuery
+        from picsure._services.query_run import build_query_body
+
+        gf = buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
+        q = buildQuery(genomicFilters=gf, includeConcepts=["\\bmi\\"])
+        body = build_query_body(q, "uuid-1", "DATAFRAME")
+        assert body["query"]["select"] == ["\\bmi\\"]
