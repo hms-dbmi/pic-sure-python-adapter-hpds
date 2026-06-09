@@ -282,5 +282,9 @@ def buildGenomicFilter(  # noqa: N802
         normalized = tuple(
             str(v.value) if isinstance(v, Enum) else str(v) for v in items
         )
+        if any(not v.strip() for v in normalized):
+            raise PicSureValidationError(
+                "buildGenomicFilter 'values' must not contain empty or blank strings."
+            )
 
     return GenomicFilter(key=key, values=normalized, min=min, max=max)

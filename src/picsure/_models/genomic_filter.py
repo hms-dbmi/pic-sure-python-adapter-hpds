@@ -9,8 +9,11 @@ from enum import Enum
 class VariantFrequency(str, Enum):
     """Population-frequency buckets for the ``Variant_frequency_as_text`` key.
 
-    Members are plain strings, so they can be passed directly to
-    ``picsure.buildGenomicFilter(values=...)``.
+    Pass a member directly to ``picsure.buildGenomicFilter(values=...)``; the
+    builder uses the member's ``.value`` (e.g. ``VariantFrequency.RARE`` →
+    ``"Rare"``). Note that ``str(VariantFrequency.RARE)`` is
+    ``"VariantFrequency.RARE"``, not the value — use ``.value`` if you need
+    the wire string yourself.
     """
 
     RARE = "Rare"
@@ -21,8 +24,11 @@ class VariantFrequency(str, Enum):
 class Zygosity(str, Enum):
     """Genotype codes for SNP / variant-spec genomic filters.
 
-    Members are plain strings, so they can be passed directly to
-    ``picsure.buildGenomicFilter(values=...)``.
+    Pass a member directly to ``picsure.buildGenomicFilter(values=...)``; the
+    builder uses the member's ``.value`` (e.g. ``Zygosity.HETEROZYGOUS`` →
+    ``"0/1"``). Note that ``str(Zygosity.HETEROZYGOUS)`` is
+    ``"Zygosity.HETEROZYGOUS"``, not the value — use ``.value`` if you need
+    the wire string yourself.
     """
 
     HETEROZYGOUS = "0/1"

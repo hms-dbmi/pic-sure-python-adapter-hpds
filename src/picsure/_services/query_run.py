@@ -55,7 +55,7 @@ def run_query(
     query_type: QueryType | str,
     *,
     use_legacy_query_path: bool = False,
-) -> CountResult | dict[str, CountResult] | pd.DataFrame | int | list[str]:
+) -> CountResult | dict[str, CountResult] | pd.DataFrame | list[str]:
     """Execute a query against PIC-SURE and return the result.
 
     Args:
@@ -77,7 +77,7 @@ def run_query(
         - ``cross_count``  → ``dict[str, CountResult]`` keyed by concept path
         - ``participant``  → :class:`pandas.DataFrame`
         - ``timestamp``    → :class:`pandas.DataFrame`
-        - ``variant_count`` → ``int``
+        - ``variant_count`` → :class:`CountResult` (handles obfuscation)
         - ``variant_list``  → ``list[str]``
         - ``vcf_excerpt`` / ``aggregate_vcf_excerpt`` → :class:`pandas.DataFrame`
 
@@ -300,12 +300,13 @@ _QUERY_TYPE_NOT_ALLOWED = "query type not allowed"
 _NO_VARIANTS_FOUND = "No Variants Found"
 
 
-def _parse_variant_count(raw: bytes) -> int:
-    """Parse a VARIANT_COUNT_FOR_QUERY response into an integer.
+def _parse_variant_count(raw: bytes) -> CountResult:
+    """Parse a VARIANT_COUNT_FOR_QUERY response into a :class:`CountResult`.
 
-    The server returns the count of distinct matching variant specs as a
-    plain integer string. (Unlike patient counts, variant counts are not
-    obfuscated; the integration test confirms this against the live server.)
+    The count of distinct matching variants is parsed with the same logic as
+    patient counts, so an obfuscated response (``"11309 ±3"`` noisy or
+    ``"< 10"`` suppressed) is represented faithfully rather than raising. An
+    exact count comes back as ``CountResult(value=N)``.
     """
     text = raw.decode("utf-8").strip()
     if _QUERY_TYPE_NOT_ALLOWED in text:
@@ -313,12 +314,7 @@ def _parse_variant_count(raw: bytes) -> int:
             f"The server rejected the variant-count query: '{text[:200]}'. "
             "This result type may be disabled on this deployment."
         )
-    try:
-        return int(text)
-    except ValueError as exc:
-        raise PicSureQueryError(
-            f"Expected an integer variant count, but got: '{text[:200]}'"
-        ) from exc
+    return _parse_count_string(text)
 
 
 def _parse_variant_list(raw: bytes) -> list[str]:

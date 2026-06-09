@@ -838,16 +838,42 @@ class TestVariantResultParsing:
             == "AGGREGATE_VCF_EXCERPT"
         )
 
-    def test_parse_variant_count(self):
+    def test_parse_variant_count_exact(self):
         from picsure._services.query_run import _parse_variant_count
 
-        assert _parse_variant_count(b"123") == 123
+        result = _parse_variant_count(b"123")
+        assert isinstance(result, CountResult)
+        assert result.value == 123
+        assert result.margin is None
+        assert result.cap is None
+
+    def test_parse_variant_count_noisy(self):
+        # If the server obfuscates the count, it is represented faithfully
+        # rather than raising on int().
+        from picsure._services.query_run import _parse_variant_count
+
+        result = _parse_variant_count("11309 ±3".encode())
+        assert result.value == 11309
+        assert result.margin == 3
+
+    def test_parse_variant_count_suppressed(self):
+        from picsure._services.query_run import _parse_variant_count
+
+        result = _parse_variant_count(b"< 10")
+        assert result.value is None
+        assert result.cap == 10
 
     def test_parse_variant_count_not_allowed(self):
         from picsure._services.query_run import _parse_variant_count
 
         with pytest.raises(PicSureQueryError):
             _parse_variant_count(b"VARIANT_COUNT_FOR_QUERY query type not allowed")
+
+    def test_parse_variant_count_garbage_raises(self):
+        from picsure._services.query_run import _parse_variant_count
+
+        with pytest.raises(PicSureQueryError):
+            _parse_variant_count(b"not a count")
 
     def test_parse_variant_list(self):
         from picsure._services.query_run import _parse_variant_list

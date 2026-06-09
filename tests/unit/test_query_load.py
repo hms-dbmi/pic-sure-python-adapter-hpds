@@ -454,6 +454,27 @@ class TestLoadQueryGenomic:
         assert result.genomicFilters[0].max == 0.01
         assert result.genomicFilters[0].values is None
 
+    @respx.mock
+    def test_filter_with_both_values_and_range_raises(self):
+        # The server contract makes values and min/max mutually exclusive; a
+        # response that violates it is malformed and must be rejected, not
+        # silently turned into an invalid filter.
+        body = _envelope(
+            {
+                "select": [],
+                "phenotypicClause": None,
+                "genomicFilters": [
+                    {"key": "Gene_with_variant", "values": ["BRCA1"], "min": 0.0}
+                ],
+                "expectedResultType": "COUNT",
+                "picsureId": None,
+                "id": None,
+            }
+        )
+        respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
+        with pytest.raises(PicSureQueryError, match="both"):
+            load_query(_make_client(), QUERY_ID)
+
 
 class TestLoadQueryErrors:
     def test_blank_id_raises_before_http(self):

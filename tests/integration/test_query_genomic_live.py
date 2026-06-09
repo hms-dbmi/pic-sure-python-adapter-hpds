@@ -16,14 +16,20 @@ class TestGenomicQueryLive:
             result.cap is not None and result.cap > 0
         )
 
-    def test_variant_count_returns_int(self, test_token, test_platform, test_gene):
-        # Resolves the spec's open question: confirm the server returns a
-        # plain integer (not an obfuscated count string) for variant_count.
+    def test_variant_count_returns_count_result(
+        self, test_token, test_platform, test_gene
+    ):
+        # variant_count is parsed like a patient count, so it handles both an
+        # exact value and an obfuscated response without raising.
+        from picsure import CountResult
+
         session = picsure.connect(platform=test_platform, token=test_token)
         gf = buildGenomicFilter("Gene_with_variant", values=[test_gene])
         result = session.runQuery(buildQuery(genomicFilters=gf), type="variant_count")
-        assert isinstance(result, int)
-        assert result >= 0
+        assert isinstance(result, CountResult)
+        assert (result.value is not None and result.value >= 0) or (
+            result.cap is not None and result.cap > 0
+        )
 
     def test_variant_list_returns_list(self, test_token, test_platform, test_gene):
         session = picsure.connect(platform=test_platform, token=test_token)

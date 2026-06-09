@@ -307,6 +307,18 @@ class TestBuildGenomicFilter:
         with pytest.raises(PicSureValidationError):
             buildGenomicFilter("", values=["a"])
 
+    def test_rejects_empty_scalar_value(self):
+        from picsure._services.query_build import buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError):
+            buildGenomicFilter("Gene_with_variant", values="")
+
+    def test_rejects_empty_value_in_sequence(self):
+        from picsure._services.query_build import buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError):
+            buildGenomicFilter("Gene_with_variant", values=["BRCA1", ""])
+
 
 class TestBuildQueryGenomic:
     def test_single_genomic_filter(self):

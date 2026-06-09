@@ -131,14 +131,15 @@ def _parse_genomic_filters(raw: object) -> tuple[GenomicFilter, ...]:
         values: tuple[str, ...] | None = None
         if isinstance(raw_values, list) and raw_values:
             values = tuple(str(v) for v in raw_values)
-        filters.append(
-            GenomicFilter(
-                key=key,
-                values=values,
-                min=coerce_float(item.get("min")),
-                max=coerce_float(item.get("max")),
+        gmin = coerce_float(item.get("min"))
+        gmax = coerce_float(item.get("max"))
+        if values is not None and (gmin is not None or gmax is not None):
+            raise PicSureQueryError(
+                f"Genomic filter '{key}' has both categorical values and a "
+                "numeric range (min/max); the server contract makes these "
+                "mutually exclusive."
             )
-        )
+        filters.append(GenomicFilter(key=key, values=values, min=gmin, max=gmax))
     return tuple(filters)
 
 

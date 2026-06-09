@@ -18,8 +18,8 @@ class QueryType(Enum):
       participant-level timestamps for longitudinal concepts.
     - ``CROSS_COUNT``  — returns ``dict[str, CountResult]`` keyed by
       concept path.
-    - ``VARIANT_COUNT`` — returns an ``int`` count of distinct matching
-      variants.
+    - ``VARIANT_COUNT`` — returns a :class:`CountResult` for the number of
+      distinct matching variants (preserving obfuscation, like ``COUNT``).
     - ``VARIANT_LIST``  — returns ``list[str]`` of variant spec strings.
     - ``VCF_EXCERPT``   — returns a :class:`pandas.DataFrame` (one row per
       variant, with per-patient genotype columns).
