@@ -58,3 +58,16 @@ class TestPublicFacade:
     def test_platform_is_importable(self):
         assert picsure.Platform.BDC_AUTHORIZED.url.startswith("https://")
         assert picsure.Platform.BDC_DEV_OPEN.requires_auth is False
+
+
+def test_genomic_exports_present():
+    import picsure
+
+    for name in (
+        "buildGenomicFilter",
+        "GenomicFilter",
+        "VariantFrequency",
+        "Zygosity",
+    ):
+        assert hasattr(picsure, name), name
+        assert name in picsure.__all__, name
