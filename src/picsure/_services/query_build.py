@@ -277,8 +277,7 @@ def buildGenomicFilter(  # noqa: N802
         items = [values] if isinstance(values, str) else list(values)
         if not items:
             raise PicSureValidationError(
-                "buildGenomicFilter 'values' must be a non-empty string or "
-                "sequence."
+                "buildGenomicFilter 'values' must be a non-empty string or sequence."
             )
         normalized = tuple(
             str(v.value) if isinstance(v, Enum) else str(v) for v in items

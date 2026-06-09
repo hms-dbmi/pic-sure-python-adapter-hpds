@@ -418,9 +418,7 @@ class TestLoadQueryGenomic:
             {
                 "select": [],
                 "phenotypicClause": None,
-                "genomicFilters": [
-                    {"key": "Gene_with_variant", "values": ["BRCA1"]}
-                ],
+                "genomicFilters": [{"key": "Gene_with_variant", "values": ["BRCA1"]}],
                 "expectedResultType": "COUNT",
                 "picsureId": None,
                 "id": None,
