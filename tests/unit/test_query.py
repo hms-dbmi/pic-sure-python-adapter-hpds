@@ -32,3 +32,9 @@ class TestQueryTypeAlias:
         result = q.to_query_json()
         assert result["phenotypicFilterType"] == "REQUIRED"
         assert result["conceptPath"] == "\\path\\"
+
+
+def test_query_genomic_filters_defaults_empty():
+    from picsure import Query
+
+    assert Query().genomicFilters == ()

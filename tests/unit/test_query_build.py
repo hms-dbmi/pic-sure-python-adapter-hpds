@@ -306,3 +306,30 @@ class TestBuildGenomicFilter:
 
         with pytest.raises(PicSureValidationError):
             buildGenomicFilter("", values=["a"])
+
+
+class TestBuildQueryGenomic:
+    def test_single_genomic_filter(self):
+        from picsure._services.query_build import buildGenomicFilter
+
+        gf = buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
+        q = buildQuery(genomicFilters=gf)
+        assert isinstance(q, Query)
+        assert q.genomicFilters == (gf,)
+        assert q.phenotypicFilter is None
+
+    def test_genomic_filter_list(self):
+        from picsure._services.query_build import buildGenomicFilter
+
+        gf1 = buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
+        gf2 = buildGenomicFilter("Variant_frequency_in_gnomAD", max=0.01)
+        q = buildQuery(genomicFilters=[gf1, gf2])
+        assert q.genomicFilters == (gf1, gf2)
+
+    def test_genomic_filter_rejects_wrong_type(self):
+        with pytest.raises(PicSureValidationError):
+            buildQuery(genomicFilters=["not a filter"])
+
+    def test_empty_still_rejected(self):
+        with pytest.raises(PicSureValidationError):
+            buildQuery()

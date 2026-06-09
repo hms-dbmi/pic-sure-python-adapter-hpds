@@ -140,17 +140,22 @@ def buildClauseGroup(  # noqa: N802
 def buildQuery(  # noqa: N802
     phenotypicFilter: Clause | ClauseGroup | None = None,  # noqa: N803
     includeConcepts: str | list[str] | tuple[str, ...] = (),  # noqa: N803
+    genomicFilters: GenomicFilter | Sequence[GenomicFilter] | None = None,  # noqa: N803
 ) -> Query:
     """Assemble a complete query from a filter tree and/or output concepts.
 
     Args:
         phenotypicFilter: A Clause or ClauseGroup (from ``buildClause()`` /
             ``buildClauseGroup()``) to filter on, or ``None`` for an
-            include-only query.
+            include-only or genomic-only query.
         includeConcepts: *Additional* concept path(s) to include as output
             columns, beyond the variables already named in
             ``phenotypicFilter`` — those are returned automatically. Order is
             preserved and duplicates are dropped.
+        genomicFilters: A :class:`GenomicFilter` (from
+            ``buildGenomicFilter()``), a sequence of them, or ``None``.
+            Applied as a flat conjunctive list alongside the phenotypic
+            filter.
 
     Returns:
         A Query suitable for ``Session.runQuery()``, ``Session.exportAsPFB()``,
@@ -158,7 +163,8 @@ def buildQuery(  # noqa: N802
 
     Raises:
         PicSureValidationError: If ``phenotypicFilter`` is not a Clause /
-            ClauseGroup / None, or if both arguments are empty.
+            ClauseGroup / None, if ``genomicFilters`` contains a non-filter,
+            or if all arguments are empty.
 
     Example:
         >>> from picsure import buildClause, buildQuery, PhenotypicFilterType
@@ -180,15 +186,29 @@ def buildQuery(  # noqa: N802
             "buildClause()/buildClauseGroup()), or None."
         )
 
-    if phenotypicFilter is None and not cols:
+    if genomicFilters is None:
+        genomic: tuple[GenomicFilter, ...] = ()
+    elif isinstance(genomicFilters, GenomicFilter):
+        genomic = (genomicFilters,)
+    else:
+        genomic = tuple(genomicFilters)
+    if any(not isinstance(g, GenomicFilter) for g in genomic):
         raise PicSureValidationError(
-            "buildQuery requires a phenotypicFilter, includeConcepts, or both."
+            "genomicFilters must be GenomicFilter objects (from "
+            "buildGenomicFilter()), a single one, or None."
         )
 
-    # de-dup while preserving order
+    if phenotypicFilter is None and not cols and not genomic:
+        raise PicSureValidationError(
+            "buildQuery requires a phenotypicFilter, includeConcepts, or "
+            "genomicFilters."
+        )
+
+    # de-dup includeConcepts while preserving order
     return Query(
         phenotypicFilter=phenotypicFilter,
         includeConcepts=tuple(dict.fromkeys(cols)),
+        genomicFilters=genomic,
     )
 
 
