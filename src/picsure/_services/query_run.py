@@ -298,6 +298,13 @@ def _parse_dataframe(raw: bytes) -> pd.DataFrame:
 
 _QUERY_TYPE_NOT_ALLOWED = "query type not allowed"
 _NO_VARIANTS_FOUND = "No Variants Found"
+_VARIANT_RESULT_UNSUPPORTED = (
+    "The server returned an empty response for a variant result type. The "
+    "variant result types (variant_count, variant_list, vcf_excerpt, "
+    "aggregate_vcf_excerpt) are not available on this PIC-SURE deployment "
+    "yet — genomic filters still work as a constraint on count / "
+    "participant queries."
+)
 
 
 def _parse_variant_count(raw: bytes) -> CountResult:
@@ -309,6 +316,8 @@ def _parse_variant_count(raw: bytes) -> CountResult:
     exact count comes back as ``CountResult(value=N)``.
     """
     text = raw.decode("utf-8").strip()
+    if not text:
+        raise PicSureQueryError(_VARIANT_RESULT_UNSUPPORTED)
     if _QUERY_TYPE_NOT_ALLOWED in text:
         raise PicSureQueryError(
             f"The server rejected the variant-count query: '{text[:200]}'. "
@@ -328,6 +337,8 @@ def _parse_variant_list(raw: bytes) -> list[str]:
     trailing space, so ``", "`` only occurs between specs.
     """
     text = raw.decode("utf-8").strip()
+    if not text:
+        raise PicSureQueryError(_VARIANT_RESULT_UNSUPPORTED)
     if _QUERY_TYPE_NOT_ALLOWED in text:
         raise PicSureQueryError(
             f"The server rejected the variant-list query: '{text[:200]}'. "
@@ -360,7 +371,12 @@ def _parse_vcf_excerpt(raw: bytes) -> pd.DataFrame:
             f"Server returned a malformed VCF excerpt: {raw[:200]!r}"
         ) from exc
     stripped = text.strip()
-    if not stripped or stripped.startswith(_NO_VARIANTS_FOUND):
+    if not stripped:
+        # A served deployment signals "empty" with the "No Variants Found"
+        # sentinel below; a truly empty body means the result type is not
+        # available here.
+        raise PicSureQueryError(_VARIANT_RESULT_UNSUPPORTED)
+    if stripped.startswith(_NO_VARIANTS_FOUND):
         return pd.DataFrame()
     if _QUERY_TYPE_NOT_ALLOWED in stripped:
         raise PicSureQueryError(

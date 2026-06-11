@@ -918,3 +918,18 @@ class TestVariantResultParsing:
 
         with pytest.raises(PicSureQueryError):
             _parse_vcf_excerpt(b"VCF_EXCERPT query type not allowed")
+
+    def test_empty_body_reports_unsupported_deployment(self):
+        # BDC returns HTTP 200 with an empty body for variant result types it
+        # does not serve. Surface that as a clear "not available on this
+        # deployment" error rather than a confusing parse failure (or, for
+        # VCF, a silently-empty DataFrame).
+        from picsure._services.query_run import (
+            _parse_variant_count,
+            _parse_variant_list,
+            _parse_vcf_excerpt,
+        )
+
+        for parser in (_parse_variant_count, _parse_variant_list, _parse_vcf_excerpt):
+            with pytest.raises(PicSureQueryError, match="not available on this"):
+                parser(b"")

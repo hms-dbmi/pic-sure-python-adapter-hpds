@@ -24,6 +24,13 @@ class QueryType(Enum):
     - ``VCF_EXCERPT``   — returns a :class:`pandas.DataFrame` (one row per
       variant, with per-patient genotype columns).
     - ``AGGREGATE_VCF_EXCERPT`` — like ``VCF_EXCERPT`` without patient columns.
+
+    Note:
+        The four variant result types depend on the deployment serving them.
+        Some deployments (e.g. BDC as of 2026-06) do not yet, and return an
+        empty response; ``runQuery`` raises a clear ``PicSureQueryError`` in
+        that case. Genomic *filters* work as a constraint on ``COUNT`` /
+        ``PARTICIPANT`` regardless.
     """
 
     COUNT = "count"
