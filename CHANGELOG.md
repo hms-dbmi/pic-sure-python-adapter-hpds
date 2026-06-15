@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-06-15
+
 ### Changed
 - **BREAKING:** The query builders are renamed to a `build*` triplet whose names match their return types: `createSubQuery` → `buildClause` (returns `Clause`), the clause-combining `buildQuery` → `buildClauseGroup` (returns `ClauseGroup`). The name `buildQuery` is now the query *assembler* `buildQuery(phenotypicFilter=None, includeConcepts=())` and returns a `Query`.
 - **BREAKING:** `Query` is now a dataclass (`phenotypicFilter`, `includeConcepts`) rather than a `Clause | ClauseGroup` type alias. `runQuery`/`exportAsPFB`/`saveQueryByName` accept a `Query` or a bare `Clause`/`ClauseGroup`. A saved query that selects output concepts now loads as a `Query` (previously a `ClauseGroup` of `SELECT` clauses).
