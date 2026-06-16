@@ -1,0 +1,134 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+# Least privilege by default; jobs opt into what they need.
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # hatch-vcs reads git history/tags for the version
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      - run: uv sync --frozen
+      - run: uv run ruff check src/ tests/
+      - run: uv run ruff format --check src/ tests/
+      - run: uv run mypy src/
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      - run: uv python install ${{ matrix.python-version }}
+      - run: uv sync --frozen --python ${{ matrix.python-version }}
+      - run: uv run pytest tests/unit/ -v --cov=picsure --cov-fail-under=80
+
+  build:
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    outputs:
+      prerelease: ${{ steps.classify.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # required: full history + tags so hatch-vcs derives the tagged version
+
+      - name: Classify tag (final vs pre-release)
+        id: classify
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "Final release: $tag -> PyPI"
+          elif [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(a|b|rc)[0-9]+$ ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "Pre-release: $tag -> TestPyPI"
+          else
+            echo "::error::Tag '$tag' is not vMAJOR.MINOR.PATCH or a PEP 440 pre-release (e.g. v2.0.0, v2.0.0rc1)"
+            exit 1
+          fi
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Build sdist + wheel
+        run: uv build
+
+      - name: Check distribution metadata
+        run: uvx twine check dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish-testpypi:
+    needs: build
+    if: needs.build.outputs.prerelease == 'true'
+    runs-on: ubuntu-latest
+    environment: TestPyPi
+    permissions:
+      id-token: write # OIDC token for Trusted Publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  publish-pypi:
+    needs: build
+    if: needs.build.outputs.prerelease == 'false'
+    runs-on: ubuntu-latest
+    environment: PyPi
+    permissions:
+      id-token: write # OIDC token for Trusted Publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    needs: [build, publish-pypi, publish-testpypi]
+    # Run once whichever publish job for this tag has succeeded.
+    if: always() && (needs.publish-pypi.result == 'success' || needs.publish-testpypi.result == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub Release + upload assets
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            ${{ needs.build.outputs.prerelease == 'true' && '--prerelease' || '' }} \
+            dist/*
