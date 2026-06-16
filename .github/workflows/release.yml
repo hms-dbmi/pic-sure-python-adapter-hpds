@@ -109,26 +109,3 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
-
-  github-release:
-    needs: [build, publish-pypi, publish-testpypi]
-    # Run once whichever publish job for this tag has succeeded.
-    if: always() && (needs.publish-pypi.result == 'success' || needs.publish-testpypi.result == 'success')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write # create the GitHub Release + upload assets
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --title "${GITHUB_REF_NAME}" \
-            --generate-notes \
-            ${{ needs.build.outputs.prerelease == 'true' && '--prerelease' || '' }} \
-            dist/*
