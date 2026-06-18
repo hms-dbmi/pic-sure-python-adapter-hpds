@@ -42,13 +42,14 @@ session.exportCSV(df, "cohort.csv")
 
 ## Documentation
 
-- **[Getting Started](docs/getting-started.md)** — connect and run your first query
-- **[Search & Facets](docs/guides/search-and-facets.md)** — search the dictionary with facet filters
-- **[Building Queries](docs/guides/building-queries.md)** — nested AND/OR clause groups
-- **[Running & Exporting](docs/guides/running-and-exporting.md)** — counts, DataFrames, CSV/TSV/PFB
-- **[API Reference](docs/reference/api.md)** — complete function documentation
-- **[Migration Guide](docs/guides/migrating-from-picsurehpdslib.md)** — upgrading from PicSureHpdsLib
+- **[Getting Started](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/blob/main/docs/getting-started.md)** — connect and run your first query
+- **[Search & Facets](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/blob/main/docs/guides/search-and-facets.md)** — search the dictionary with facet filters
+- **[Building Queries](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/blob/main/docs/guides/building-queries.md)** — nested AND/OR clause groups
+- **[Running & Exporting](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/blob/main/docs/guides/running-and-exporting.md)** — counts, DataFrames, CSV/TSV/PFB
+- **[API Reference](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/blob/main/docs/reference/api.md)** — complete function documentation
+- **[Migration Guide](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/blob/main/docs/guides/migrating-from-picsurehpdslib.md)** — upgrading from PicSureHpdsLib
+- **[Changelog](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/blob/main/CHANGELOG.md)** — release history and notable changes
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE) for details.
+Apache 2.0 — see [LICENSE](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/blob/main/LICENSE) for details.
