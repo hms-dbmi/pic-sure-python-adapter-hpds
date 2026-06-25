@@ -9,6 +9,44 @@ from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.resource import Resource
 from picsure._models.session import Session
 from picsure._transport.client import PicSureClient
+from picsure.errors import PicSureValidationError
+
+
+class _GenomicFakeClient:
+    """Minimal client stub: records the last GET path, returns canned JSON."""
+
+    def __init__(self, response=None):
+        self._response = response or {"results": ["BRCA1"], "page": 1, "total": 1}
+        self.last_path = None
+
+    def get_json(self, path):
+        self.last_path = path
+        return self._response
+
+    def close(self):
+        pass
+
+
+def _make_genomic_session(supports_genomic, client=None):
+    return Session(
+        client=client or _GenomicFakeClient(),
+        user_email="u",
+        token_expiration="N/A",
+        resources=[Resource(uuid="RID", name="auth-hpds", description="")],
+        resource_uuid="RID",
+        supports_genomic=supports_genomic,
+    )
+
+
+def test_require_genomic_raises_when_unsupported():
+    s = _make_genomic_session(False)
+    with pytest.raises(PicSureValidationError, match="authorized platform"):
+        s._require_genomic()
+
+
+def test_require_genomic_passes_when_supported():
+    s = _make_genomic_session(True)
+    assert s._require_genomic() is None
 
 
 def _make_session(

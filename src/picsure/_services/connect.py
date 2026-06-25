@@ -47,6 +47,7 @@ def connect(
     *,
     include_consents: bool | None = None,
     requires_auth: bool | None = None,
+    supports_genomic: bool | None = None,
     dev_mode: bool | None = None,
 ) -> Session:
     """Connect to a PIC-SURE instance and return a Session.
@@ -70,6 +71,10 @@ def connect(
             Platform members default to their own flag; custom URLs
             default to ``True``.  Pass ``False`` to skip the PSAMA
             profile call on an open-access deployment.
+        supports_genomic: Override whether genomic operations are allowed
+            on this session.  Defaults to the platform's own flag (``True``
+            for ``Platform.BDC_AUTHORIZED``, ``False`` otherwise).  For
+            custom URLs pass ``True`` to allow genomic operations.
         dev_mode: Developer-mode toggle. ``None`` (default) defers to
             the ``PICSURE_DEV_MODE`` env var; ``True`` / ``False``
             overrides it. When on, events for every HTTP call and
@@ -106,6 +111,7 @@ def connect(
         platform,
         include_consents=include_consents,
         requires_auth=requires_auth,
+        supports_genomic=supports_genomic,
     )
     display_name = platform.label if isinstance(platform, Platform) else platform
 
@@ -198,6 +204,7 @@ def connect(
         total_concepts=total_concepts,
         dev_config=dev_config,
         use_legacy_query_path=use_legacy_query_path,
+        supports_genomic=info.supports_genomic,
     )
 
 

@@ -41,6 +41,7 @@ class Session:
         total_concepts: int = 0,
         dev_config: DevConfig | None = None,
         use_legacy_query_path: bool = False,
+        supports_genomic: bool = False,
     ) -> None:
         self._client = client
         self._user_email = user_email
@@ -50,6 +51,7 @@ class Session:
         self._consents: list[str] = list(consents) if consents else []
         self._total_concepts = total_concepts
         self._use_legacy_query_path = use_legacy_query_path
+        self._supports_genomic = supports_genomic
         self._dev_config = (
             dev_config
             if dev_config is not None
@@ -503,6 +505,15 @@ class Session:
     def dev_clear(self) -> None:
         """Empty the event buffer. No-op when dev mode is disabled."""
         self._dev_config.buffer.clear()
+
+    def _require_genomic(self) -> None:
+        """Raise unless this session is on a genomic-capable platform."""
+        if not self._supports_genomic:
+            raise PicSureValidationError(
+                "Genomic operations require an authorized platform "
+                "(e.g. Platform.BDC_AUTHORIZED); this session is connected "
+                "to an open or non-genomic resource."
+            )
 
     def _default_resource_uuid(self) -> str:
         if self._resource_uuid is not None:
