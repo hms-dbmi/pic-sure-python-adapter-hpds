@@ -15,6 +15,7 @@ class PlatformConfig:
     label: str
     include_consents: bool
     requires_auth: bool
+    supports_genomic: bool
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,7 @@ class PlatformInfo:
     # Default True for custom URLs — safer to assume a token is needed
     # unless the caller explicitly opts out with ``requires_auth=False``.
     requires_auth: bool = True
+    supports_genomic: bool = False
 
 
 class Platform(Enum):
@@ -48,6 +50,7 @@ class Platform(Enum):
         label="BDC Authorized",
         include_consents=True,
         requires_auth=True,
+        supports_genomic=True,
     )
     BDC_OPEN = PlatformConfig(
         url="https://picsure.biodatacatalyst.nhlbi.nih.gov",
@@ -55,6 +58,7 @@ class Platform(Enum):
         label="BDC Open",
         include_consents=False,
         requires_auth=False,
+        supports_genomic=False,
     )
     BDC_DEV_AUTHORIZED = PlatformConfig(
         url="https://dev.picsure.biodatacatalyst.nhlbi.nih.gov",
@@ -62,6 +66,7 @@ class Platform(Enum):
         label="BDC Authorized",
         include_consents=True,
         requires_auth=True,
+        supports_genomic=True,
     )
     BDC_DEV_OPEN = PlatformConfig(
         url="https://dev.picsure.biodatacatalyst.nhlbi.nih.gov",
@@ -69,6 +74,7 @@ class Platform(Enum):
         label="BDC Open",
         include_consents=False,
         requires_auth=False,
+        supports_genomic=False,
     )
     BDC_PREDEV_AUTHORIZED = PlatformConfig(
         url="https://predev.picsure.biodatacatalyst.nhlbi.nih.gov",
@@ -76,6 +82,7 @@ class Platform(Enum):
         label="BDC Authorized",
         include_consents=True,
         requires_auth=True,
+        supports_genomic=True,
     )
     BDC_PREDEV_OPEN = PlatformConfig(
         url="https://predev.picsure.biodatacatalyst.nhlbi.nih.gov",
@@ -83,6 +90,7 @@ class Platform(Enum):
         label="BDC Open",
         include_consents=False,
         requires_auth=False,
+        supports_genomic=False,
     )
     NHANES_AUTHORIZED = PlatformConfig(
         url="https://nhanes.hms.harvard.edu/",
@@ -90,6 +98,7 @@ class Platform(Enum):
         label="Nhanes Authorized",
         include_consents=False,
         requires_auth=True,
+        supports_genomic=False,
     )
     NHANES_OPEN = PlatformConfig(
         url="https://nhanes.hms.harvard.edu/",
@@ -97,6 +106,7 @@ class Platform(Enum):
         label="Nhanes Open",
         include_consents=False,
         requires_auth=False,
+        supports_genomic=False,
     )
 
     @property
@@ -119,12 +129,17 @@ class Platform(Enum):
     def requires_auth(self) -> bool:
         return self.value.requires_auth
 
+    @property
+    def supports_genomic(self) -> bool:
+        return self.value.supports_genomic
+
 
 def resolve_platform(
     platform: Platform | str,
     *,
     include_consents: bool | None = None,
     requires_auth: bool | None = None,
+    supports_genomic: bool | None = None,
 ) -> PlatformInfo:
     """Resolve a platform enum or custom URL to connection details.
 
@@ -137,10 +152,13 @@ def resolve_platform(
         requires_auth: Overrides the auth requirement.  Custom URLs
             default to ``True`` (a token is required); :class:`Platform`
             members default to their own flag.
+        supports_genomic: Overrides genomic support.  Custom URLs
+            default to ``False``; :class:`Platform` members default to
+            their own flag.
 
     Returns:
         A :class:`PlatformInfo` with the base URL, optional resource
-        UUID, consent policy, and auth requirement.
+        UUID, consent policy, auth requirement, and genomic support flag.
 
     Raises:
         PicSureValidationError: If the value is not a ``Platform`` member
@@ -155,11 +173,17 @@ def resolve_platform(
         resolved_auth = (
             requires_auth if requires_auth is not None else platform.requires_auth
         )
+        resolved_genomic = (
+            supports_genomic
+            if supports_genomic is not None
+            else platform.supports_genomic
+        )
         return PlatformInfo(
             url=platform.url,
             resource_uuid=platform.resource_uuid,
             include_consents=resolved_consents,
             requires_auth=resolved_auth,
+            supports_genomic=resolved_genomic,
         )
 
     if isinstance(platform, str) and platform.startswith(("http://", "https://")):
@@ -167,6 +191,7 @@ def resolve_platform(
             url=platform.rstrip("/"),
             include_consents=bool(include_consents),
             requires_auth=True if requires_auth is None else requires_auth,
+            supports_genomic=bool(supports_genomic),
         )
 
     valid = ", ".join(f"Platform.{p.name}" for p in Platform)
