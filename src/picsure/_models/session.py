@@ -242,6 +242,56 @@ class Session:
             facets=facets,
         )
 
+    @timed("session.searchGenomicValues")
+    def searchGenomicValues(  # noqa: N802
+        self,
+        genomicConceptPath: str,  # noqa: N803
+        *,
+        query: str = "",
+        page: int = 1,
+        size: int = 100,
+    ) -> pd.DataFrame:
+        """Look up valid values for a genomic annotation key (paginated).
+
+        Authorized platforms only. Returns one page of matching values as a
+        single-column (``value``) DataFrame; pagination metadata (``total``,
+        ``page``, ``size``) is preserved on ``df.attrs``. Raise ``size`` to
+        pull more results per call, or step ``page`` to walk the full set.
+
+        Args:
+            genomicConceptPath: The genomic key, e.g. ``"Gene_with_variant"``
+                or ``"Variant_consequence_calculated"``.
+            query: Optional case-insensitive search term to narrow results
+                (e.g. ``"BRCA"``). Empty returns the first page of all values.
+            page: 1-based page number.
+            size: Page size (number of values per call).
+
+        Returns:
+            A :class:`pandas.DataFrame` with a single ``value`` column.
+
+        Raises:
+            PicSureValidationError: If the session is not on a genomic-capable
+                platform, or the key is empty.
+
+        Example:
+            >>> df = session.searchGenomicValues("Gene_with_variant", query="BRCA")
+            >>> df["value"].tolist()
+            ['BRCA1', 'BRCA2']
+            >>> df.attrs["total"]
+        """
+        self._require_genomic()
+
+        from picsure._services.genomic_search import search_genomic_values
+
+        return search_genomic_values(
+            self._client,
+            self._default_resource_uuid(),
+            genomicConceptPath,
+            query=query,
+            page=page,
+            size=size,
+        )
+
     @timed("session.runQuery")
     def runQuery(  # noqa: N802
         self,

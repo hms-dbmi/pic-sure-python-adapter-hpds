@@ -81,6 +81,21 @@ def test_runquery_nongenomic_unaffected_on_open_session(monkeypatch):
     assert s.runQuery(clause, type="count") == "OK"
 
 
+def test_search_genomic_values_gated_on_open_session():
+    s = _make_genomic_session(False)
+    with pytest.raises(PicSureValidationError, match="authorized platform"):
+        s.searchGenomicValues("Gene_with_variant")
+
+
+def test_search_genomic_values_authorized_delegates():
+    client = _GenomicFakeClient({"results": ["BRCA1", "BRCA2"], "page": 1, "total": 2})
+    s = _make_genomic_session(True, client)
+    df = s.searchGenomicValues("Gene_with_variant", query="BRCA", size=10)
+    assert df["value"].tolist() == ["BRCA1", "BRCA2"]
+    assert "genomicConceptPath=Gene_with_variant" in client.last_path
+    assert "size=10" in client.last_path
+
+
 def _make_session(
     resources: list[Resource] | None = None,
     email: str = "user@example.com",
