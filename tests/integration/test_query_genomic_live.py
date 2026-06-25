@@ -73,3 +73,13 @@ class TestGenomicQueryLive:
         # single fields. Require the spec shape (>= the 4 core VCF fields).
         for spec in result:
             assert len(spec.split(",")) >= 4, f"variant spec looks fragmented: {spec!r}"
+
+    def test_search_genomic_values_returns_genes(
+        self, test_token, test_platform, test_gene
+    ):
+        session = picsure.connect(platform=test_platform, token=test_token)
+        df = session.searchGenomicValues("Gene_with_variant", query=test_gene, size=20)
+        assert "value" in df.columns
+        assert df.attrs.get("total") is not None
+        if len(df):
+            assert all(isinstance(v, str) for v in df["value"])
