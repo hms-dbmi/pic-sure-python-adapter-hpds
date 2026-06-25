@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 import respx
 
+import picsure
 from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.resource import Resource
 from picsure._models.session import Session
@@ -47,6 +48,37 @@ def test_require_genomic_raises_when_unsupported():
 def test_require_genomic_passes_when_supported():
     s = _make_genomic_session(True)
     assert s._require_genomic() is None
+
+
+def test_runquery_gated_when_genomic_on_open_session():
+    s = _make_genomic_session(False)
+    q = picsure.buildQuery(
+        genomicFilters=picsure.buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
+    )
+    with pytest.raises(PicSureValidationError, match="authorized platform"):
+        s.runQuery(q, type="count")
+
+
+def test_runquery_genomic_allowed_when_supported(monkeypatch):
+    import picsure._services.query_run as qr
+
+    monkeypatch.setattr(qr, "run_query", lambda *a, **k: "OK")
+    s = _make_genomic_session(True)
+    q = picsure.buildQuery(
+        genomicFilters=picsure.buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
+    )
+    assert s.runQuery(q, type="count") == "OK"
+
+
+def test_runquery_nongenomic_unaffected_on_open_session(monkeypatch):
+    import picsure._services.query_run as qr
+
+    monkeypatch.setattr(qr, "run_query", lambda *a, **k: "OK")
+    s = _make_genomic_session(False)
+    clause = picsure.buildClause(
+        "\\sex\\", type=picsure.PhenotypicFilterType.FILTER, categories="Male"
+    )
+    assert s.runQuery(clause, type="count") == "OK"
 
 
 def _make_session(

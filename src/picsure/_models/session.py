@@ -283,6 +283,15 @@ class Session:
             ...     print(f"fewer than {count.cap} participants")
             >>> df = session.runQuery(my_query, type="participant")
         """
+        from picsure._models.query import Query
+
+        if (
+            isinstance(query, Query)
+            and query.genomicFilters
+            and not self._supports_genomic
+        ):
+            self._require_genomic()
+
         from picsure._services.query_run import run_query
 
         return run_query(
