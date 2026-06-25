@@ -28,7 +28,9 @@ class TestGenomicQueryLive:
     ):
         from picsure import CountResult
 
-        session = picsure.connect(platform=test_platform, token=test_token)
+        session = picsure.connect(
+            platform=test_platform, token=test_token, supports_genomic=True
+        )
         gf = buildGenomicFilter("Gene_with_variant", values=[test_gene])
         result = session.runQuery(buildQuery(genomicFilters=gf), type="count")
         assert isinstance(result, CountResult)
@@ -43,7 +45,9 @@ class TestGenomicQueryLive:
         # exact value and an obfuscated response without raising.
         from picsure import CountResult
 
-        session = picsure.connect(platform=test_platform, token=test_token)
+        session = picsure.connect(
+            platform=test_platform, token=test_token, supports_genomic=True
+        )
         gf = buildGenomicFilter("Gene_with_variant", values=[test_gene])
         try:
             result = session.runQuery(
@@ -57,7 +61,9 @@ class TestGenomicQueryLive:
         )
 
     def test_variant_list_returns_list(self, test_token, test_platform, test_gene):
-        session = picsure.connect(platform=test_platform, token=test_token)
+        session = picsure.connect(
+            platform=test_platform, token=test_token, supports_genomic=True
+        )
         gf = buildGenomicFilter("Gene_with_variant", values=[test_gene])
         try:
             result = session.runQuery(
@@ -77,7 +83,9 @@ class TestGenomicQueryLive:
     def test_search_genomic_values_returns_genes(
         self, test_token, test_platform, test_gene
     ):
-        session = picsure.connect(platform=test_platform, token=test_token)
+        session = picsure.connect(
+            platform=test_platform, token=test_token, supports_genomic=True
+        )
         df = session.searchGenomicValues("Gene_with_variant", query=test_gene, size=20)
         assert "value" in df.columns
         assert df.attrs.get("total") is not None

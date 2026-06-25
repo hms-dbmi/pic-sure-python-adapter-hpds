@@ -277,7 +277,6 @@ class Session:
             >>> df = session.searchGenomicValues("Gene_with_variant", query="BRCA")
             >>> df["value"].tolist()
             ['BRCA1', 'BRCA2']
-            >>> df.attrs["total"]
         """
         self._require_genomic()
 
