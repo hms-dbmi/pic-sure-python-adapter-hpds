@@ -9,18 +9,17 @@ def test_to_query_json_categorical():
     }
 
 
-def test_to_query_json_range():
-    gf = GenomicFilter(key="Variant_frequency_in_gnomAD", min=0.0, max=0.01)
-    assert gf.to_query_json() == {
-        "key": "Variant_frequency_in_gnomAD",
-        "min": 0.0,
-        "max": 0.01,
-    }
+def test_to_query_json_omits_absent_values():
+    gf = GenomicFilter(key="X")
+    assert gf.to_query_json() == {"key": "X"}
 
 
-def test_to_query_json_omits_absent_fields():
-    gf = GenomicFilter(key="X", min=0.5)
-    assert gf.to_query_json() == {"key": "X", "min": 0.5}
+def test_genomic_filter_has_no_numeric_range():
+    # Numeric range (min/max) filtering was removed; the model is categorical
+    # only, matching the genomic filters the PIC-SURE frontend actually sends.
+    gf = GenomicFilter(key="Gene_with_variant", values=("BRCA1",))
+    assert not hasattr(gf, "min")
+    assert not hasattr(gf, "max")
 
 
 def test_value_enums_are_strings():

@@ -281,25 +281,19 @@ class TestBuildGenomicFilter:
         )
         assert gf.values == ("Rare",)
 
-    def test_range(self):
+    def test_no_min_max_kwargs(self):
+        # Numeric range filtering was removed; min/max are no longer accepted,
+        # matching the categorical-only genomic filters the frontend sends.
         from picsure._services.query_build import buildGenomicFilter
 
-        gf = buildGenomicFilter("Variant_frequency_in_gnomAD", min=0.0, max=0.01)
-        assert gf.min == 0.0
-        assert gf.max == 0.01
-        assert gf.values is None
+        with pytest.raises(TypeError):
+            buildGenomicFilter("X", min=0.0, max=0.01)  # type: ignore[call-arg]
 
-    def test_rejects_values_and_range(self):
+    def test_values_required(self):
         from picsure._services.query_build import buildGenomicFilter
 
-        with pytest.raises(PicSureValidationError):
-            buildGenomicFilter("X", values=["a"], min=0.1)
-
-    def test_rejects_neither(self):
-        from picsure._services.query_build import buildGenomicFilter
-
-        with pytest.raises(PicSureValidationError):
-            buildGenomicFilter("X")
+        with pytest.raises(TypeError):
+            buildGenomicFilter("X")  # type: ignore[call-arg]
 
     def test_rejects_empty_key(self):
         from picsure._services.query_build import buildGenomicFilter
@@ -334,7 +328,7 @@ class TestBuildQueryGenomic:
         from picsure._services.query_build import buildGenomicFilter
 
         gf1 = buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
-        gf2 = buildGenomicFilter("Variant_frequency_in_gnomAD", max=0.01)
+        gf2 = buildGenomicFilter("Variant_frequency_as_text", values=["Common"])
         q = buildQuery(genomicFilters=[gf1, gf2])
         assert q.genomicFilters == (gf1, gf2)
 

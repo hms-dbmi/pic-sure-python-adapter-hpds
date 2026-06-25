@@ -38,33 +38,26 @@ class Zygosity(str, Enum):
 
 @dataclass(frozen=True)
 class GenomicFilter:
-    """A single genomic (variant-annotation) filter in a PIC-SURE query.
+    """A single categorical genomic (variant-annotation) filter in a query.
 
     Created by ``picsure.buildGenomicFilter()``. Genomic filters form a flat,
     conjunctive list on the query — there is no AND/OR nesting, unlike the
     phenotypic ``Clause`` / ``ClauseGroup`` tree.
 
-    A filter is either *categorical* (``values`` set) or a *numeric range*
-    (``min`` and/or ``max`` set), never both — enforced by
-    ``buildGenomicFilter()``.
+    A filter matches when the annotation named by ``key`` is one of ``values``.
+    (A variant-spec / SNP key may carry no ``values``, in which case the server
+    applies its default genotype match.)
 
     **Wire format.** :meth:`to_query_json` emits a v3 ``GenomicFilter`` record
-    (``{"key", "values"?, "min"?, "max"?}``) per the
-    ``/picsure/v3/query/sync`` contract.
+    (``{"key", "values"?}``) per the ``/picsure/v3/query/sync`` contract.
     """
 
     key: str
     values: tuple[str, ...] | None = None
-    min: float | None = None
-    max: float | None = None
 
     def to_query_json(self) -> dict[str, object]:
         """Serialize this filter as a v3 ``GenomicFilter`` record."""
         out: dict[str, object] = {"key": self.key}
         if self.values is not None:
             out["values"] = list(self.values)
-        if self.min is not None:
-            out["min"] = self.min
-        if self.max is not None:
-            out["max"] = self.max
         return out

@@ -127,19 +127,17 @@ def _parse_genomic_filters(raw: object) -> tuple[GenomicFilter, ...]:
         key = item.get("key")
         if not isinstance(key, str):
             raise PicSureQueryError("Genomic filter is missing a 'key' string.")
+        if item.get("min") is not None or item.get("max") is not None:
+            raise PicSureValidationError(
+                f"Genomic filter '{key}' uses a numeric range (min/max), which "
+                "this adapter does not support — only categorical 'values' "
+                "filters. The saved query was likely built outside the adapter."
+            )
         raw_values = item.get("values")
         values: tuple[str, ...] | None = None
         if isinstance(raw_values, list) and raw_values:
             values = tuple(str(v) for v in raw_values)
-        gmin = coerce_float(item.get("min"))
-        gmax = coerce_float(item.get("max"))
-        if values is not None and (gmin is not None or gmax is not None):
-            raise PicSureQueryError(
-                f"Genomic filter '{key}' has both categorical values and a "
-                "numeric range (min/max); the server contract makes these "
-                "mutually exclusive."
-            )
-        filters.append(GenomicFilter(key=key, values=values, min=gmin, max=gmax))
+        filters.append(GenomicFilter(key=key, values=values))
     return tuple(filters)
 
 

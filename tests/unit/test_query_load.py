@@ -433,7 +433,10 @@ class TestLoadQueryGenomic:
         )
 
     @respx.mock
-    def test_round_trips_range_genomic_filter_with_phenotypic(self):
+    def test_rejects_numeric_range_genomic_filter(self):
+        # Numeric range (min/max) genomic filtering was removed; a saved query
+        # carrying one cannot be represented and must be rejected loudly rather
+        # than silently dropping the constraint.
         body = _envelope(
             {
                 "select": ["\\bmi\\"],
@@ -447,18 +450,13 @@ class TestLoadQueryGenomic:
             }
         )
         respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
-        result = load_query(_make_client(), QUERY_ID)
-        assert isinstance(result, Query)
-        assert result.genomicFilters[0].key == "Variant_frequency_in_gnomAD"
-        assert result.genomicFilters[0].min == 0.0
-        assert result.genomicFilters[0].max == 0.01
-        assert result.genomicFilters[0].values is None
+        with pytest.raises(PicSureValidationError, match="numeric range"):
+            load_query(_make_client(), QUERY_ID)
 
     @respx.mock
-    def test_filter_with_both_values_and_range_raises(self):
-        # The server contract makes values and min/max mutually exclusive; a
-        # response that violates it is malformed and must be rejected, not
-        # silently turned into an invalid filter.
+    def test_filter_with_any_min_max_rejected(self):
+        # Any min/max on a genomic filter is rejected outright, even alongside
+        # categorical values.
         body = _envelope(
             {
                 "select": [],
@@ -472,7 +470,7 @@ class TestLoadQueryGenomic:
             }
         )
         respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
-        with pytest.raises(PicSureQueryError, match="both"):
+        with pytest.raises(PicSureValidationError, match="numeric range"):
             load_query(_make_client(), QUERY_ID)
 
 
