@@ -41,3 +41,7 @@ docs/superpowers/
 token.txt
 token*.txt
 *.token
+
+# local scratch (HAR captures, ad-hoc temp files); never commit
+docs/tmp/
+*.har
