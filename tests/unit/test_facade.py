@@ -67,7 +67,9 @@ def test_genomic_exports_present():
         "buildGenomicFilter",
         "GenomicFilter",
         "VariantFrequency",
-        "Zygosity",
     ):
         assert hasattr(picsure, name), name
         assert name in picsure.__all__, name
+    # Variant-spec (SNP) filtering is not supported yet; Zygosity was removed.
+    assert not hasattr(picsure, "Zygosity")
+    assert "Zygosity" not in picsure.__all__

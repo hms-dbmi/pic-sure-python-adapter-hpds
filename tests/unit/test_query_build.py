@@ -313,6 +313,30 @@ class TestBuildGenomicFilter:
         with pytest.raises(PicSureValidationError):
             buildGenomicFilter("Gene_with_variant", values=["BRCA1", ""])
 
+    def test_rejects_variant_spec_key(self):
+        # Variant-spec (SNP) filtering is not supported yet.
+        from picsure._services.query_build import buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError, match="SNP"):
+            buildGenomicFilter("chr5,148481541,T,A", values=["0/1"])
+
+    def test_rejects_rsid_key(self):
+        from picsure._services.query_build import buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError, match="SNP"):
+            buildGenomicFilter("rs123", values=["0/1"])
+
+    def test_allows_annotation_keys(self):
+        # Gene / consequence / frequency keys (no comma) are not variant specs.
+        from picsure._services.query_build import buildGenomicFilter
+
+        for key, vals in (
+            ("Gene_with_variant", ["BRCA1"]),
+            ("Variant_consequence_calculated", ["missense_variant"]),
+            ("Variant_frequency_as_text", ["Rare"]),
+        ):
+            assert buildGenomicFilter(key, values=vals).key == key
+
 
 class TestBuildQueryGenomic:
     def test_single_genomic_filter(self):

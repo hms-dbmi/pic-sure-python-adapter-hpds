@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import Enum
 
@@ -21,19 +22,28 @@ class VariantFrequency(str, Enum):
     NOVEL = "Novel"
 
 
-class Zygosity(str, Enum):
-    """Genotype codes for SNP / variant-spec genomic filters.
+# Variant-spec (SNP) keys are recognized server-side by
+# VariantUtils.pathIsVariantSpec: an rsID, or a comma-delimited
+# chromosome,offset,ref,alt[,gene,consequence] spec.  Variant-spec (SNP)
+# filtering is not supported by this adapter yet, so buildGenomicFilter and the
+# saved-query loader reject keys matching these shapes.  The patterns mirror
+# the server's regex so rejection matches what the backend treats as a variant.
+_VARIANT_SPEC_PATTERNS = (
+    re.compile(r"rs[0-9]+.*"),
+    re.compile(r".*,[0-9.]+,[CATGcatg]*,[CATGcatg]*"),
+    re.compile(r".*,[0-9.]+,[CATGcatg]*,[CATGcatg]*,\w*,\w*"),
+)
 
-    Pass a member directly to ``picsure.buildGenomicFilter(values=...)``; the
-    builder uses the member's ``.value`` (e.g. ``Zygosity.HETEROZYGOUS`` →
-    ``"0/1"``). Note that ``str(Zygosity.HETEROZYGOUS)`` is
-    ``"Zygosity.HETEROZYGOUS"``, not the value — use ``.value`` if you need
-    the wire string yourself.
+
+def is_variant_spec(key: str) -> bool:
+    """Return True if ``key`` is a variant spec (rsID or ``chr,pos,ref,alt``...).
+
+    Mirrors the server's ``VariantUtils.pathIsVariantSpec`` so the adapter's
+    rejection of variant-spec (SNP) keys matches what the backend would treat
+    as a specific variant. Annotation keys like ``"Gene_with_variant"`` (no
+    comma) never match.
     """
-
-    HETEROZYGOUS = "0/1"
-    HOMOZYGOUS = "1/1"
-    HETEROZYGOUS_OR_HOMOZYGOUS = "1/1,0/1"
+    return any(pattern.fullmatch(key) for pattern in _VARIANT_SPEC_PATTERNS)
 
 
 @dataclass(frozen=True)
@@ -45,8 +55,6 @@ class GenomicFilter:
     phenotypic ``Clause`` / ``ClauseGroup`` tree.
 
     A filter matches when the annotation named by ``key`` is one of ``values``.
-    (A variant-spec / SNP key may carry no ``values``, in which case the server
-    applies its default genotype match.)
 
     **Wire format.** :meth:`to_query_json` emits a v3 ``GenomicFilter`` record
     (``{"key", "values"?}``) per the ``/picsure/v3/query/sync`` contract.

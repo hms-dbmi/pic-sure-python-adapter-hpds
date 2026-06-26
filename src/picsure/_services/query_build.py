@@ -5,7 +5,7 @@ from enum import Enum
 
 from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
-from picsure._models.genomic_filter import GenomicFilter
+from picsure._models.genomic_filter import GenomicFilter, is_variant_spec
 from picsure._models.query import Query
 from picsure.errors import PicSureValidationError
 
@@ -221,21 +221,21 @@ def buildGenomicFilter(  # noqa: N802
 
     Args:
         key: The genomic annotation to filter on. Known keys include
-            ``"Gene_with_variant"``, ``"Variant_consequence_calculated"``,
-            ``"Variant_frequency_as_text"`` (use :class:`VariantFrequency`),
-            and SNP variant specs like ``"chr5,148481541,T,A"`` (use
-            :class:`Zygosity` for the genotype values). The exact set is
-            platform-dependent and validated server-side.
+            ``"Gene_with_variant"``, ``"Variant_consequence_calculated"``, and
+            ``"Variant_frequency_as_text"`` (use :class:`VariantFrequency`).
+            The exact set is platform-dependent and validated server-side.
+            Variant-spec (SNP) keys — an rsID or a ``chr,pos,ref,alt`` spec —
+            are not supported yet and are rejected.
         values: One value or a sequence of values that must match.
-            :class:`VariantFrequency` / :class:`Zygosity` members are accepted
-            and coerced to their string value.
+            :class:`VariantFrequency` members are accepted and coerced to their
+            string value.
 
     Returns:
         A :class:`GenomicFilter` to pass to ``buildQuery(genomicFilters=...)``.
 
     Raises:
-        PicSureValidationError: If ``key`` is empty or ``values`` is empty or
-            contains blank strings.
+        PicSureValidationError: If ``key`` is empty, ``key`` is a variant-spec
+            (SNP) key, or ``values`` is empty or contains blank strings.
 
     Example:
         >>> from picsure import buildGenomicFilter, VariantFrequency
@@ -247,6 +247,13 @@ def buildGenomicFilter(  # noqa: N802
     if not isinstance(key, str) or not key.strip():
         raise PicSureValidationError(
             "buildGenomicFilter requires a non-empty 'key' string."
+        )
+
+    if is_variant_spec(key):
+        raise PicSureValidationError(
+            f"Variant-spec (SNP) genomic filtering is not supported yet; the "
+            f"key {key!r} looks like a specific variant. Filter by a gene or "
+            "annotation key (e.g. 'Gene_with_variant') instead."
         )
 
     items = [values] if isinstance(values, str) else list(values)

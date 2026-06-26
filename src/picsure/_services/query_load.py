@@ -10,7 +10,7 @@ from picsure._models.clause import (
 )
 from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure._models.dictionary import coerce_float
-from picsure._models.genomic_filter import GenomicFilter
+from picsure._models.genomic_filter import GenomicFilter, is_variant_spec
 from picsure._models.query import Query
 from picsure._services._errors import rate_limit_message
 from picsure._transport.errors import (
@@ -127,6 +127,11 @@ def _parse_genomic_filters(raw: object) -> tuple[GenomicFilter, ...]:
         key = item.get("key")
         if not isinstance(key, str):
             raise PicSureQueryError("Genomic filter is missing a 'key' string.")
+        if is_variant_spec(key):
+            raise PicSureValidationError(
+                f"The saved query uses a variant-spec (SNP) genomic filter "
+                f"({key!r}), which this adapter does not support yet."
+            )
         if item.get("min") is not None or item.get("max") is not None:
             raise PicSureValidationError(
                 f"Genomic filter '{key}' uses a numeric range (min/max), which "

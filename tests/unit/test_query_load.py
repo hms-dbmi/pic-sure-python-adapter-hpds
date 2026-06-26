@@ -473,6 +473,26 @@ class TestLoadQueryGenomic:
         with pytest.raises(PicSureValidationError, match="numeric range"):
             load_query(_make_client(), QUERY_ID)
 
+    @respx.mock
+    def test_rejects_variant_spec_genomic_filter(self):
+        # Variant-spec (SNP) filtering is not supported yet; a saved query
+        # carrying one cannot be represented and must be rejected.
+        body = _envelope(
+            {
+                "select": [],
+                "phenotypicClause": None,
+                "genomicFilters": [
+                    {"key": "chr5,148481541,T,A", "values": ["0/1", "1/1"]}
+                ],
+                "expectedResultType": "COUNT",
+                "picsureId": None,
+                "id": None,
+            }
+        )
+        respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
+        with pytest.raises(PicSureValidationError, match="SNP"):
+            load_query(_make_client(), QUERY_ID)
+
 
 class TestLoadQueryErrors:
     def test_blank_id_raises_before_http(self):
