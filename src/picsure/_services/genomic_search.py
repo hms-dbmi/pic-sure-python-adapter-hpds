@@ -30,7 +30,7 @@ def search_genomic_values(
     *,
     query: str = "",
     page: int = 1,
-    size: int = 100,
+    size: int = 50,
 ) -> pd.DataFrame:
     """Fetch one page of valid values for a genomic annotation key.
 

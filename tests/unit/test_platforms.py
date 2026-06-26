@@ -114,14 +114,14 @@ def test_authorized_platforms_support_genomic():
     assert Platform.BDC_AUTHORIZED.supports_genomic is True
     assert Platform.BDC_DEV_AUTHORIZED.supports_genomic is True
     assert Platform.BDC_PREDEV_AUTHORIZED.supports_genomic is True
+    assert Platform.NHANES_AUTHORIZED.supports_genomic is True
 
 
-def test_open_and_nhanes_do_not_support_genomic():
+def test_open_platforms_do_not_support_genomic():
     for p in (
         Platform.BDC_OPEN,
         Platform.BDC_DEV_OPEN,
         Platform.BDC_PREDEV_OPEN,
-        Platform.NHANES_AUTHORIZED,
         Platform.NHANES_OPEN,
     ):
         assert p.supports_genomic is False
