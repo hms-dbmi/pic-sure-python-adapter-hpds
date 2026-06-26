@@ -18,6 +18,7 @@ from picsure._transport.errors import (
     TransportError,
     TransportNotFoundError,
     TransportRateLimitError,
+    TransportServerError,
     TransportValidationError,
 )
 from picsure.errors import (
@@ -42,6 +43,19 @@ _VALID_QUERY_TYPES: dict[str, str] = {
     "vcf_excerpt": "VCF_EXCERPT",
     "aggregate_vcf_excerpt": "AGGREGATE_VCF_EXCERPT",
 }
+
+# Result types that ask the backend for variant-level output rather than a
+# patient cohort.  BDC does not serve these yet; a 5xx (or an empty response)
+# for one of them means "unsupported on this deployment", not a transient
+# outage, so it is surfaced as a clear PicSureQueryError.
+_VARIANT_RESULT_TYPES = frozenset(
+    {
+        "VARIANT_COUNT_FOR_QUERY",
+        "VARIANT_LIST_FOR_QUERY",
+        "VCF_EXCERPT",
+        "AGGREGATE_VCF_EXCERPT",
+    }
+)
 
 _COUNT_EXACT = re.compile(r"^(\d+)$")
 _COUNT_NOISY = re.compile(r"^(\d+)\s*\u00b1\s*(\d+)$")
@@ -113,6 +127,15 @@ def run_query(
     except TransportRateLimitError as exc:
         raise PicSureConnectionError(rate_limit_message(exc)) from exc
     except TransportError as exc:
+        # A 5xx on a variant result type is the backend signalling it does not
+        # serve that output yet (not a transient outage); surface it clearly.
+        if resolved_type in _VARIANT_RESULT_TYPES and isinstance(
+            exc, TransportServerError
+        ):
+            raise PicSureQueryError(
+                f"{_VARIANT_RESULT_UNSUPPORTED} (The server returned "
+                f"HTTP {exc.status_code}.)"
+            ) from exc
         raise PicSureConnectionError(
             "Could not execute query. The server may be temporarily unavailable."
         ) from exc
@@ -299,8 +322,7 @@ def _parse_dataframe(raw: bytes) -> pd.DataFrame:
 _QUERY_TYPE_NOT_ALLOWED = "query type not allowed"
 _NO_VARIANTS_FOUND = "No Variants Found"
 _VARIANT_RESULT_UNSUPPORTED = (
-    "The server returned an empty response for a variant result type. The "
-    "variant result types (variant_count, variant_list, vcf_excerpt, "
+    "The variant result types (variant_count, variant_list, vcf_excerpt, "
     "aggregate_vcf_excerpt) are not available on this PIC-SURE deployment "
     "yet — genomic filters still work as a constraint on count / "
     "participant queries."

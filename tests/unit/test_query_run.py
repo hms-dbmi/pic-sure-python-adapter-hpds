@@ -933,3 +933,22 @@ class TestVariantResultParsing:
         for parser in (_parse_variant_count, _parse_variant_list, _parse_vcf_excerpt):
             with pytest.raises(PicSureQueryError, match="not available on this"):
                 parser(b"")
+
+    @respx.mock
+    def test_variant_500_reports_unsupported_deployment(self):
+        # BDC's backend returns HTTP 500 for variant result types it does not
+        # serve yet. Surface that as the same clear "not available" error as the
+        # empty-200 case, not the generic "temporarily unavailable".
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(500, text="ri_error 500")
+        )
+        with pytest.raises(PicSureQueryError, match="not available on this"):
+            run_query(_make_client(), RESOURCE_UUID, _simple_clause(), "variant_count")
+
+    @respx.mock
+    def test_nonvariant_500_stays_temporarily_unavailable(self):
+        # A 5xx on a normal (non-variant) query is still a transient-style
+        # outage, not an unsupported feature.
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(500, text="boom"))
+        with pytest.raises(PicSureConnectionError, match="temporarily unavailable"):
+            run_query(_make_client(), RESOURCE_UUID, _simple_clause(), "count")
