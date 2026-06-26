@@ -98,7 +98,7 @@ class Platform(Enum):
         label="Nhanes Authorized",
         include_consents=False,
         requires_auth=True,
-        supports_genomic=False,
+        supports_genomic=True,
     )
     NHANES_OPEN = PlatformConfig(
         url="https://nhanes.hms.harvard.edu/",
