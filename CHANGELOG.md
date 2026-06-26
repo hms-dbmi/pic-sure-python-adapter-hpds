@@ -16,6 +16,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **BREAKING:** `PhenotypicFilterType.SELECT` is removed. To include concept paths in the output without filtering, pass them to `buildQuery(includeConcepts=...)` instead of building a `SELECT` clause.
 
 ### Added
+- `picsure.buildGenomicFilter(key, *, values)` builds a single categorical genomic filter. `values` is required (string or list of strings); `VariantFrequency` members are accepted and coerced. Variant-spec and SNP keys are rejected with an actionable error.
+- `picsure.genomicConsequences()` returns an offline DataFrame of all variant consequences with a `severity` and `consequence` column. Available on any platform; no network call.
+- `picsure.buildQuery(genomicFilters=None)` - `buildQuery` now accepts an optional `genomicFilters` list. Genomic filters are AND-combined with the phenotypic filter; a genomic-only query (no `phenotypicFilter`) is valid.
+- `picsure.connect(supports_genomic=None)` - `connect` accepts an optional `supports_genomic` flag for platforms that do not auto-detect genomic capability. Genomic operations are available on BDC_AUTHORIZED, BDC_DEV_AUTHORIZED, BDC_PREDEV_AUTHORIZED, and NHANES_AUTHORIZED; all `*_OPEN` platforms are not genomic-capable.
+- `Session.searchGenomicValues(genomicConceptPath, *, query="", page=1, size=50)` performs a paginated server lookup of valid values for any genomic key (genes, consequences). Returns a pandas DataFrame; pagination metadata is on `df.attrs`. Available on authorized platforms only.
+- `GenomicFilter` dataclass representing a single categorical genomic filter (`key`, `values`).
+- `VariantFrequency` enum with members `RARE`, `COMMON`, and `NOVEL` for use with the `Variant_frequency_as_text` genomic key.
+- Variant result types for `runQuery`: `variant_count` (returns `CountResult`), `variant_list` (returns `list[str]`), `vcf_excerpt` (returns DataFrame), and `aggregate_vcf_excerpt` (returns DataFrame). These types are not served by BDC primary environments yet; the adapter raises `PicSureQueryError` with a clear message on an empty or 5xx response.
 - `picsure.buildQuery(phenotypicFilter=None, includeConcepts=())` assembles a `Query` from a filter tree plus the concept paths to return as output columns. `includeConcepts` preserves order and de-duplicates.
 - `picsure.removeSubQuery(query, target)` returns a copy of `query` with every structurally-equal occurrence of `target` removed, recursively through nested groups. Emptied `ClauseGroup`s are dropped. Raises `PicSureValidationError` if the whole tree would be removed.
 - `picsure.replaceClause(query, target, replacement)` returns a copy of `query` with every structurally-equal occurrence of `target` swapped for `replacement`.

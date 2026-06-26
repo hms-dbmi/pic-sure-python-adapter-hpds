@@ -21,7 +21,7 @@ know that step, but together they're the recommended on-ramp:
 | `7_Export_Query_As_PFB.ipynb`               | `exportAsPFB()` — write a cohort to disk as Avro/PFB.                   |
 | `8_Remove_and_Replace_Query_Functions.ipynb`| `replaceClause()` / `removeSubQuery()` — edit a query in place.         |
 | `9_Save_Query_By_Name.ipynb`                | `saveQueryByName()` — persist a query under a name on an auth platform. |
-| `10_Genomic_Filtering.ipynb`                | `buildGenomicFilter()` — filter by gene/consequence/frequency/SNP; variant result types. |
+| `10_Genomic_Filtering.ipynb`                | `buildGenomicFilter()` - filter by gene, consequence, and frequency; variant result types. |
 
 All eleven notebooks read your PIC-SURE access token from `notebooks/token.txt`
 (one line, no trailing newline required). The file is gitignored by

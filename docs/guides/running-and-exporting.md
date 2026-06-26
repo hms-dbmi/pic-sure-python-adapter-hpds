@@ -44,6 +44,29 @@ df.head()
 
 Returns a pandas DataFrame with repeated measurements over time.
 
+### Variant Result Types
+
+Queries with genomic filters also support four variant-specific result types:
+
+| Type | Returns |
+|---|---|
+| `variant_count` | `CountResult` - count of matching variants |
+| `variant_list` | `list[str]` - list of matching variant identifiers |
+| `vcf_excerpt` | DataFrame - VCF-formatted excerpt of matching variants |
+| `aggregate_vcf_excerpt` | DataFrame - aggregated VCF excerpt |
+
+```python
+variant_count = session.runQuery(genomic_query, type="variant_count")
+variant_ids = session.runQuery(genomic_query, type="variant_list")
+vcf_df = session.runQuery(genomic_query, type="vcf_excerpt")
+```
+
+!!! note
+    These result types are not served by BDC primary environments yet. The adapter
+    raises `PicSureQueryError` with a clear message on an empty or 5xx response.
+    Genomic filters work normally with `count` and `participant` on all genomic-capable
+    platforms.
+
 ## Exporting Data
 
 ### CSV
