@@ -249,7 +249,7 @@ class Session:
         *,
         query: str = "",
         page: int = 1,
-        size: int = 100,
+        size: int = 50,
     ) -> pd.DataFrame:
         """Look up valid values for a genomic annotation key (paginated).
 
