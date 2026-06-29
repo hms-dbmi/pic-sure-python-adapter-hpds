@@ -1,5 +1,6 @@
 import base64
 import json
+import uuid
 from datetime import datetime, timezone
 
 import httpx
@@ -555,3 +556,46 @@ class TestTokenExpirationFromJwt:
 
     def test_non_numeric_exp_returns_unknown(self):
         assert _token_expiration_from_jwt(_make_jwt("tomorrow")) == "unknown"  # type: ignore[arg-type]
+
+
+class TestConnectCorrelationHeaders:
+    @respx.mock
+    def test_connect_sends_session_id_and_default_client_type(
+        self, profile_response, resources_response
+    ):
+        _mock_connect_flow(profile_response, resources_response)
+        session = connect(platform=BASE_URL, token=TOKEN)
+
+        # session.session_id is a freshly generated uuid4 string.
+        assert uuid.UUID(session.session_id)
+
+        # Every request in the flow carries the correlation headers.
+        profile_req = respx.calls[0].request
+        assert profile_req.headers["x-session-id"] == session.session_id
+        assert profile_req.headers["x-client-type"] == "PYTHON_ADAPTER"
+        assert profile_req.headers["user-agent"].startswith("picsure-python-adapter/")
+
+    @respx.mock
+    def test_connect_forwards_client_type_override(
+        self, profile_response, resources_response
+    ):
+        _mock_connect_flow(profile_response, resources_response)
+        session = connect(platform=BASE_URL, token=TOKEN, client_type="R_ADAPTER")
+
+        assert respx.calls[0].request.headers["x-client-type"] == "R_ADAPTER"
+        assert (
+            respx.calls[0]
+            .request.headers["user-agent"]
+            .startswith("picsure-r-adapter/")
+        )
+        # session_id is still generated regardless of client_type.
+        assert uuid.UUID(session.session_id)
+
+    @respx.mock
+    def test_each_connect_gets_a_distinct_session_id(
+        self, profile_response, resources_response
+    ):
+        _mock_connect_flow(profile_response, resources_response)
+        first = connect(platform=BASE_URL, token=TOKEN)
+        second = connect(platform=BASE_URL, token=TOKEN)
+        assert first.session_id != second.session_id

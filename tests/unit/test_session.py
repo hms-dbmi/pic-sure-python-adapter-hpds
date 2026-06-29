@@ -138,6 +138,21 @@ class TestSession:
         session = _make_session()
         assert session.consents == []
 
+    def test_session_id_exposed(self):
+        client = MagicMock()
+        session = Session(
+            client=client,
+            user_email="u@e.com",
+            token_expiration="",
+            resources=[],
+            session_id="sess-abc-123",
+        )
+        assert session.session_id == "sess-abc-123"
+
+    def test_session_id_defaults_to_empty(self):
+        session = _make_session()
+        assert session.session_id == ""
+
     def test_consents_property_returns_copy(self):
         client = MagicMock()
         session = Session(

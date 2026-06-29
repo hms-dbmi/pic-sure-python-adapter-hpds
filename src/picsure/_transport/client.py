@@ -27,6 +27,26 @@ _MAX_RETRIES = 1
 _TIMEOUT_SECONDS = 30.0
 
 
+def _package_version() -> str:
+    """Return the installed ``picsure`` version, or ``"unknown"``."""
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        return version("picsure")
+    except PackageNotFoundError:  # pragma: no cover - only when not installed
+        return "unknown"
+
+
+def _user_agent(client_type: str) -> str:
+    """Build a User-Agent identifying the calling adapter and its version.
+
+    ``"PYTHON_ADAPTER"`` -> ``"picsure-python-adapter/<version>"``;
+    ``"R_ADAPTER"`` -> ``"picsure-r-adapter/<version>"``.
+    """
+    product = client_type.lower().replace("_", "-")
+    return f"picsure-{product}/{_package_version()}"
+
+
 def _mark_emitted(exc: BaseException) -> BaseException:
     # Tag exceptions whose failure has already been recorded as a dev-mode
     # error event so @timed wrappers higher up the stack don't double-emit.
@@ -46,6 +66,8 @@ class PicSureClient:
         base_url: str,
         token: str = "",
         dev_config: DevConfig | None = None,
+        session_id: str = "",
+        client_type: str = "PYTHON_ADAPTER",
     ) -> None:
         # BDC's API gateway routes auth based on a "request-source" header:
         # "Authorized" when a bearer token is present, "Open" otherwise.
@@ -55,9 +77,18 @@ class PicSureClient:
         headers = {
             "Content-Type": "application/json",
             "request-source": "Authorized" if token else "Open",
+            # Correlation headers consumed by the backend's AuditLoggingFilter:
+            # X-Client-Type identifies the calling adapter; User-Agent carries
+            # the same information in the standard slot. X-Session-Id ties every
+            # request in this session together (the server otherwise falls back
+            # to a hash of IP + User-Agent, which is not per-user).
+            "X-Client-Type": client_type,
+            "User-Agent": _user_agent(client_type),
         }
         if token:
             headers["Authorization"] = f"Bearer {token}"
+        if session_id:
+            headers["X-Session-Id"] = session_id
         self._http = httpx.Client(
             base_url=base_url,
             headers=headers,

@@ -311,3 +311,56 @@ class TestPicSureClientRetryScoping:
         # A second close should not raise.
         client.close()
         assert client._http.is_closed
+
+
+class TestPicSureClientCorrelationHeaders:
+    @respx.mock
+    def test_sends_session_id_and_client_type_headers(self):
+        route = respx.get(f"{BASE_URL}/some/path").mock(
+            return_value=httpx.Response(200, json={"ok": True})
+        )
+
+        client = PicSureClient(
+            base_url=BASE_URL,
+            token=TOKEN,
+            session_id="sess-abc-123",
+            client_type="PYTHON_ADAPTER",
+        )
+        client.get_json("/some/path")
+
+        headers = route.calls[0].request.headers
+        assert headers["x-session-id"] == "sess-abc-123"
+        assert headers["x-client-type"] == "PYTHON_ADAPTER"
+        assert headers["user-agent"].startswith("picsure-python-adapter/")
+
+    @respx.mock
+    def test_r_adapter_client_type_shapes_user_agent(self):
+        route = respx.get(f"{BASE_URL}/some/path").mock(
+            return_value=httpx.Response(200, json={"ok": True})
+        )
+
+        client = PicSureClient(
+            base_url=BASE_URL,
+            token=TOKEN,
+            session_id="sess-r",
+            client_type="R_ADAPTER",
+        )
+        client.get_json("/some/path")
+
+        headers = route.calls[0].request.headers
+        assert headers["x-client-type"] == "R_ADAPTER"
+        assert headers["user-agent"].startswith("picsure-r-adapter/")
+
+    @respx.mock
+    def test_defaults_to_python_adapter_and_omits_empty_session_id(self):
+        route = respx.get(f"{BASE_URL}/some/path").mock(
+            return_value=httpx.Response(200, json={"ok": True})
+        )
+
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+        client.get_json("/some/path")
+
+        headers = route.calls[0].request.headers
+        assert headers["x-client-type"] == "PYTHON_ADAPTER"
+        assert headers["user-agent"].startswith("picsure-python-adapter/")
+        assert "x-session-id" not in headers
