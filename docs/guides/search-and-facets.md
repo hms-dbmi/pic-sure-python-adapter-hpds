@@ -94,3 +94,41 @@ facets.add("invalid_category", "value")
 # PicSureValidationError: 'invalid_category' is not a valid facet
 # category. Valid categories: data_type, dataset_id.
 ```
+
+## Genomic Value Discovery
+
+On genomic-capable platforms (BDC_AUTHORIZED, NHANES_AUTHORIZED), you can look
+up valid values for any genomic key before building a filter.
+
+### Search genomic values
+
+`session.searchGenomicValues` queries the server and returns a DataFrame of
+matching values. Results are paginated; metadata (total, page, size) is on
+`df.attrs`.
+
+```python
+# Find genes matching "BRCA"
+df = session.searchGenomicValues("Gene_with_variant", query="BRCA")
+print(df)
+
+# List all values for a key (no query term)
+all_consequences = session.searchGenomicValues("Variant_consequence_calculated")
+
+# Page through large result sets
+page2 = session.searchGenomicValues("Gene_with_variant", query="", page=2, size=100)
+print(df.attrs)  # {'total': ..., 'page': 2, 'size': 100}
+```
+
+### Variant consequences (offline)
+
+`picsure.genomicConsequences()` returns the full list of consequence terms with
+severity rankings without a network call. It works on any platform, including
+open-access ones.
+
+```python
+import picsure
+
+consequences = picsure.genomicConsequences()
+# DataFrame with columns: severity, consequence
+print(consequences.head())
+```

@@ -6,11 +6,18 @@ from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure._models.count_result import CountResult
 from picsure._models.facet import FacetSet
+from picsure._models.genomic_filter import GenomicFilter, VariantFrequency
 from picsure._models.query import Query
 from picsure._models.query_type import QueryType
 from picsure._models.session import Session
 from picsure._services.connect import connect
-from picsure._services.query_build import buildClause, buildClauseGroup, buildQuery
+from picsure._services.genomic_data import genomicConsequences
+from picsure._services.query_build import (
+    buildClause,
+    buildClauseGroup,
+    buildGenomicFilter,
+    buildQuery,
+)
 from picsure._services.query_edit import removeSubQuery, replaceClause
 from picsure._transport.platforms import Platform
 from picsure.errors import (
@@ -37,8 +44,10 @@ def set_dev_mode(enabled: bool) -> None:
 __all__ = [
     "buildClause",
     "buildClauseGroup",
+    "buildGenomicFilter",
     "buildQuery",
     "connect",
+    "genomicConsequences",
     "removeSubQuery",
     "replaceClause",
     "set_dev_mode",
@@ -46,6 +55,7 @@ __all__ = [
     "ClauseGroup",
     "CountResult",
     "FacetSet",
+    "GenomicFilter",
     "GroupOperator",
     "PhenotypicFilterType",
     "PicSureAuthError",
@@ -57,4 +67,5 @@ __all__ = [
     "Query",
     "QueryType",
     "Session",
+    "VariantFrequency",
 ]

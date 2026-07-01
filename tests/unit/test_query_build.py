@@ -256,3 +256,110 @@ class TestBuildQuery:
         q = buildQuery(includeConcepts="\\bmi\\")
         with pytest.raises((AttributeError, TypeError)):
             q.includeConcepts = ("\\x\\",)  # type: ignore[misc]
+
+
+class TestBuildGenomicFilter:
+    def test_categorical(self):
+        from picsure._models.genomic_filter import GenomicFilter
+        from picsure._services.query_build import buildGenomicFilter
+
+        gf = buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
+        assert gf == GenomicFilter(key="Gene_with_variant", values=("BRCA1",))
+
+    def test_single_string_value_normalized(self):
+        from picsure._services.query_build import buildGenomicFilter
+
+        gf = buildGenomicFilter("Gene_with_variant", values="BRCA1")
+        assert gf.values == ("BRCA1",)
+
+    def test_enum_value_coerced(self):
+        from picsure._models.genomic_filter import VariantFrequency
+        from picsure._services.query_build import buildGenomicFilter
+
+        gf = buildGenomicFilter(
+            "Variant_frequency_as_text", values=VariantFrequency.RARE
+        )
+        assert gf.values == ("Rare",)
+
+    def test_no_min_max_kwargs(self):
+        # Numeric range filtering was removed; min/max are no longer accepted,
+        # matching the categorical-only genomic filters the frontend sends.
+        from picsure._services.query_build import buildGenomicFilter
+
+        with pytest.raises(TypeError):
+            buildGenomicFilter("X", min=0.0, max=0.01)  # type: ignore[call-arg]
+
+    def test_values_required(self):
+        from picsure._services.query_build import buildGenomicFilter
+
+        with pytest.raises(TypeError):
+            buildGenomicFilter("X")  # type: ignore[call-arg]
+
+    def test_rejects_empty_key(self):
+        from picsure._services.query_build import buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError):
+            buildGenomicFilter("", values=["a"])
+
+    def test_rejects_empty_scalar_value(self):
+        from picsure._services.query_build import buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError):
+            buildGenomicFilter("Gene_with_variant", values="")
+
+    def test_rejects_empty_value_in_sequence(self):
+        from picsure._services.query_build import buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError):
+            buildGenomicFilter("Gene_with_variant", values=["BRCA1", ""])
+
+    def test_rejects_variant_spec_key(self):
+        # Variant-spec (SNP) filtering is not supported yet.
+        from picsure._services.query_build import buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError, match="SNP"):
+            buildGenomicFilter("chr5,148481541,T,A", values=["0/1"])
+
+    def test_rejects_rsid_key(self):
+        from picsure._services.query_build import buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError, match="SNP"):
+            buildGenomicFilter("rs123", values=["0/1"])
+
+    def test_allows_annotation_keys(self):
+        # Gene / consequence / frequency keys (no comma) are not variant specs.
+        from picsure._services.query_build import buildGenomicFilter
+
+        for key, vals in (
+            ("Gene_with_variant", ["BRCA1"]),
+            ("Variant_consequence_calculated", ["missense_variant"]),
+            ("Variant_frequency_as_text", ["Rare"]),
+        ):
+            assert buildGenomicFilter(key, values=vals).key == key
+
+
+class TestBuildQueryGenomic:
+    def test_single_genomic_filter(self):
+        from picsure._services.query_build import buildGenomicFilter
+
+        gf = buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
+        q = buildQuery(genomicFilters=gf)
+        assert isinstance(q, Query)
+        assert q.genomicFilters == (gf,)
+        assert q.phenotypicFilter is None
+
+    def test_genomic_filter_list(self):
+        from picsure._services.query_build import buildGenomicFilter
+
+        gf1 = buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
+        gf2 = buildGenomicFilter("Variant_frequency_as_text", values=["Common"])
+        q = buildQuery(genomicFilters=[gf1, gf2])
+        assert q.genomicFilters == (gf1, gf2)
+
+    def test_genomic_filter_rejects_wrong_type(self):
+        with pytest.raises(PicSureValidationError):
+            buildQuery(genomicFilters=["not a filter"])
+
+    def test_empty_still_rejected(self):
+        with pytest.raises(PicSureValidationError):
+            buildQuery()

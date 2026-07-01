@@ -21,9 +21,15 @@ Complete reference for all public functions, classes, and types in the
 
 ::: picsure.buildQuery
 
+::: picsure.buildGenomicFilter
+
 ::: picsure.removeSubQuery
 
 ::: picsure.replaceClause
+
+## Genomic Utilities
+
+::: picsure.genomicConsequences
 
 ## Types
 
@@ -77,6 +83,16 @@ Complete reference for all public functions, classes, and types in the
         - raw
         - obfuscated
 
+### GenomicFilter
+
+::: picsure.GenomicFilter
+
+### VariantFrequency
+
+::: picsure.VariantFrequency
+    options:
+      members: true
+
 ## Session
 
 ::: picsure.Session
@@ -84,9 +100,10 @@ Complete reference for all public functions, classes, and types in the
       members:
         - consents
         - total_concepts
-        - search
+        - searchDictionary
         - facets
         - showAllFacets
+        - searchGenomicValues
         - runQuery
         - runQueryByID
         - loadQueryByID

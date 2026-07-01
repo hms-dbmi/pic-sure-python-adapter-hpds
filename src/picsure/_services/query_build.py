@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+from enum import Enum
+
 from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
+from picsure._models.genomic_filter import GenomicFilter, is_variant_spec
 from picsure._models.query import Query
 from picsure.errors import PicSureValidationError
 
@@ -136,17 +140,22 @@ def buildClauseGroup(  # noqa: N802
 def buildQuery(  # noqa: N802
     phenotypicFilter: Clause | ClauseGroup | None = None,  # noqa: N803
     includeConcepts: str | list[str] | tuple[str, ...] = (),  # noqa: N803
+    genomicFilters: GenomicFilter | Sequence[GenomicFilter] | None = None,  # noqa: N803
 ) -> Query:
     """Assemble a complete query from a filter tree and/or output concepts.
 
     Args:
         phenotypicFilter: A Clause or ClauseGroup (from ``buildClause()`` /
             ``buildClauseGroup()``) to filter on, or ``None`` for an
-            include-only query.
+            include-only or genomic-only query.
         includeConcepts: *Additional* concept path(s) to include as output
             columns, beyond the variables already named in
             ``phenotypicFilter`` — those are returned automatically. Order is
             preserved and duplicates are dropped.
+        genomicFilters: A :class:`GenomicFilter` (from
+            ``buildGenomicFilter()``), a sequence of them, or ``None``.
+            Applied as a flat conjunctive list alongside the phenotypic
+            filter.
 
     Returns:
         A Query suitable for ``Session.runQuery()``, ``Session.exportAsPFB()``,
@@ -154,7 +163,8 @@ def buildQuery(  # noqa: N802
 
     Raises:
         PicSureValidationError: If ``phenotypicFilter`` is not a Clause /
-            ClauseGroup / None, or if both arguments are empty.
+            ClauseGroup / None, if ``genomicFilters`` contains a non-filter,
+            or if all arguments are empty.
 
     Example:
         >>> from picsure import buildClause, buildQuery, PhenotypicFilterType
@@ -176,13 +186,85 @@ def buildQuery(  # noqa: N802
             "buildClause()/buildClauseGroup()), or None."
         )
 
-    if phenotypicFilter is None and not cols:
+    if genomicFilters is None:
+        genomic: tuple[GenomicFilter, ...] = ()
+    elif isinstance(genomicFilters, GenomicFilter):
+        genomic = (genomicFilters,)
+    else:
+        genomic = tuple(genomicFilters)
+    if any(not isinstance(g, GenomicFilter) for g in genomic):
         raise PicSureValidationError(
-            "buildQuery requires a phenotypicFilter, includeConcepts, or both."
+            "genomicFilters must be GenomicFilter objects (from "
+            "buildGenomicFilter()), a single one, or None."
         )
 
-    # de-dup while preserving order
+    if phenotypicFilter is None and not cols and not genomic:
+        raise PicSureValidationError(
+            "buildQuery requires a phenotypicFilter, includeConcepts, or "
+            "genomicFilters."
+        )
+
+    # de-dup includeConcepts while preserving order
     return Query(
         phenotypicFilter=phenotypicFilter,
         includeConcepts=tuple(dict.fromkeys(cols)),
+        genomicFilters=genomic,
     )
+
+
+def buildGenomicFilter(  # noqa: N802
+    key: str,
+    *,
+    values: str | Sequence[str],
+) -> GenomicFilter:
+    """Create a single categorical genomic (variant-annotation) filter.
+
+    Args:
+        key: The genomic annotation to filter on. Known keys include
+            ``"Gene_with_variant"``, ``"Variant_consequence_calculated"``, and
+            ``"Variant_frequency_as_text"`` (use :class:`VariantFrequency`).
+            The exact set is platform-dependent and validated server-side.
+            Variant-spec (SNP) keys — an rsID or a ``chr,pos,ref,alt`` spec —
+            are not supported yet and are rejected.
+        values: One value or a sequence of values that must match.
+            :class:`VariantFrequency` members are accepted and coerced to their
+            string value.
+
+    Returns:
+        A :class:`GenomicFilter` to pass to ``buildQuery(genomicFilters=...)``.
+
+    Raises:
+        PicSureValidationError: If ``key`` is empty, ``key`` is a variant-spec
+            (SNP) key, or ``values`` is empty or contains blank strings.
+
+    Example:
+        >>> from picsure import buildGenomicFilter, VariantFrequency
+        >>> gene = buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
+        >>> rare = buildGenomicFilter(
+        ...     "Variant_frequency_as_text", values=VariantFrequency.RARE
+        ... )
+    """
+    if not isinstance(key, str) or not key.strip():
+        raise PicSureValidationError(
+            "buildGenomicFilter requires a non-empty 'key' string."
+        )
+
+    if is_variant_spec(key):
+        raise PicSureValidationError(
+            f"Variant-spec (SNP) genomic filtering is not supported yet; the "
+            f"key {key!r} looks like a specific variant. Filter by a gene or "
+            "annotation key (e.g. 'Gene_with_variant') instead."
+        )
+
+    items = [values] if isinstance(values, str) else list(values)
+    if not items:
+        raise PicSureValidationError(
+            "buildGenomicFilter 'values' must be a non-empty string or sequence."
+        )
+    normalized = tuple(str(v.value) if isinstance(v, Enum) else str(v) for v in items)
+    if any(not v.strip() for v in normalized):
+        raise PicSureValidationError(
+            "buildGenomicFilter 'values' must not contain empty or blank strings."
+        )
+
+    return GenomicFilter(key=key, values=normalized)

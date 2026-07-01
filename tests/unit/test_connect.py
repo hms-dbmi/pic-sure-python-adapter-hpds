@@ -521,6 +521,24 @@ class TestConnectLegacyQueryPath:
         assert session._use_legacy_query_path is False
 
 
+class TestConnectSupportsGenomic:
+    @respx.mock
+    def test_connect_threads_supports_genomic_override(
+        self, profile_response, resources_response
+    ):
+        _mock_connect_flow(profile_response, resources_response)
+        session = connect(platform=BASE_URL, token=TOKEN, supports_genomic=True)
+        assert session._supports_genomic is True
+
+    @respx.mock
+    def test_connect_supports_genomic_defaults_false(
+        self, profile_response, resources_response
+    ):
+        _mock_connect_flow(profile_response, resources_response)
+        session = connect(platform=BASE_URL, token=TOKEN)
+        assert session._supports_genomic is False
+
+
 class TestTokenExpirationFromJwt:
     def test_extracts_exp_claim(self):
         token = _make_jwt(_JWT_EXP)

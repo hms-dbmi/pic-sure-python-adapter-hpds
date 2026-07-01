@@ -5,10 +5,95 @@ import pandas as pd
 import pytest
 import respx
 
+import picsure
 from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.resource import Resource
 from picsure._models.session import Session
 from picsure._transport.client import PicSureClient
+from picsure.errors import PicSureValidationError
+
+
+class _GenomicFakeClient:
+    """Minimal client stub: records the last GET path, returns canned JSON."""
+
+    def __init__(self, response=None):
+        self._response = response or {"results": ["BRCA1"], "page": 1, "total": 1}
+        self.last_path = None
+
+    def get_json(self, path):
+        self.last_path = path
+        return self._response
+
+    def close(self):
+        pass
+
+
+def _make_genomic_session(supports_genomic, client=None):
+    return Session(
+        client=client or _GenomicFakeClient(),
+        user_email="u",
+        token_expiration="N/A",
+        resources=[Resource(uuid="RID", name="auth-hpds", description="")],
+        resource_uuid="RID",
+        supports_genomic=supports_genomic,
+    )
+
+
+def test_require_genomic_raises_when_unsupported():
+    s = _make_genomic_session(False)
+    with pytest.raises(PicSureValidationError, match="authorized platform"):
+        s._require_genomic()
+
+
+def test_require_genomic_passes_when_supported():
+    s = _make_genomic_session(True)
+    assert s._require_genomic() is None
+
+
+def test_runquery_gated_when_genomic_on_open_session():
+    s = _make_genomic_session(False)
+    q = picsure.buildQuery(
+        genomicFilters=picsure.buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
+    )
+    with pytest.raises(PicSureValidationError, match="authorized platform"):
+        s.runQuery(q, type="count")
+
+
+def test_runquery_genomic_allowed_when_supported(monkeypatch):
+    import picsure._services.query_run as qr
+
+    monkeypatch.setattr(qr, "run_query", lambda *a, **k: "OK")
+    s = _make_genomic_session(True)
+    q = picsure.buildQuery(
+        genomicFilters=picsure.buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
+    )
+    assert s.runQuery(q, type="count") == "OK"
+
+
+def test_runquery_nongenomic_unaffected_on_open_session(monkeypatch):
+    import picsure._services.query_run as qr
+
+    monkeypatch.setattr(qr, "run_query", lambda *a, **k: "OK")
+    s = _make_genomic_session(False)
+    clause = picsure.buildClause(
+        "\\sex\\", type=picsure.PhenotypicFilterType.FILTER, categories="Male"
+    )
+    assert s.runQuery(clause, type="count") == "OK"
+
+
+def test_search_genomic_values_gated_on_open_session():
+    s = _make_genomic_session(False)
+    with pytest.raises(PicSureValidationError, match="authorized platform"):
+        s.searchGenomicValues("Gene_with_variant")
+
+
+def test_search_genomic_values_authorized_delegates():
+    client = _GenomicFakeClient({"results": ["BRCA1", "BRCA2"], "page": 1, "total": 2})
+    s = _make_genomic_session(True, client)
+    df = s.searchGenomicValues("Gene_with_variant", query="BRCA", size=10)
+    assert df["value"].tolist() == ["BRCA1", "BRCA2"]
+    assert "genomicConceptPath=Gene_with_variant" in client.last_path
+    assert "size=10" in client.last_path
 
 
 def _make_session(

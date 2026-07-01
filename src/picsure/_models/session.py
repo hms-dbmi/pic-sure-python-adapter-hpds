@@ -41,6 +41,7 @@ class Session:
         total_concepts: int = 0,
         dev_config: DevConfig | None = None,
         use_legacy_query_path: bool = False,
+        supports_genomic: bool = False,
     ) -> None:
         self._client = client
         self._user_email = user_email
@@ -50,6 +51,7 @@ class Session:
         self._consents: list[str] = list(consents) if consents else []
         self._total_concepts = total_concepts
         self._use_legacy_query_path = use_legacy_query_path
+        self._supports_genomic = supports_genomic
         self._dev_config = (
             dev_config
             if dev_config is not None
@@ -240,12 +242,61 @@ class Session:
             facets=facets,
         )
 
+    @timed("session.searchGenomicValues")
+    def searchGenomicValues(  # noqa: N802
+        self,
+        genomicConceptPath: str,  # noqa: N803
+        *,
+        query: str = "",
+        page: int = 1,
+        size: int = 50,
+    ) -> pd.DataFrame:
+        """Look up valid values for a genomic annotation key (paginated).
+
+        Authorized platforms only. Returns one page of matching values as a
+        single-column (``value``) DataFrame; pagination metadata (``total``,
+        ``page``, ``size``) is preserved on ``df.attrs``. Raise ``size`` to
+        pull more results per call, or step ``page`` to walk the full set.
+
+        Args:
+            genomicConceptPath: The genomic key, e.g. ``"Gene_with_variant"``
+                or ``"Variant_consequence_calculated"``.
+            query: Optional case-insensitive search term to narrow results
+                (e.g. ``"BRCA"``). Empty returns the first page of all values.
+            page: 1-based page number.
+            size: Page size (number of values per call).
+
+        Returns:
+            A :class:`pandas.DataFrame` with a single ``value`` column.
+
+        Raises:
+            PicSureValidationError: If the session is not on a genomic-capable
+                platform, or the key is empty.
+
+        Example:
+            >>> df = session.searchGenomicValues("Gene_with_variant", query="BRCA")
+            >>> df["value"].tolist()
+            ['BRCA1', 'BRCA2']
+        """
+        self._require_genomic()
+
+        from picsure._services.genomic_search import search_genomic_values
+
+        return search_genomic_values(
+            self._client,
+            self._default_resource_uuid(),
+            genomicConceptPath,
+            query=query,
+            page=page,
+            size=size,
+        )
+
     @timed("session.runQuery")
     def runQuery(  # noqa: N802
         self,
         query: Query | Clause | ClauseGroup,
         type: QueryType | str = "count",  # noqa: A002
-    ) -> CountResult | dict[str, CountResult] | pd.DataFrame:
+    ) -> CountResult | dict[str, CountResult] | pd.DataFrame | list[str]:
         """Execute a query and return the result.
 
         Args:
@@ -263,10 +314,15 @@ class Session:
                   by concept path.
                 - ``"participant"`` → :class:`pandas.DataFrame`.
                 - ``"timestamp"`` → :class:`pandas.DataFrame`.
+                - ``"variant_count"`` → :class:`CountResult` (preserving
+                  obfuscation, like ``"count"``).
+                - ``"variant_list"`` → ``list[str]``.
+                - ``"vcf_excerpt"`` / ``"aggregate_vcf_excerpt"`` →
+                  :class:`pandas.DataFrame`.
 
         Returns:
-            A :class:`CountResult`, a ``dict[str, CountResult]``, or a
-            DataFrame depending on ``type``.
+            A :class:`CountResult`, a ``dict[str, CountResult]``, a
+            DataFrame, or a ``list[str]`` depending on ``type``.
 
         Example:
             >>> count = session.runQuery(my_query, type="count")
@@ -276,6 +332,15 @@ class Session:
             ...     print(f"fewer than {count.cap} participants")
             >>> df = session.runQuery(my_query, type="participant")
         """
+        from picsure._models.query import Query
+
+        if (
+            isinstance(query, Query)
+            and query.genomicFilters
+            and not self._supports_genomic
+        ):
+            self._require_genomic()
+
         from picsure._services.query_run import run_query
 
         return run_query(
@@ -398,7 +463,7 @@ class Session:
         self,
         query_id: str,
         type: QueryType | str = "count",  # noqa: A002
-    ) -> CountResult | dict[str, CountResult] | pd.DataFrame:
+    ) -> CountResult | dict[str, CountResult] | pd.DataFrame | list[str]:
         """Load a saved query by ID and execute it in one call.
 
         Convenience wrapper around :meth:`loadQueryByID` + :meth:`runQuery`.
@@ -407,12 +472,14 @@ class Session:
             query_id: The UUID string of a previous PIC-SURE query.
             type: Result type, as accepted by :meth:`runQuery` —
                 ``"count"`` (default), ``"cross_count"``, ``"participant"``,
-                or ``"timestamp"`` (or the equivalent :class:`QueryType`
-                member).
+                ``"timestamp"``, ``"variant_count"``, ``"variant_list"``,
+                ``"vcf_excerpt"``, or ``"aggregate_vcf_excerpt"`` (or the
+                equivalent :class:`QueryType` member).
 
         Returns:
-            A :class:`CountResult`, ``dict[str, CountResult]``, or
-            :class:`pandas.DataFrame` depending on ``type``.
+            A :class:`CountResult`, ``dict[str, CountResult]``,
+            :class:`pandas.DataFrame`, or ``list[str]`` depending
+            on ``type``.
 
         Raises:
             PicSureValidationError: If the ID is blank, the saved query
@@ -446,7 +513,7 @@ class Session:
         Raises:
             PicSureValidationError: If the ID is empty, the query was not
                 found, or the saved query uses features this adapter cannot
-                yet represent (NOT clauses, genomic filters).
+                yet represent (NOT clauses).
             PicSureAuthError: On 401 / 403.
             PicSureConnectionError: If the server is unreachable.
             PicSureQueryError: If the response cannot be parsed.
@@ -496,6 +563,15 @@ class Session:
     def dev_clear(self) -> None:
         """Empty the event buffer. No-op when dev mode is disabled."""
         self._dev_config.buffer.clear()
+
+    def _require_genomic(self) -> None:
+        """Raise unless this session is on a genomic-capable platform."""
+        if not self._supports_genomic:
+            raise PicSureValidationError(
+                "Genomic operations require an authorized platform "
+                "(e.g. Platform.BDC_AUTHORIZED); this session is connected "
+                "to an open or non-genomic resource."
+            )
 
     def _default_resource_uuid(self) -> str:
         if self._resource_uuid is not None:

@@ -9,6 +9,7 @@ data — all from a Jupyter notebook.
 - **Connect** to any PIC-SURE instance with a single function call
 - **Search** the data dictionary and narrow results with facet filters
 - **Build queries** with nested AND/OR clause groups for complex cohort selection
+- **Filter by genomic variant** attributes including gene, consequence, and frequency (authorized platforms)
 - **Run queries** to get counts, participant-level data, or time series
 - **Export** results as CSV, TSV, or PFB
 

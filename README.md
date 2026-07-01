@@ -40,11 +40,34 @@ df = session.runQuery(query, type="participant")
 session.exportCSV(df, "cohort.csv")
 ```
 
+## Genomic Filtering
+
+On genomic-capable platforms (BDC_AUTHORIZED, NHANES_AUTHORIZED), you can
+filter by gene, consequence, and variant frequency, and discover valid values
+for any genomic key:
+
+```python
+from picsure import buildGenomicFilter, buildQuery, VariantFrequency
+
+gene_filter = buildGenomicFilter("Gene_with_variant", values="BRCA2")
+freq_filter = buildGenomicFilter("Variant_frequency_as_text", values=VariantFrequency.RARE)
+
+# Genomic-only query
+genomic_query = buildQuery(genomicFilters=[gene_filter, freq_filter])
+count_result = session.runQuery(genomic_query, type="count")
+
+# Discover valid values for a genomic key
+df = session.searchGenomicValues("Gene_with_variant", query="BRCA")
+
+# Offline list of all variant consequences with severity
+consequences = picsure.genomicConsequences()
+```
+
 ## Documentation
 
 - **[Getting Started](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/blob/main/docs/getting-started.md)** — connect and run your first query
 - **[Search & Facets](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/blob/main/docs/guides/search-and-facets.md)** — search the dictionary with facet filters
-- **[Building Queries](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/blob/main/docs/guides/building-queries.md)** — nested AND/OR clause groups
+- **[Building Queries](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/blob/main/docs/guides/building-queries.md)** - nested AND/OR clause groups, genomic filters
 - **[Running & Exporting](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/blob/main/docs/guides/running-and-exporting.md)** — counts, DataFrames, CSV/TSV/PFB
 - **[API Reference](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/blob/main/docs/reference/api.md)** — complete function documentation
 - **[Migration Guide](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/blob/main/docs/guides/migrating-from-picsurehpdslib.md)** — upgrading from PicSureHpdsLib

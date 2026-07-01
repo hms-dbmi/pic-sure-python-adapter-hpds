@@ -794,3 +794,161 @@ class TestRunQueryLegacyPath:
         assert result.value == 5
         assert v3.call_count == 1
         assert legacy.call_count == 0
+
+
+class TestBuildQueryBodyGenomic:
+    def test_includes_genomic_filters(self):
+        from picsure._services.query_build import buildGenomicFilter, buildQuery
+        from picsure._services.query_run import build_query_body
+
+        gf = buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
+        q = buildQuery(genomicFilters=gf, includeConcepts=["\\bmi\\"])
+        body = build_query_body(q, "uuid-1", "COUNT")
+        assert body["query"]["genomicFilters"] == [
+            {"key": "Gene_with_variant", "values": ["BRCA1"]}
+        ]
+
+    def test_no_genomic_filters_is_empty(self):
+        from picsure._services.query_build import buildClause
+        from picsure._services.query_run import build_query_body
+
+        c = buildClause("\\path\\", type=PhenotypicFilterType.FILTER, categories="X")
+        body = build_query_body(c, "uuid-1", "COUNT")
+        assert body["query"]["genomicFilters"] == []
+
+    def test_genomic_filters_do_not_affect_select(self):
+        from picsure._services.query_build import buildGenomicFilter, buildQuery
+        from picsure._services.query_run import build_query_body
+
+        gf = buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
+        q = buildQuery(genomicFilters=gf, includeConcepts=["\\bmi\\"])
+        body = build_query_body(q, "uuid-1", "DATAFRAME")
+        assert body["query"]["select"] == ["\\bmi\\"]
+
+
+class TestVariantResultParsing:
+    def test_resolve_new_query_types(self):
+        from picsure._services.query_run import _resolve_query_type
+
+        assert _resolve_query_type("variant_count") == "VARIANT_COUNT_FOR_QUERY"
+        assert _resolve_query_type("variant_list") == "VARIANT_LIST_FOR_QUERY"
+        assert _resolve_query_type(QueryType.VCF_EXCERPT) == "VCF_EXCERPT"
+        assert (
+            _resolve_query_type(QueryType.AGGREGATE_VCF_EXCERPT)
+            == "AGGREGATE_VCF_EXCERPT"
+        )
+
+    def test_parse_variant_count_exact(self):
+        from picsure._services.query_run import _parse_variant_count
+
+        result = _parse_variant_count(b"123")
+        assert isinstance(result, CountResult)
+        assert result.value == 123
+        assert result.margin is None
+        assert result.cap is None
+
+    def test_parse_variant_count_noisy(self):
+        # If the server obfuscates the count, it is represented faithfully
+        # rather than raising on int().
+        from picsure._services.query_run import _parse_variant_count
+
+        result = _parse_variant_count("11309 ±3".encode())
+        assert result.value == 11309
+        assert result.margin == 3
+
+    def test_parse_variant_count_suppressed(self):
+        from picsure._services.query_run import _parse_variant_count
+
+        result = _parse_variant_count(b"< 10")
+        assert result.value is None
+        assert result.cap == 10
+
+    def test_parse_variant_count_not_allowed(self):
+        from picsure._services.query_run import _parse_variant_count
+
+        with pytest.raises(PicSureQueryError):
+            _parse_variant_count(b"VARIANT_COUNT_FOR_QUERY query type not allowed")
+
+    def test_parse_variant_count_garbage_raises(self):
+        from picsure._services.query_run import _parse_variant_count
+
+        with pytest.raises(PicSureQueryError):
+            _parse_variant_count(b"not a count")
+
+    def test_parse_variant_list(self):
+        from picsure._services.query_run import _parse_variant_list
+
+        # Real variant specs are 6 comma-separated fields
+        # (chromosome,offset,ref,alt,gene,consequence) joined with ", ".
+        # The internal commas must NOT split the spec apart.
+        raw = b"[7,100000,A,T,CHD8,missense_variant, 8,200000,G,C,GENE2,stop_gained]"
+        assert _parse_variant_list(raw) == [
+            "7,100000,A,T,CHD8,missense_variant",
+            "8,200000,G,C,GENE2,stop_gained",
+        ]
+
+    def test_parse_variant_list_single_spec(self):
+        from picsure._services.query_run import _parse_variant_list
+
+        # A single spec has no ", " separator; it must come back intact.
+        raw = b"[7,100000,A,T,CHD8,missense_variant]"
+        assert _parse_variant_list(raw) == ["7,100000,A,T,CHD8,missense_variant"]
+
+    def test_parse_variant_list_empty(self):
+        from picsure._services.query_run import _parse_variant_list
+
+        assert _parse_variant_list(b"[]") == []
+
+    def test_parse_vcf_excerpt(self):
+        from picsure._services.query_run import _parse_vcf_excerpt
+
+        raw = b"CHROM\tPOSITION\tREF\tALT\n1\t100\tA\tT\n"
+        df = _parse_vcf_excerpt(raw)
+        assert list(df.columns) == ["CHROM", "POSITION", "REF", "ALT"]
+        assert len(df) == 1
+
+    def test_parse_vcf_excerpt_no_variants(self):
+        from picsure._services.query_run import _parse_vcf_excerpt
+
+        df = _parse_vcf_excerpt(b"No Variants Found\n")
+        assert df.empty
+
+    def test_parse_vcf_excerpt_not_allowed(self):
+        from picsure._services.query_run import _parse_vcf_excerpt
+
+        with pytest.raises(PicSureQueryError):
+            _parse_vcf_excerpt(b"VCF_EXCERPT query type not allowed")
+
+    def test_empty_body_reports_unsupported_deployment(self):
+        # BDC returns HTTP 200 with an empty body for variant result types it
+        # does not serve. Surface that as a clear "not available on this
+        # deployment" error rather than a confusing parse failure (or, for
+        # VCF, a silently-empty DataFrame).
+        from picsure._services.query_run import (
+            _parse_variant_count,
+            _parse_variant_list,
+            _parse_vcf_excerpt,
+        )
+
+        for parser in (_parse_variant_count, _parse_variant_list, _parse_vcf_excerpt):
+            with pytest.raises(PicSureQueryError, match="not available on this"):
+                parser(b"")
+
+    @respx.mock
+    def test_variant_500_reports_unsupported_deployment(self):
+        # BDC's backend returns HTTP 500 for variant result types it does not
+        # serve yet. Surface that as the same clear "not available" error as the
+        # empty-200 case, not the generic "temporarily unavailable".
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(500, text="ri_error 500")
+        )
+        with pytest.raises(PicSureQueryError, match="not available on this"):
+            run_query(_make_client(), RESOURCE_UUID, _simple_clause(), "variant_count")
+
+    @respx.mock
+    def test_nonvariant_500_stays_temporarily_unavailable(self):
+        # A 5xx on a normal (non-variant) query is still a transient-style
+        # outage, not an unsupported feature.
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(500, text="boom"))
+        with pytest.raises(PicSureConnectionError, match="temporarily unavailable"):
+            run_query(_make_client(), RESOURCE_UUID, _simple_clause(), "count")

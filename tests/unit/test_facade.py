@@ -58,3 +58,18 @@ class TestPublicFacade:
     def test_platform_is_importable(self):
         assert picsure.Platform.BDC_AUTHORIZED.url.startswith("https://")
         assert picsure.Platform.BDC_DEV_OPEN.requires_auth is False
+
+
+def test_genomic_exports_present():
+    import picsure
+
+    for name in (
+        "buildGenomicFilter",
+        "GenomicFilter",
+        "VariantFrequency",
+    ):
+        assert hasattr(picsure, name), name
+        assert name in picsure.__all__, name
+    # Variant-spec (SNP) filtering is not supported yet; Zygosity was removed.
+    assert not hasattr(picsure, "Zygosity")
+    assert "Zygosity" not in picsure.__all__

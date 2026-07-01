@@ -218,3 +218,45 @@ class TestEditQueryContainer:
         query = buildQuery(includeConcepts=["\\out\\"])
         with pytest.raises(PicSureValidationError, match="no phenotypic filter"):
             replaceClause(query, a, c)
+
+
+def test_remove_subquery_preserves_genomic_filters():
+    from picsure import (
+        PhenotypicFilterType,
+        Query,
+        buildClause,
+        buildClauseGroup,
+        buildQuery,
+        removeSubQuery,
+    )
+    from picsure._services.query_build import buildGenomicFilter
+
+    gf = buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
+    c1 = buildClause("\\a\\", type=PhenotypicFilterType.FILTER, categories="X")
+    c2 = buildClause("\\b\\", type=PhenotypicFilterType.FILTER, categories="Y")
+    grp = buildClauseGroup([c1, c2])
+    q = buildQuery(phenotypicFilter=grp, genomicFilters=gf)
+
+    result = removeSubQuery(q, c2)
+    assert isinstance(result, Query)
+    assert result.genomicFilters == (gf,)
+
+
+def test_replace_clause_preserves_genomic_filters():
+    from picsure import (
+        PhenotypicFilterType,
+        Query,
+        buildClause,
+        buildQuery,
+        replaceClause,
+    )
+    from picsure._services.query_build import buildGenomicFilter
+
+    gf = buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
+    c1 = buildClause("\\a\\", type=PhenotypicFilterType.FILTER, categories="X")
+    c2 = buildClause("\\b\\", type=PhenotypicFilterType.FILTER, categories="Y")
+    q = buildQuery(phenotypicFilter=c1, genomicFilters=gf)
+
+    result = replaceClause(q, c1, c2)
+    assert isinstance(result, Query)
+    assert result.genomicFilters == (gf,)

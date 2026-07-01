@@ -83,3 +83,21 @@ def test_search_term() -> str:
     ``PICSURE_TEST_SEARCH_TERM``; defaults to ``"age"`` which exists on
     most PIC-SURE deployments."""
     return PICSURE_TEST_SEARCH_TERM
+
+
+PICSURE_TEST_GENE = os.environ.get("PICSURE_TEST_GENE", "")
+
+
+@pytest.fixture()
+def test_gene() -> str:
+    """A gene symbol valid for the target deployment's variant data.
+
+    Set ``PICSURE_TEST_GENE`` (e.g. ``CHD8``). Genomic tests skip with a
+    clear message when unset rather than failing with an opaque server error.
+    """
+    if not PICSURE_TEST_GENE:
+        pytest.skip(
+            "PICSURE_TEST_GENE is not set. Add it to your .env with a gene "
+            "symbol present in the target deployment's variant data."
+        )
+    return PICSURE_TEST_GENE

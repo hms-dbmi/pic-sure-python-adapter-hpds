@@ -108,3 +108,39 @@ class TestResolvePlatform:
         info = resolve_platform(Platform.NHANES_OPEN)
         assert info.url.startswith("https://")
         assert info.resource_uuid is not None
+
+
+def test_authorized_platforms_support_genomic():
+    assert Platform.BDC_AUTHORIZED.supports_genomic is True
+    assert Platform.BDC_DEV_AUTHORIZED.supports_genomic is True
+    assert Platform.BDC_PREDEV_AUTHORIZED.supports_genomic is True
+    assert Platform.NHANES_AUTHORIZED.supports_genomic is True
+
+
+def test_open_platforms_do_not_support_genomic():
+    for p in (
+        Platform.BDC_OPEN,
+        Platform.BDC_DEV_OPEN,
+        Platform.BDC_PREDEV_OPEN,
+        Platform.NHANES_OPEN,
+    ):
+        assert p.supports_genomic is False
+
+
+def test_resolve_platform_threads_supports_genomic():
+    assert resolve_platform(Platform.BDC_AUTHORIZED).supports_genomic is True
+    assert resolve_platform(Platform.BDC_OPEN).supports_genomic is False
+
+
+def test_resolve_platform_custom_url_defaults_false():
+    assert resolve_platform("https://my-picsure.example.com").supports_genomic is False
+
+
+def test_resolve_platform_custom_url_override_true():
+    info = resolve_platform("https://my-picsure.example.com", supports_genomic=True)
+    assert info.supports_genomic is True
+
+
+def test_resolve_platform_member_override_false():
+    info = resolve_platform(Platform.BDC_AUTHORIZED, supports_genomic=False)
+    assert info.supports_genomic is False

@@ -171,6 +171,64 @@ full_query = buildQuery(
 )
 ```
 
+## Genomic Filters
+
+On genomic-capable platforms (BDC_AUTHORIZED, BDC_DEV_AUTHORIZED, BDC_PREDEV_AUTHORIZED,
+NHANES_AUTHORIZED), you can add genomic filters to a query using `buildGenomicFilter`.
+Each call produces one categorical `GenomicFilter`; the filters are AND-combined with
+the phenotypic filter when the query runs.
+
+### Building a genomic filter
+
+```python
+from picsure import buildGenomicFilter, VariantFrequency
+
+# Filter to a specific gene
+gene_filter = buildGenomicFilter("Gene_with_variant", values="BRCA2")
+
+# Multiple genes at once
+multi_gene = buildGenomicFilter("Gene_with_variant", values=["BRCA1", "BRCA2"])
+
+# Filter by variant consequence
+csq_filter = buildGenomicFilter("Variant_consequence_calculated", values="missense_variant")
+
+# Filter by frequency using the VariantFrequency enum
+freq_filter = buildGenomicFilter("Variant_frequency_as_text", values=VariantFrequency.RARE)
+```
+
+`values` is required. Variant-spec and SNP keys are rejected with an actionable error.
+`VariantFrequency` has three members: `RARE`, `COMMON`, and `NOVEL`.
+
+### Genomic-only query
+
+Pass a list of `GenomicFilter` objects to `buildQuery(genomicFilters=...)`. A
+`phenotypicFilter` is not required:
+
+```python
+from picsure import buildQuery
+
+genomic_query = buildQuery(genomicFilters=[gene_filter, freq_filter])
+count_result = session.runQuery(genomic_query, type="count")
+```
+
+### Combined phenotypic and genomic query
+
+Phenotypic and genomic filters are AND-combined:
+
+```python
+from picsure import buildClause, buildClauseGroup, buildQuery, PhenotypicFilterType, GroupOperator
+
+sex_filter = buildClause("\\phs1\\sex\\", type=PhenotypicFilterType.FILTER, categories="Female")
+age_filter = buildClause("\\phs1\\age\\", type=PhenotypicFilterType.FILTER, min=18, max=45)
+pheno = buildClauseGroup([sex_filter, age_filter], operator=GroupOperator.AND)
+
+gene_filter = buildGenomicFilter("Gene_with_variant", values="BRCA2")
+freq_filter = buildGenomicFilter("Variant_frequency_as_text", values=VariantFrequency.RARE)
+
+query = buildQuery(phenotypicFilter=pheno, genomicFilters=[gene_filter, freq_filter])
+count_result = session.runQuery(query, type="count")
+```
+
 ## Editing an Existing Query
 
 `removeSubQuery` and `replaceClause` let you edit a query tree without
