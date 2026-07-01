@@ -520,6 +520,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#variant-result-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Variant Result Types
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -921,6 +932,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#variant-result-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Variant Result Types
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1056,23 +1078,62 @@ in that case).</p>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">df</span><span class="o">.</span><span class="n">head</span><span class="p">()</span>
 </code></pre></div>
 <p>Returns a pandas DataFrame with repeated measurements over time.</p>
+<h3 id="variant-result-types">Variant Result Types<a class="headerlink" href="#variant-result-types" title="Permanent link">&para;</a></h3>
+<p>Queries with genomic filters also support four variant-specific result types:</p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Returns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>variant_count</code></td>
+<td><code>CountResult</code> - count of matching variants</td>
+</tr>
+<tr>
+<td><code>variant_list</code></td>
+<td><code>list[str]</code> - list of matching variant identifiers</td>
+</tr>
+<tr>
+<td><code>vcf_excerpt</code></td>
+<td>DataFrame - VCF-formatted excerpt of matching variants</td>
+</tr>
+<tr>
+<td><code>aggregate_vcf_excerpt</code></td>
+<td>DataFrame - aggregated VCF excerpt</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">variant_count</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">runQuery</span><span class="p">(</span><span class="n">genomic_query</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;variant_count&quot;</span><span class="p">)</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">variant_ids</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">runQuery</span><span class="p">(</span><span class="n">genomic_query</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;variant_list&quot;</span><span class="p">)</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">vcf_df</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">runQuery</span><span class="p">(</span><span class="n">genomic_query</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;vcf_excerpt&quot;</span><span class="p">)</span>
+</code></pre></div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>These result types are not served by BDC primary environments yet. The adapter
+raises <code>PicSureQueryError</code> with a clear message on an empty or 5xx response.
+Genomic filters work normally with <code>count</code> and <code>participant</code> on all genomic-capable
+platforms.</p>
+</div>
 <h2 id="exporting-data">Exporting Data<a class="headerlink" href="#exporting-data" title="Permanent link">&para;</a></h2>
 <h3 id="csv">CSV<a class="headerlink" href="#csv" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">df</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">runQuery</span><span class="p">(</span><span class="n">my_query</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;participant&quot;</span><span class="p">)</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">session</span><span class="o">.</span><span class="n">exportCSV</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="s2">&quot;my_cohort.csv&quot;</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">df</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">runQuery</span><span class="p">(</span><span class="n">my_query</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;participant&quot;</span><span class="p">)</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">session</span><span class="o">.</span><span class="n">exportCSV</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="s2">&quot;my_cohort.csv&quot;</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="tsv">TSV<a class="headerlink" href="#tsv" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">session</span><span class="o">.</span><span class="n">exportTSV</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="s2">&quot;my_cohort.tsv&quot;</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">session</span><span class="o">.</span><span class="n">exportTSV</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="s2">&quot;my_cohort.tsv&quot;</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="pfb">PFB<a class="headerlink" href="#pfb" title="Permanent link">&para;</a></h3>
 <p>PFB export runs the query server-side and writes the result directly
 to a file:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">session</span><span class="o">.</span><span class="n">exportAsPFB</span><span class="p">(</span><span class="n">my_query</span><span class="p">,</span> <span class="s2">&quot;my_cohort.pfb&quot;</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">session</span><span class="o">.</span><span class="n">exportAsPFB</span><span class="p">(</span><span class="n">my_query</span><span class="p">,</span> <span class="s2">&quot;my_cohort.pfb&quot;</span><span class="p">)</span>
 </code></pre></div>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>PFB export requires the optional <code>pypfb</code> dependency:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>pip<span class="w"> </span>install<span class="w"> </span>picsure<span class="o">[</span>pfb<span class="o">]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>pip<span class="w"> </span>install<span class="w"> </span>picsure<span class="o">[</span>pfb<span class="o">]</span>
 </code></pre></div></p>
 </div>
 <h2 id="saving-a-query-by-name">Saving a Query by Name<a class="headerlink" href="#saving-a-query-by-name" title="Permanent link">&para;</a></h2>
@@ -1080,17 +1141,17 @@ to a file:</p>
 profile under a display name. <code>saveQueryByName</code> submits the query and
 associates the name with it server-side, returning the PIC-SURE query
 ID:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">qid</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">saveQueryByName</span><span class="p">(</span><span class="n">my_query</span><span class="p">,</span> <span class="s2">&quot;Cohort 2026-Q2&quot;</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">qid</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">saveQueryByName</span><span class="p">(</span><span class="n">my_query</span><span class="p">,</span> <span class="s2">&quot;Cohort 2026-Q2&quot;</span><span class="p">)</span>
 </code></pre></div>
 <p>The returned <code>qid</code> is the same UUID you'd pass to <code>loadQueryByID</code> or
 <code>runQueryByID</code> later:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">restored</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">loadQueryByID</span><span class="p">(</span><span class="n">qid</span><span class="p">)</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">df</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">runQueryByID</span><span class="p">(</span><span class="n">qid</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;participant&quot;</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">restored</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">loadQueryByID</span><span class="p">(</span><span class="n">qid</span><span class="p">)</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="n">df</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">runQueryByID</span><span class="p">(</span><span class="n">qid</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;participant&quot;</span><span class="p">)</span>
 </code></pre></div>
 <p>By default, saving a second time with the same name raises
 <code>PicSureValidationError</code>. To repoint the existing record at a freshly
 built query, pass <code>overwrite=True</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">qid</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">saveQueryByName</span><span class="p">(</span><span class="n">refined_query</span><span class="p">,</span> <span class="s2">&quot;Cohort 2026-Q2&quot;</span><span class="p">,</span> <span class="n">overwrite</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">qid</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">saveQueryByName</span><span class="p">(</span><span class="n">refined_query</span><span class="p">,</span> <span class="s2">&quot;Cohort 2026-Q2&quot;</span><span class="p">,</span> <span class="n">overwrite</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </code></pre></div>
 <p>Constraints (validated client-side, mirrored from the backend
 <code>NamedDataset</code> contract):</p>
@@ -1106,18 +1167,18 @@ the <code>/dataset/named/</code> endpoint requires an authenticated principal.</
 <h2 id="simple-queries">Simple Queries<a class="headerlink" href="#simple-queries" title="Permanent link">&para;</a></h2>
 <p>You can pass a single clause directly to <code>runQuery</code> — you don't have
 to wrap it in a group first:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">sex</span> <span class="o">=</span> <span class="n">picsure</span><span class="o">.</span><span class="n">buildClause</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">phs1</span><span class="se">\\</span><span class="s2">sex</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">PhenotypicFilterType</span><span class="o">.</span><span class="n">FILTER</span><span class="p">,</span> <span class="n">categories</span><span class="o">=</span><span class="s2">&quot;Male&quot;</span><span class="p">)</span>
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>
-<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="c1"># This works — no buildClauseGroup needed for simple queries</span>
-<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="n">count_result</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">runQuery</span><span class="p">(</span><span class="n">sex</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;count&quot;</span><span class="p">)</span>
-<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="n">count</span> <span class="o">=</span> <span class="n">count_result</span><span class="o">.</span><span class="n">value</span>  <span class="c1"># None if suppressed; check count_result.cap</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">sex</span> <span class="o">=</span> <span class="n">picsure</span><span class="o">.</span><span class="n">buildClause</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">phs1</span><span class="se">\\</span><span class="s2">sex</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">PhenotypicFilterType</span><span class="o">.</span><span class="n">FILTER</span><span class="p">,</span> <span class="n">categories</span><span class="o">=</span><span class="s2">&quot;Male&quot;</span><span class="p">)</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="c1"># This works — no buildClauseGroup needed for simple queries</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="n">count_result</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">runQuery</span><span class="p">(</span><span class="n">sex</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;count&quot;</span><span class="p">)</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="n">count</span> <span class="o">=</span> <span class="n">count_result</span><span class="o">.</span><span class="n">value</span>  <span class="c1"># None if suppressed; check count_result.cap</span>
 </code></pre></div>
 <h2 id="error-handling">Error Handling<a class="headerlink" href="#error-handling" title="Permanent link">&para;</a></h2>
 <p>If something goes wrong, you'll get a clear error message:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># Invalid query type</span>
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="n">session</span><span class="o">.</span><span class="n">runQuery</span><span class="p">(</span><span class="n">my_query</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;invalid&quot;</span><span class="p">)</span>
-<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="c1"># PicSureValidationError: &#39;invalid&#39; is not a valid query type.</span>
-<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="c1"># Valid types: count, participant, timestamp.</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># Invalid query type</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="n">session</span><span class="o">.</span><span class="n">runQuery</span><span class="p">(</span><span class="n">my_query</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;invalid&quot;</span><span class="p">)</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="c1"># PicSureValidationError: &#39;invalid&#39; is not a valid query type.</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="c1"># Valid types: count, participant, timestamp.</span>
 </code></pre></div>
 <p>Researchers don't need to write try/except blocks. The error messages
 tell you what happened and what to do about it.</p>

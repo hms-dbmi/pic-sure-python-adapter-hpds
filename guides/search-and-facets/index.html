@@ -519,6 +519,45 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#genomic-value-discovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Genomic Value Discovery
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Genomic Value Discovery">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#search-genomic-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Search genomic values
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#variant-consequences-offline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Variant consequences (offline)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -943,6 +982,45 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#genomic-value-discovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Genomic Value Discovery
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Genomic Value Discovery">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#search-genomic-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Search genomic values
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#variant-consequences-offline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Variant consequences (offline)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1054,6 +1132,34 @@ listing the valid options:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">facets</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;invalid_category&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="c1"># PicSureValidationError: &#39;invalid_category&#39; is not a valid facet</span>
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="c1"># category. Valid categories: data_type, dataset_id.</span>
+</code></pre></div>
+<h2 id="genomic-value-discovery">Genomic Value Discovery<a class="headerlink" href="#genomic-value-discovery" title="Permanent link">&para;</a></h2>
+<p>On genomic-capable platforms (BDC_AUTHORIZED, NHANES_AUTHORIZED), you can look
+up valid values for any genomic key before building a filter.</p>
+<h3 id="search-genomic-values">Search genomic values<a class="headerlink" href="#search-genomic-values" title="Permanent link">&para;</a></h3>
+<p><code>session.searchGenomicValues</code> queries the server and returns a DataFrame of
+matching values. Results are paginated; metadata (total, page, size) is on
+<code>df.attrs</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Find genes matching &quot;BRCA&quot;</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">df</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">searchGenomicValues</span><span class="p">(</span><span class="s2">&quot;Gene_with_variant&quot;</span><span class="p">,</span> <span class="n">query</span><span class="o">=</span><span class="s2">&quot;BRCA&quot;</span><span class="p">)</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="nb">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="c1"># List all values for a key (no query term)</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="n">all_consequences</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">searchGenomicValues</span><span class="p">(</span><span class="s2">&quot;Variant_consequence_calculated&quot;</span><span class="p">)</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="c1"># Page through large result sets</span>
+<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="n">page2</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">searchGenomicValues</span><span class="p">(</span><span class="s2">&quot;Gene_with_variant&quot;</span><span class="p">,</span> <span class="n">query</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">page</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
+<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="nb">print</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">attrs</span><span class="p">)</span>  <span class="c1"># {&#39;total&#39;: ..., &#39;page&#39;: 2, &#39;size&#39;: 100}</span>
+</code></pre></div>
+<h3 id="variant-consequences-offline">Variant consequences (offline)<a class="headerlink" href="#variant-consequences-offline" title="Permanent link">&para;</a></h3>
+<p><code>picsure.genomicConsequences()</code> returns the full list of consequence terms with
+severity rankings without a network call. It works on any platform, including
+open-access ones.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">picsure</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="n">consequences</span> <span class="o">=</span> <span class="n">picsure</span><span class="o">.</span><span class="n">genomicConsequences</span><span class="p">()</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># DataFrame with columns: severity, consequence</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="nb">print</span><span class="p">(</span><span class="n">consequences</span><span class="o">.</span><span class="n">head</span><span class="p">())</span>
 </code></pre></div>
 
 
