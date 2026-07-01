@@ -42,12 +42,14 @@ class Session:
         dev_config: DevConfig | None = None,
         use_legacy_query_path: bool = False,
         supports_genomic: bool = False,
+        session_id: str = "",
     ) -> None:
         self._client = client
         self._user_email = user_email
         self._token_expiration = token_expiration
         self._resources = resources
         self._resource_uuid = resource_uuid
+        self._session_id = session_id
         self._consents: list[str] = list(consents) if consents else []
         self._total_concepts = total_concepts
         self._use_legacy_query_path = use_legacy_query_path
@@ -57,6 +59,16 @@ class Session:
             if dev_config is not None
             else DevConfig(enabled=False, max_events=1)
         )
+
+    @property
+    def session_id(self) -> str:
+        """Stable per-session identifier sent to the backend on every request.
+
+        Generated once at ``connect()`` and forwarded as the ``X-Session-Id``
+        header so the server-side audit log can correlate every request in
+        this session. Empty string if the session was constructed without one.
+        """
+        return self._session_id
 
     @property
     def consents(self) -> list[str]:

@@ -5,6 +5,7 @@ import json
 import logging
 import sys
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from picsure._dev.config import DevConfig
 from picsure._dev.events import Event
@@ -49,6 +50,7 @@ def connect(
     requires_auth: bool | None = None,
     supports_genomic: bool | None = None,
     dev_mode: bool | None = None,
+    client_type: str = "PYTHON_ADAPTER",
 ) -> Session:
     """Connect to a PIC-SURE instance and return a Session.
 
@@ -81,6 +83,10 @@ def connect(
             public Session method are captured in an in-memory buffer,
             and a default stderr handler is attached to the ``picsure``
             logger (unless one already exists).
+        client_type: Identifies the calling client to the backend's audit
+            log, sent as the ``X-Client-Type`` header on every request.
+            Defaults to ``"PYTHON_ADAPTER"``; the R adapter passes
+            ``"R_ADAPTER"``.
 
     Returns:
         A Session you can use to search, build queries, and export data.
@@ -131,7 +137,17 @@ def connect(
     if dev_config.enabled:
         _install_default_handler()
 
-    client = PicSureClient(base_url=info.url, token=token, dev_config=dev_config)
+    # One stable id for the lifetime of this session, forwarded on every
+    # request so the backend audit log can correlate the session's calls.
+    session_id = str(uuid4())
+
+    client = PicSureClient(
+        base_url=info.url,
+        token=token,
+        dev_config=dev_config,
+        session_id=session_id,
+        client_type=client_type,
+    )
 
     if info.requires_auth:
         profile = _fetch_profile(client, display_name, info.url)
@@ -205,6 +221,7 @@ def connect(
         dev_config=dev_config,
         use_legacy_query_path=use_legacy_query_path,
         supports_genomic=info.supports_genomic,
+        session_id=session_id,
     )
 
 
