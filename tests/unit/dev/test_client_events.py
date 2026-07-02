@@ -68,6 +68,29 @@ def test_retry_emits_two_events():
 
 
 @respx.mock
+def test_stale_connection_retry_emits_error_event_then_success():
+    respx.post(f"{BASE_URL}/query/sync").mock(
+        side_effect=[
+            httpx.RemoteProtocolError("Server disconnected without responding."),
+            httpx.Response(200, json={"ok": True}),
+        ]
+    )
+    cfg = DevConfig(enabled=True, max_events=10)
+    client = PicSureClient(base_url=BASE_URL, token=TOKEN, dev_config=cfg)
+
+    client.post_json("/query/sync", body={"q": "x"})
+
+    events = cfg.buffer.snapshot()
+    # The stale first attempt is recorded as an error event; the retry that
+    # succeeds on a fresh connection is recorded as an http event.
+    assert any(
+        e.kind == "error" and e.error == "RemoteProtocolError" and e.retry == 0
+        for e in events
+    )
+    assert any(e.kind == "http" and e.status == 200 and e.retry == 1 for e in events)
+
+
+@respx.mock
 def test_connection_error_emits_error_event_then_raises():
     respx.get(f"{BASE_URL}/down").mock(side_effect=httpx.ConnectError("refused"))
     cfg = DevConfig(enabled=True, max_events=10)

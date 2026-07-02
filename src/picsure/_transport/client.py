@@ -148,6 +148,17 @@ class PicSureClient:
                 if attempt < _MAX_RETRIES:
                     continue
                 raise TransportConnectionError(str(exc)) from exc
+            except httpx.RemoteProtocolError as exc:
+                last_exc = exc
+                # Stale pooled connection: the server closed it before sending
+                # any response, so the request was never processed.  Safe to
+                # retry once on a fresh connection, even for this POST.
+                if attempt < _MAX_RETRIES:
+                    continue
+                raise TransportConnectionError(
+                    f"Server closed the connection before responding "
+                    f"(stale pooled connection): {exc}"
+                ) from exc
             except httpx.TimeoutException as exc:
                 last_exc = exc
                 if attempt < _MAX_RETRIES:
@@ -195,6 +206,22 @@ class PicSureClient:
                 if attempt < _MAX_RETRIES:
                     continue
                 raise _mark_emitted(TransportConnectionError(str(exc))) from exc
+            except httpx.RemoteProtocolError as exc:
+                last_exc = exc
+                self._emit_error(method, path, attempt, start, type(exc).__name__)
+                # The server closed a pooled keep-alive connection before
+                # sending any response (the classic stale-connection symptom in
+                # a long-lived session).  Because no response was produced, the
+                # request was never processed, so retrying once on a fresh
+                # connection is safe for every method -- including POST.
+                if attempt < _MAX_RETRIES:
+                    continue
+                raise _mark_emitted(
+                    TransportConnectionError(
+                        f"Server closed the connection before responding "
+                        f"(stale pooled connection): {exc}"
+                    )
+                ) from exc
             except httpx.TimeoutException as exc:
                 last_exc = exc
                 self._emit_error(method, path, attempt, start, type(exc).__name__)

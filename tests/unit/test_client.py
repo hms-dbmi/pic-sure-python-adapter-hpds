@@ -15,6 +15,10 @@ from picsure._transport.errors import (
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token-abc123"
 
+# The message httpx raises when a pooled keep-alive connection was closed by
+# the server before it responded -- the stale-connection symptom under test.
+STALE_CONN_MSG = "Server disconnected without sending a response."
+
 
 class TestPicSureClient:
     @respx.mock
@@ -311,6 +315,86 @@ class TestPicSureClientRetryScoping:
         # A second close should not raise.
         client.close()
         assert client._http.is_closed
+
+
+class TestPicSureClientStaleConnection:
+    """A pooled keep-alive connection the server has silently closed surfaces
+    as httpx.RemoteProtocolError ("Server disconnected without sending a
+    response"). Because the server never produced a response, it never
+    processed the request, so retrying once on a fresh connection is safe for
+    every method -- including non-idempotent POST.
+    """
+
+    @respx.mock
+    def test_post_remote_protocol_error_retries_then_succeeds(self):
+        route = respx.post(f"{BASE_URL}/query/sync").mock(
+            side_effect=[
+                httpx.RemoteProtocolError(STALE_CONN_MSG),
+                httpx.Response(200, json={"recovered": True}),
+            ]
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+
+        result = client.post_json("/query/sync", body={"q": "x"})
+
+        assert result == {"recovered": True}
+        assert route.call_count == 2  # stale connection + retry on a fresh one
+
+    @respx.mock
+    def test_post_remote_protocol_error_exhausts_raises_connection_error(self):
+        route = respx.post(f"{BASE_URL}/query/sync").mock(
+            side_effect=httpx.RemoteProtocolError(STALE_CONN_MSG)
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+
+        with pytest.raises(TransportConnectionError, match="stale"):
+            client.post_json("/query/sync", body={"q": "x"})
+        assert route.call_count == 2  # initial + 1 retry
+
+    @respx.mock
+    def test_get_remote_protocol_error_retries_then_succeeds(self):
+        route = respx.get(f"{BASE_URL}/flaky").mock(
+            side_effect=[
+                httpx.RemoteProtocolError(STALE_CONN_MSG),
+                httpx.Response(200, json={"ok": True}),
+            ]
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+
+        result = client.get_json("/flaky")
+
+        assert result == {"ok": True}
+        assert route.call_count == 2
+
+    @respx.mock
+    def test_post_raw_stream_remote_protocol_error_retries_then_succeeds(self):
+        route = respx.post(f"{BASE_URL}/export").mock(
+            side_effect=[
+                httpx.RemoteProtocolError(STALE_CONN_MSG),
+                httpx.Response(200, content=b"streamed-bytes"),
+            ]
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+
+        with client.post_raw_stream("/export", body={"q": "x"}) as response:
+            data = b"".join(response.iter_bytes())
+
+        assert data == b"streamed-bytes"
+        assert route.call_count == 2
+
+    @respx.mock
+    def test_post_raw_stream_remote_protocol_error_exhausts_raises(self):
+        route = respx.post(f"{BASE_URL}/export").mock(
+            side_effect=httpx.RemoteProtocolError(STALE_CONN_MSG)
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+
+        with (
+            pytest.raises(TransportConnectionError, match="stale"),
+            client.post_raw_stream("/export", body={"q": "x"}) as response,
+        ):
+            b"".join(response.iter_bytes())
+        assert route.call_count == 2
 
 
 class TestPicSureClientCorrelationHeaders:
