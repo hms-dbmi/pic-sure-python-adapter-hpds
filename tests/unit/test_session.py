@@ -312,7 +312,8 @@ def _metadata_envelope(
 
 
 _CONCEPTS_URL = (
-    f"{BASE_URL}/picsure/proxy/dictionary-api/concepts?page_number=0&page_size=100"
+    f"{BASE_URL}/picsure/proxy/dictionary-api/concepts"
+    "?page_number=0&page_size=2147483647"
 )
 _FACETS_URL = f"{BASE_URL}/picsure/proxy/dictionary-api/facets"
 

@@ -11,28 +11,19 @@ from picsure._dev.config import DevConfig
 from picsure._dev.events import Event
 from picsure._models.resource import Resource
 from picsure._models.session import Session
-from picsure._services._errors import rate_limit_message
 from picsure._services.consents import fetch_consents
-from picsure._services.search import fetch_total_concepts
 from picsure._transport.client import PicSureClient
 from picsure._transport.errors import (
     TransportAuthenticationError,
-    TransportConnectionError,
     TransportError,
-    TransportNotFoundError,
-    TransportRateLimitError,
-    TransportServerError,
-    TransportValidationError,
 )
 from picsure._transport.platforms import Platform, resolve_platform
 from picsure.errors import (
     PicSureAuthError,
     PicSureConnectionError,
-    PicSureQueryError,
     PicSureValidationError,
 )
 
-_PSAMA_PROFILE_PATH = "/psama/user/me"
 _PICSURE_RESOURCES_PATH = "/picsure/info/resources"
 
 _ANONYMOUS_EMAIL = "anonymous"
@@ -71,8 +62,8 @@ def connect(
             ``True`` to fetch the consent list from PSAMA on connect.
         requires_auth: Override the platform's auth requirement.  Known
             Platform members default to their own flag; custom URLs
-            default to ``True``.  Pass ``False`` to skip the PSAMA
-            profile call on an open-access deployment.
+            default to ``True``.  Pass ``False`` on an open-access
+            deployment to connect anonymously without a token.
         supports_genomic: Override whether genomic operations are allowed
             on this session.  Defaults to the platform's own flag (``True``
             for ``Platform.BDC_AUTHORIZED``, ``False`` otherwise).  For
@@ -150,19 +141,17 @@ def connect(
     )
 
     if info.requires_auth:
-        profile = _fetch_profile(client, display_name, info.url)
-        email = str(profile.get("email", "unknown"))
-        # PSAMA's /user/me returns UserForDisplay (uuid, email, privileges,
-        # token, queryScopes, acceptedTOS) — it does not expose token
-        # expiry.  The token itself is a JWT, so read its `exp` claim.
+        # The token is the PSAMA-issued PIC-SURE JWT (built from
+        # UserClaims), so both the display email and the expiry come
+        # straight from its claims — no round trip to /psama/user/me.
+        email = _email_from_jwt(token)
         expiration = _token_expiration_from_jwt(token)
     else:
         email = _ANONYMOUS_EMAIL
         expiration = _ANONYMOUS_EXPIRATION
 
-    resources = _fetch_resources(client, display_name, info.requires_auth)
+    resources = _fetch_resources(client, display_name, info.url, info.requires_auth)
     consents = fetch_consents(client) if info.include_consents else []
-    total_concepts = fetch_total_concepts(client, consents=consents)
 
     # Explicit resource_uuid wins, then Platform default, then None.
     effective_uuid = resource_uuid if resource_uuid is not None else info.resource_uuid
@@ -197,7 +186,6 @@ def connect(
                 metadata={
                     "resources": len(resources),
                     "consents": len(consents),
-                    "total_concepts": total_concepts,
                     "requires_auth": info.requires_auth,
                 },
             )
@@ -217,7 +205,6 @@ def connect(
         resources=resources,
         resource_uuid=effective_uuid,
         consents=consents,
-        total_concepts=total_concepts,
         dev_config=dev_config,
         use_legacy_query_path=use_legacy_query_path,
         supports_genomic=info.supports_genomic,
@@ -225,30 +212,69 @@ def connect(
     )
 
 
-def _token_expiration_from_jwt(token: str) -> str:
-    """Extract the ``exp`` claim from a JWT and format it as UTC ISO.
+def _decode_jwt_payload(token: str) -> dict[str, object] | None:
+    """Decode a JWT's payload segment without verifying the signature.
 
     The signature is intentionally not verified — the server enforces
-    token validity; we only display the expiry to the user.  Returns
-    ``"unknown"`` if the token is not a parseable JWT or has no
-    numeric ``exp`` claim.
+    token validity; we only read display fields (email, expiry) from
+    the payload.  Returns the payload dict, or ``None`` if the token is
+    not a parseable JWT with a JSON-object payload.
     """
     try:
         payload_b64 = token.strip().split(".")[1]
     except IndexError:
-        return "unknown"
+        return None
 
     padding = "=" * (-len(payload_b64) % 4)
     try:
         payload = json.loads(base64.urlsafe_b64decode(payload_b64 + padding))
     except (ValueError, TypeError):
+        return None
+
+    return payload if isinstance(payload, dict) else None
+
+
+def _token_expiration_from_jwt(token: str) -> str:
+    """Extract the ``exp`` claim from a JWT and format it as UTC ISO.
+
+    Returns ``"unknown"`` if the token is not a parseable JWT or has no
+    numeric ``exp`` claim.
+    """
+    payload = _decode_jwt_payload(token)
+    if payload is None:
         return "unknown"
 
-    exp = payload.get("exp") if isinstance(payload, dict) else None
+    exp = payload.get("exp")
     if not isinstance(exp, (int, float)) or isinstance(exp, bool):
         return "unknown"
 
     return datetime.fromtimestamp(exp, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# Preference order for the display email in the connect banner.  PSAMA
+# builds the PIC-SURE token from UserClaims, which carries ``email``
+# (plus ``preferred_username`` and ``sub``).  ``email`` is not immutable
+# per RAS guidance, but we only display it, so degrade gracefully to
+# progressively less specific claims rather than fail the connect.
+_EMAIL_CLAIMS = ("email", "preferred_username", "sub")
+
+
+def _email_from_jwt(token: str) -> str:
+    """Read a display email from the JWT the user supplied.
+
+    Falls back through :data:`_EMAIL_CLAIMS` and finally to ``"unknown"``
+    if none is present, so the connect banner never breaks on a token
+    whose claims vary by IdP / Okta mapping.
+    """
+    payload = _decode_jwt_payload(token)
+    if payload is None:
+        return "unknown"
+
+    for claim in _EMAIL_CLAIMS:
+        value = payload.get(claim)
+        if isinstance(value, str) and value.strip():
+            return value
+    return "unknown"
 
 
 def _install_default_handler() -> None:
@@ -266,49 +292,24 @@ def _install_default_handler() -> None:
     logger.setLevel(logging.DEBUG)
 
 
-def _fetch_profile(
-    client: PicSureClient, display_name: str, base_url: str
-) -> dict[str, object]:
-    try:
-        return client.get_json(_PSAMA_PROFILE_PATH)
-    except TransportAuthenticationError as exc:
-        raise PicSureAuthError(
-            "Your token is invalid or expired. Generate a new one at "
-            f"{base_url} and pass it to picsure.connect()."
-        ) from exc
-    except TransportNotFoundError as exc:
-        raise PicSureQueryError(
-            f"Profile endpoint not found at {base_url}. The server may not "
-            "support this adapter version."
-        ) from exc
-    except TransportValidationError as exc:
-        raise PicSureValidationError(
-            f"Server rejected the profile request (HTTP {exc.status_code}): "
-            f"{exc.body[:200]}"
-        ) from exc
-    except TransportRateLimitError as exc:
-        raise PicSureConnectionError(
-            rate_limit_message(exc, suffix=f" by {display_name}")
-        ) from exc
-    except (TransportConnectionError, TransportServerError) as exc:
-        raise PicSureConnectionError(
-            f"Could not reach {display_name} ({base_url}). Check your internet "
-            "connection, or try a different platform."
-        ) from exc
-
-
 def _fetch_resources(
-    client: PicSureClient, display_name: str, requires_auth: bool
+    client: PicSureClient, display_name: str, base_url: str, requires_auth: bool
 ) -> list[Resource]:
     try:
         data = client.get_json(_PICSURE_RESOURCES_PATH)
-    except TransportAuthenticationError:
+    except TransportAuthenticationError as exc:
         # Open-access deployments may gate /info/resources behind auth
         # even though the dictionary-api is public.  Silently degrade
         # to no resources so search/facets still work.
         if not requires_auth:
             return []
-        raise
+        # On auth deployments this is the first authenticated call, so
+        # it owns the friendly "your token is bad" message that the
+        # /psama/user/me handshake used to surface.
+        raise PicSureAuthError(
+            "Your token is invalid or expired. Generate a new one at "
+            f"{base_url} and pass it to picsure.connect()."
+        ) from exc
     except TransportError as exc:
         raise PicSureConnectionError(
             f"Connected to {display_name} but could not fetch resources. "

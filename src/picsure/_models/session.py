@@ -38,7 +38,6 @@ class Session:
         resources: list[Resource],
         resource_uuid: str | None = None,
         consents: list[str] | None = None,
-        total_concepts: int = 0,
         dev_config: DevConfig | None = None,
         use_legacy_query_path: bool = False,
         supports_genomic: bool = False,
@@ -51,7 +50,6 @@ class Session:
         self._resource_uuid = resource_uuid
         self._session_id = session_id
         self._consents: list[str] = list(consents) if consents else []
-        self._total_concepts = total_concepts
         self._use_legacy_query_path = use_legacy_query_path
         self._supports_genomic = supports_genomic
         self._dev_config = (
@@ -79,15 +77,6 @@ class Session:
         body so the backend scopes results to accessible studies.
         """
         return list(self._consents)
-
-    @property
-    def total_concepts(self) -> int:
-        """Total number of concepts in the data dictionary.
-
-        Captured at connect time and used as the page size for search
-        requests so every result comes back in one page.
-        """
-        return self._total_concepts
 
     def getResourceID(self) -> pd.DataFrame:
         """Return resource IDs and metadata as a DataFrame."""
@@ -172,7 +161,6 @@ class Session:
             facets=facets,
             include_values=include_values,
             consents=self._consents,
-            page_size=self._total_concepts,
         )
 
     @timed("session.facets")

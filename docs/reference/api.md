@@ -99,7 +99,6 @@ Complete reference for all public functions, classes, and types in the
     options:
       members:
         - consents
-        - total_concepts
         - searchDictionary
         - facets
         - showAllFacets

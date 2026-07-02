@@ -6,8 +6,8 @@ import respx
 
 from picsure._models.facet import FacetCategory, FacetSet
 from picsure._services.search import (
+    _MAX_PAGE_SIZE,
     fetch_facets,
-    fetch_total_concepts,
     searchDictionary,
     show_all_facets,
 )
@@ -31,7 +31,7 @@ def _concepts_url(page_size: int) -> str:
 class TestSearch:
     @respx.mock
     def test_returns_dataframe(self, search_response):
-        respx.post(_concepts_url(100)).mock(
+        respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
             return_value=httpx.Response(200, json=search_response)
         )
         df = searchDictionary(_make_client(), term="sex")
@@ -41,7 +41,7 @@ class TestSearch:
 
     @respx.mock
     def test_dataframe_has_correct_columns(self, search_response):
-        respx.post(_concepts_url(100)).mock(
+        respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
             return_value=httpx.Response(200, json=search_response)
         )
         df = searchDictionary(_make_client(), term="sex")
@@ -64,7 +64,7 @@ class TestSearch:
     def test_continuous_fields_populated(self, search_response):
         import pandas as pd
 
-        respx.post(_concepts_url(100)).mock(
+        respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
             return_value=httpx.Response(200, json=search_response)
         )
         df = searchDictionary(_make_client(), term="age")
@@ -79,7 +79,7 @@ class TestSearch:
 
     @respx.mock
     def test_include_values_false_still_has_extra_columns(self, search_response):
-        respx.post(_concepts_url(100)).mock(
+        respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
             return_value=httpx.Response(200, json=search_response)
         )
         df = searchDictionary(_make_client(), term="sex", include_values=False)
@@ -88,7 +88,7 @@ class TestSearch:
 
     @respx.mock
     def test_maps_dataset_and_type_fields(self, search_response):
-        respx.post(_concepts_url(100)).mock(
+        respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
             return_value=httpx.Response(200, json=search_response)
         )
         df = searchDictionary(_make_client(), term="sex")
@@ -98,7 +98,7 @@ class TestSearch:
 
     @respx.mock
     def test_body_shape(self, search_response):
-        route = respx.post(_concepts_url(100)).mock(
+        route = respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
             return_value=httpx.Response(200, json=search_response)
         )
         searchDictionary(_make_client(), term="blood pressure")
@@ -107,7 +107,7 @@ class TestSearch:
 
     @respx.mock
     def test_sends_facets_in_body(self, search_response):
-        route = respx.post(_concepts_url(100)).mock(
+        route = respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
             return_value=httpx.Response(200, json=search_response)
         )
         from picsure._models.facet import Facet
@@ -152,7 +152,7 @@ class TestSearch:
 
     @respx.mock
     def test_consents_included_when_provided(self, search_response):
-        route = respx.post(_concepts_url(100)).mock(
+        route = respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
             return_value=httpx.Response(200, json=search_response)
         )
         searchDictionary(
@@ -165,7 +165,7 @@ class TestSearch:
 
     @respx.mock
     def test_consents_omitted_when_empty(self, search_response):
-        route = respx.post(_concepts_url(100)).mock(
+        route = respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
             return_value=httpx.Response(200, json=search_response)
         )
         searchDictionary(_make_client(), term="age", consents=[])
@@ -174,12 +174,21 @@ class TestSearch:
 
     @respx.mock
     def test_consents_omitted_when_none(self, search_response):
-        route = respx.post(_concepts_url(100)).mock(
+        route = respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
             return_value=httpx.Response(200, json=search_response)
         )
         searchDictionary(_make_client(), term="age")
         body = json.loads(route.calls[0].request.content)
         assert "consents" not in body
+
+    @respx.mock
+    def test_default_page_size_is_max_int(self, search_response):
+        assert _MAX_PAGE_SIZE == 2_147_483_647
+        route = respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
+            return_value=httpx.Response(200, json=search_response)
+        )
+        searchDictionary(_make_client(), term="age")
+        assert route.called
 
     @respx.mock
     def test_page_size_used_in_url(self, search_response):
@@ -191,7 +200,7 @@ class TestSearch:
 
     @respx.mock
     def test_non_positive_page_size_falls_back_to_default(self, search_response):
-        route = respx.post(_concepts_url(100)).mock(
+        route = respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
             return_value=httpx.Response(200, json=search_response)
         )
         searchDictionary(_make_client(), term="age", page_size=0)
@@ -208,7 +217,7 @@ class TestSearch:
             "totalElements": 3,
             "last": True,
         }
-        respx.post(_concepts_url(100)).mock(
+        respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
             return_value=httpx.Response(200, json=duplicate_response)
         )
         df = searchDictionary(_make_client())
@@ -217,7 +226,7 @@ class TestSearch:
 
     @respx.mock
     def test_zero_results_returns_empty_dataframe(self):
-        respx.post(_concepts_url(100)).mock(
+        respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
             return_value=httpx.Response(
                 200, json={"content": [], "totalElements": 0, "last": True}
             )
@@ -228,7 +237,7 @@ class TestSearch:
 
     @respx.mock
     def test_zero_results_prints_note(self, capsys):
-        respx.post(_concepts_url(100)).mock(
+        respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
             return_value=httpx.Response(
                 200, json={"content": [], "totalElements": 0, "last": True}
             )
@@ -247,7 +256,7 @@ class TestSearch:
             "totalElements": 5,
             "last": False,
         }
-        respx.post(_concepts_url(100)).mock(
+        respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
             return_value=httpx.Response(200, json=truncated)
         )
         with pytest.raises(PicSureQueryError, match="truncated"):
@@ -261,7 +270,7 @@ class TestSearch:
             "content": [{"conceptPath": "\\x\\", "name": "x"}],
             "totalElements": 1,
         }
-        respx.post(_concepts_url(100)).mock(
+        respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
             return_value=httpx.Response(200, json=response)
         )
         df = searchDictionary(_make_client(), term="x")
@@ -276,7 +285,7 @@ class TestSearch:
             "totalElements": 3,
             "last": True,
         }
-        respx.post(_concepts_url(100)).mock(
+        respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
             return_value=httpx.Response(200, json=response)
         )
         with pytest.raises(PicSureQueryError, match="truncated"):
@@ -284,7 +293,7 @@ class TestSearch:
 
     @respx.mock
     def test_server_error_raises_connection_error(self):
-        respx.post(_concepts_url(100)).mock(
+        respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
             return_value=httpx.Response(500, text="Internal Server Error")
         )
         with pytest.raises(PicSureConnectionError, match="search"):
@@ -292,53 +301,11 @@ class TestSearch:
 
     @respx.mock
     def test_network_error_raises_connection_error(self):
-        respx.post(_concepts_url(100)).mock(
+        respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
             side_effect=httpx.ConnectError("Connection refused")
         )
         with pytest.raises(PicSureConnectionError):
             searchDictionary(_make_client(), term="test")
-
-
-class TestFetchTotalConcepts:
-    @respx.mock
-    def test_returns_total_elements(self):
-        respx.post(_concepts_url(1)).mock(
-            return_value=httpx.Response(
-                200, json={"content": [], "totalElements": 487375}
-            )
-        )
-        assert fetch_total_concepts(_make_client()) == 487375
-
-    @respx.mock
-    def test_body_shape(self):
-        route = respx.post(_concepts_url(1)).mock(
-            return_value=httpx.Response(200, json={"totalElements": 0})
-        )
-        fetch_total_concepts(_make_client())
-        body = json.loads(route.calls[0].request.content)
-        assert body == {"search": "", "facets": []}
-
-    @respx.mock
-    def test_consents_forwarded(self):
-        route = respx.post(_concepts_url(1)).mock(
-            return_value=httpx.Response(200, json={"totalElements": 0})
-        )
-        fetch_total_concepts(_make_client(), consents=["phs000007.c1"])
-        body = json.loads(route.calls[0].request.content)
-        assert body["consents"] == ["phs000007.c1"]
-
-    @respx.mock
-    def test_missing_total_returns_zero(self):
-        respx.post(_concepts_url(1)).mock(
-            return_value=httpx.Response(200, json={"content": []})
-        )
-        assert fetch_total_concepts(_make_client()) == 0
-
-    @respx.mock
-    def test_server_error_raises_connection_error(self):
-        respx.post(_concepts_url(1)).mock(return_value=httpx.Response(500))
-        with pytest.raises(PicSureConnectionError, match="dictionary"):
-            fetch_total_concepts(_make_client())
 
 
 class TestFetchFacets:

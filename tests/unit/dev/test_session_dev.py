@@ -22,7 +22,6 @@ def _make_session(dev_enabled: bool) -> Session:
         resources=[Resource(uuid=RESOURCE_UUID, name="hpds", description="")],
         resource_uuid=RESOURCE_UUID,
         consents=[],
-        total_concepts=100,
         dev_config=cfg,
     )
 

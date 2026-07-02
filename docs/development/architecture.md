@@ -100,8 +100,8 @@ src/picsure/
 
 | Module           | What it owns                                                                 |
 |------------------|------------------------------------------------------------------------------|
-| `connect.py`     | `connect(platform, token, …)`. Resolves the platform, hits `/psama/user/me` (skipped on open-access), fetches resources, consents, dictionary size, and constructs the `Session`. Also handles the dev-mode toggle and the success/expiration banner. |
-| `search.py`      | `searchDictionary`, `fetch_facets`, `show_all_facets`, plus the smaller helpers that build dictionary-api request bodies, dedupe entries, and turn results into DataFrames. Also `fetch_total_concepts` (used by connect to pre-size search pages). |
+| `connect.py`     | `connect(platform, token, …)`. Resolves the platform, fetches resources and (on authorized deployments) consents, and constructs the `Session`. Reads the display email and expiry straight from the JWT — no `/psama/user/me` round trip. Also handles the dev-mode toggle and the success/expiration banner. |
+| `search.py`      | `searchDictionary`, `fetch_facets`, `show_all_facets`, plus the smaller helpers that build dictionary-api request bodies, dedupe entries, and turn results into DataFrames. Dictionary searches use a single max-int page (`_MAX_PAGE_SIZE`) so one request returns every concept. |
 | `query_build.py` | `buildClause`, `buildClauseGroup`, and `buildQuery` — the public constructors for `Clause`, `ClauseGroup`, and `Query` with input validation (rejects mutually-exclusive arguments before they reach the wire). |
 | `query_edit.py`  | `removeSubQuery(query, target)` and `replaceClause(query, target, replacement)`. Pure local tree edits — no network calls. Matching is structural (frozen-dataclass equality). Removals that empty a `ClauseGroup` prune the parent; removing the whole tree raises `PicSureValidationError`. |
 | `query_run.py`   | `run_query(client, resource_uuid, query, type)`. Serializes via `build_query_body`, posts to the v3 sync endpoint (or the legacy path on open-only deployments), and parses each response shape. Also `parse_count_string` for the obfuscated-count regexes. |
@@ -217,8 +217,6 @@ small:
 - `_consents` — `list[str]` of study-consent identifiers. Empty on
   open-access; required in dictionary-api request bodies on
   authorized deployments.
-- `_total_concepts` — captured at connect time and used as the page
-  size for searches so results come back in one page.
 - `_dev_config` — opt-in `DevConfig` (off by default).
 - `_use_legacy_query_path` — set during connect when the platform is
   open-only and must use `/picsure/query/sync` (BDC's API gateway
