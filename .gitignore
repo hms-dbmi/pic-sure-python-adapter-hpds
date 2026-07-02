@@ -45,3 +45,6 @@ token*.txt
 # local scratch (HAR captures, ad-hoc temp files); never commit
 docs/tmp/
 *.har
+
+# collect_env_metrics.py output (per-env latency baselines); never commit
+metrics-results/
