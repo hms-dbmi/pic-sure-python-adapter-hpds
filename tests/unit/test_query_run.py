@@ -20,8 +20,8 @@ from picsure.errors import (
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
 RESOURCE_UUID = "resource-uuid-aaaa-1111"
-QUERY_URL = f"{BASE_URL}/picsure/v3/query/sync"
-LEGACY_QUERY_URL = f"{BASE_URL}/picsure/query/sync"
+QUERY_URL = f"{BASE_URL}/hpds/auth/v3/query/sync"
+OPEN_QUERY_URL = f"{BASE_URL}/hpds/open/query/sync"
 
 
 def _make_client() -> PicSureClient:
@@ -39,7 +39,7 @@ class TestRunQueryCount:
     def test_returns_count_result(self):
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"1234"))
         client = _make_client()
-        result = run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+        result = run_query(client, _simple_clause(), "count", backend="auth")
         assert isinstance(result, CountResult)
         assert result.value == 1234
         assert result.margin is None
@@ -53,12 +53,14 @@ class TestRunQueryCount:
             return_value=httpx.Response(200, content=b"42")
         )
         client = _make_client()
-        run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+        run_query(client, _simple_clause(), "count", backend="auth")
 
         import json
 
         body = json.loads(route.calls[0].request.content)
-        assert body["resourceUUID"] == RESOURCE_UUID
+        # The gateway selects the HPDS backend by URL path, so the body
+        # must not carry a top-level resourceUUID sibling anymore.
+        assert "resourceUUID" not in body
         query = body["query"]
         assert query["expectedResultType"] == "COUNT"
         # The clause's own concept path is folded into ``select`` so a
@@ -83,7 +85,7 @@ class TestRunQueryCount:
             return_value=httpx.Response(200, content=b"7")
         )
         client = _make_client()
-        run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+        run_query(client, _simple_clause(), "count", backend="auth")
 
         import json
 
@@ -97,7 +99,7 @@ class TestRunQueryCount:
         )
         client = _make_client()
         with pytest.raises(PicSureQueryError, match="Expected a count"):
-            run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+            run_query(client, _simple_clause(), "count", backend="auth")
 
     @respx.mock
     def test_count_strips_surrounding_whitespace(self):
@@ -105,7 +107,7 @@ class TestRunQueryCount:
             return_value=httpx.Response(200, content=b"  567  \n")
         )
         client = _make_client()
-        result = run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+        result = run_query(client, _simple_clause(), "count", backend="auth")
         assert result.value == 567
         assert result.obfuscated is False
 
@@ -115,7 +117,7 @@ class TestRunQueryCount:
             return_value=httpx.Response(200, content="11309 \u00b13".encode())
         )
         client = _make_client()
-        result = run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+        result = run_query(client, _simple_clause(), "count", backend="auth")
         assert result.value == 11309
         assert result.margin == 3
         assert result.cap is None
@@ -125,7 +127,7 @@ class TestRunQueryCount:
     def test_suppressed_count_has_cap_and_null_value(self):
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"< 10"))
         client = _make_client()
-        result = run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+        result = run_query(client, _simple_clause(), "count", backend="auth")
         assert result.value is None
         assert result.margin is None
         assert result.cap == 10
@@ -138,14 +140,14 @@ class TestRunQueryCount:
         )
         client = _make_client()
         with pytest.raises(PicSureQueryError, match="Expected a count"):
-            run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+            run_query(client, _simple_clause(), "count", backend="auth")
 
     @respx.mock
     def test_empty_response_raises(self):
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
         client = _make_client()
         with pytest.raises(PicSureQueryError, match="Expected a count"):
-            run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+            run_query(client, _simple_clause(), "count", backend="auth")
 
 
 class TestRunQueryParticipant:
@@ -155,7 +157,7 @@ class TestRunQueryParticipant:
             return_value=httpx.Response(200, content=participant_response)
         )
         client = _make_client()
-        df = run_query(client, RESOURCE_UUID, _simple_clause(), "participant")
+        df = run_query(client, _simple_clause(), "participant", backend="auth")
         assert len(df) == 5
         assert "patient_id" in df.columns
         assert "sex" in df.columns
@@ -166,7 +168,7 @@ class TestRunQueryParticipant:
             return_value=httpx.Response(200, content=b"id\n1\n")
         )
         client = _make_client()
-        run_query(client, RESOURCE_UUID, _simple_clause(), "participant")
+        run_query(client, _simple_clause(), "participant", backend="auth")
 
         import json
 
@@ -177,7 +179,7 @@ class TestRunQueryParticipant:
     def test_empty_csv_returns_empty_dataframe(self):
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
         client = _make_client()
-        df = run_query(client, RESOURCE_UUID, _simple_clause(), "participant")
+        df = run_query(client, _simple_clause(), "participant", backend="auth")
         assert len(df) == 0
 
 
@@ -188,7 +190,7 @@ class TestRunQueryTimestamp:
             return_value=httpx.Response(200, content=b"id,date,val\n1,2024-01-01,120\n")
         )
         client = _make_client()
-        run_query(client, RESOURCE_UUID, _simple_clause(), "timestamp")
+        run_query(client, _simple_clause(), "timestamp", backend="auth")
 
         import json
 
@@ -200,7 +202,7 @@ class TestRunQueryTimestamp:
         csv = b"patient_id,variable,date,value\nP001,bp,2024-01-15,120\n"
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=csv))
         client = _make_client()
-        df = run_query(client, RESOURCE_UUID, _simple_clause(), "timestamp")
+        df = run_query(client, _simple_clause(), "timestamp", backend="auth")
         assert len(df) == 1
         assert "date" in df.columns
 
@@ -215,7 +217,7 @@ class TestRunQueryParticipantMalformed:
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=body))
         client = _make_client()
         with pytest.raises(PicSureQueryError, match="malformed CSV"):
-            run_query(client, RESOURCE_UUID, _simple_clause(), "participant")
+            run_query(client, _simple_clause(), "participant", backend="auth")
 
     @respx.mock
     def test_malformed_csv_error_includes_preview(self):
@@ -225,7 +227,7 @@ class TestRunQueryParticipantMalformed:
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=body))
         client = _make_client()
         with pytest.raises(PicSureQueryError) as excinfo:
-            run_query(client, RESOURCE_UUID, _simple_clause(), "participant")
+            run_query(client, _simple_clause(), "participant", backend="auth")
         assert "a,b,c" in str(excinfo.value)
 
     @respx.mock
@@ -236,7 +238,7 @@ class TestRunQueryParticipantMalformed:
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=body))
         client = _make_client()
         with pytest.raises(PicSureQueryError, match="malformed CSV"):
-            run_query(client, RESOURCE_UUID, _simple_clause(), "participant")
+            run_query(client, _simple_clause(), "participant", backend="auth")
 
     @respx.mock
     def test_empty_response_still_returns_empty_dataframe(self):
@@ -244,14 +246,14 @@ class TestRunQueryParticipantMalformed:
         # not a parse error.
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
         client = _make_client()
-        df = run_query(client, RESOURCE_UUID, _simple_clause(), "participant")
+        df = run_query(client, _simple_clause(), "participant", backend="auth")
         assert len(df) == 0
 
     @respx.mock
     def test_whitespace_only_response_returns_empty_dataframe(self):
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"   \n"))
         client = _make_client()
-        df = run_query(client, RESOURCE_UUID, _simple_clause(), "participant")
+        df = run_query(client, _simple_clause(), "participant", backend="auth")
         assert len(df) == 0
 
 
@@ -262,7 +264,7 @@ class TestRunQueryCrossCount:
             return_value=httpx.Response(200, content=b'{"\\\\phs000001\\\\": "42"}')
         )
         client = _make_client()
-        run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")
+        run_query(client, _simple_clause(), "cross_count", backend="auth")
 
         import json
 
@@ -277,7 +279,7 @@ class TestRunQueryCrossCount:
         route = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b'{"\\\\phs1\\\\sex\\\\": "42"}')
         )
-        run_query(_make_client(), RESOURCE_UUID, _simple_clause(), "cross_count")
+        run_query(_make_client(), _simple_clause(), "cross_count", backend="auth")
 
         import json
 
@@ -295,7 +297,7 @@ class TestRunQueryCrossCount:
         ).encode()
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=payload))
         client = _make_client()
-        result = run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")
+        result = run_query(client, _simple_clause(), "cross_count", backend="auth")
 
         assert isinstance(result, dict)
         assert set(result.keys()) == {
@@ -323,14 +325,14 @@ class TestRunQueryCrossCount:
         )
         client = _make_client()
         with pytest.raises(PicSureQueryError, match="cross-count"):
-            run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")
+            run_query(client, _simple_clause(), "cross_count", backend="auth")
 
     @respx.mock
     def test_non_object_json_raises(self):
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"[1,2,3]"))
         client = _make_client()
         with pytest.raises(PicSureQueryError, match="cross-count"):
-            run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")
+            run_query(client, _simple_clause(), "cross_count", backend="auth")
 
     @respx.mock
     def test_invalid_count_value_raises(self):
@@ -339,7 +341,7 @@ class TestRunQueryCrossCount:
         )
         client = _make_client()
         with pytest.raises(PicSureQueryError, match="Expected a count"):
-            run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")
+            run_query(client, _simple_clause(), "cross_count", backend="auth")
 
     @respx.mock
     def test_integer_values_direct_hpds_shape(self):
@@ -349,7 +351,7 @@ class TestRunQueryCrossCount:
         payload = b'{"\\\\phs000007\\\\": 42, "\\\\phs000013\\\\": 100}'
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=payload))
         client = _make_client()
-        result = run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")
+        result = run_query(client, _simple_clause(), "cross_count", backend="auth")
 
         assert isinstance(result, dict)
         assert set(result.keys()) == {"\\phs000007\\", "\\phs000013\\"}
@@ -375,7 +377,7 @@ class TestRunQueryCrossCount:
         ).encode()
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=payload))
         client = _make_client()
-        result = run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")
+        result = run_query(client, _simple_clause(), "cross_count", backend="auth")
 
         assert result["\\a\\"].value == 42
         assert result["\\a\\"].obfuscated is False
@@ -396,7 +398,7 @@ class TestRunQueryCrossCount:
         )
         client = _make_client()
         with pytest.raises(PicSureQueryError, match="Expected a count"):
-            run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")
+            run_query(client, _simple_clause(), "cross_count", backend="auth")
 
 
 class TestRunQueryWithClauseGroup:
@@ -411,7 +413,7 @@ class TestRunQueryWithClauseGroup:
             operator=GroupOperator.AND,
         )
         client = _make_client()
-        run_query(client, RESOURCE_UUID, group, "count")
+        run_query(client, group, "count", backend="auth")
 
         import json
 
@@ -435,7 +437,7 @@ class TestRunQueryWithClauseGroup:
             includeConcepts=("\\out_a\\", "\\out_b\\"),
         )
         client = _make_client()
-        run_query(client, RESOURCE_UUID, query, "count")
+        run_query(client, query, "count", backend="auth")
 
         import json
 
@@ -452,7 +454,7 @@ class TestRunQueryWithClauseGroup:
         )
         query = Query(includeConcepts=("\\a\\", "\\b\\"))
         client = _make_client()
-        run_query(client, RESOURCE_UUID, query, "count")
+        run_query(client, query, "count", backend="auth")
 
         import json
 
@@ -469,7 +471,7 @@ class TestRunQueryWithClauseGroup:
             return_value=httpx.Response(200, content=b"100")
         )
         client = _make_client()
-        run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+        run_query(client, _simple_clause(), "count", backend="auth")
 
         import json
 
@@ -485,7 +487,7 @@ class TestSelectIncludesFilterConcepts:
         route = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"1")
         )
-        run_query(_make_client(), RESOURCE_UUID, query, "participant")
+        run_query(_make_client(), query, "participant", backend="auth")
 
         import json
 
@@ -551,7 +553,7 @@ class TestRunQueryValidation:
     def test_invalid_query_type_raises(self):
         client = _make_client()
         with pytest.raises(PicSureValidationError, match="not a valid query type"):
-            run_query(client, RESOURCE_UUID, _simple_clause(), "invalid")
+            run_query(client, _simple_clause(), "invalid", backend="auth")
 
     def test_plain_dict_query_raises_validation_error(self):
         # A plain dict is not a Clause or ClauseGroup. We want an
@@ -564,9 +566,9 @@ class TestRunQueryValidation:
         ):
             run_query(
                 client,
-                RESOURCE_UUID,
                 {"keys": ["\\phs1\\sex\\"]},  # type: ignore[arg-type]
                 "count",
+                backend="auth",
             )
 
 
@@ -578,14 +580,14 @@ class TestRunQueryErrors:
         )
         client = _make_client()
         with pytest.raises(PicSureConnectionError, match="query"):
-            run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+            run_query(client, _simple_clause(), "count", backend="auth")
 
     @respx.mock
     def test_network_error_raises_connection_error(self):
         respx.post(QUERY_URL).mock(side_effect=httpx.ConnectError("Connection refused"))
         client = _make_client()
         with pytest.raises(PicSureConnectionError):
-            run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+            run_query(client, _simple_clause(), "count", backend="auth")
 
 
 class TestQueryTypeMemberInput:
@@ -632,9 +634,9 @@ class TestRunQueryWithQueryTypeMember:
         client = _make_client()
         result = run_query(
             client,
-            RESOURCE_UUID,
             _simple_clause(),
             QueryType.COUNT,
+            backend="auth",
         )
 
         assert isinstance(result, CountResult)
@@ -672,70 +674,58 @@ class TestSessionRunQueryWithMember:
         assert result.value == 7
 
 
-class TestRunQueryLegacyPath:
+class TestRunQueryBackendRouting:
     @respx.mock
-    def test_default_uses_v3_path(self):
-        v3 = respx.post(QUERY_URL).mock(
+    def test_auth_backend_uses_auth_v3_path(self):
+        auth = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"1"),
         )
-        legacy = respx.post(LEGACY_QUERY_URL).mock(
+        open_route = respx.post(OPEN_QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"99"),
         )
         client = _make_client()
 
-        result = run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+        result = run_query(client, _simple_clause(), "count", backend="auth")
 
         assert isinstance(result, CountResult)
         assert result.value == 1
-        assert v3.call_count == 1
-        assert legacy.call_count == 0
+        assert auth.call_count == 1
+        assert open_route.call_count == 0
 
     @respx.mock
-    def test_flag_routes_to_legacy_path(self):
-        # BDC's API gateway 401s open-access requests on the v3 sync
-        # endpoint.  Open-only deployments must use the legacy path.
-        v3 = respx.post(QUERY_URL).mock(
+    def test_open_backend_routes_to_open_path(self):
+        # BDC's API gateway 401s open-access requests on the auth v3 sync
+        # endpoint.  Open-only deployments must use the open path.
+        auth = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(401, text="Unauthorized"),
         )
-        legacy = respx.post(LEGACY_QUERY_URL).mock(
+        open_route = respx.post(OPEN_QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"42"),
         )
         client = _make_client()
 
-        result = run_query(
-            client,
-            RESOURCE_UUID,
-            _simple_clause(),
-            "count",
-            use_legacy_query_path=True,
-        )
+        result = run_query(client, _simple_clause(), "count", backend="open")
 
         assert isinstance(result, CountResult)
         assert result.value == 42
-        assert v3.call_count == 0
-        assert legacy.call_count == 1
+        assert auth.call_count == 0
+        assert open_route.call_count == 1
 
     @respx.mock
-    def test_legacy_path_preserves_body_shape(self):
-        # The legacy endpoint accepts the same v3-shaped body; we should
+    def test_open_path_preserves_body_shape(self):
+        # The open endpoint accepts the same body shape as auth; we should
         # not start emitting a different shape just because we're routing
-        # to /picsure/query/sync.
-        route = respx.post(LEGACY_QUERY_URL).mock(
+        # to /hpds/open/query/sync.
+        route = respx.post(OPEN_QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"7"),
         )
         client = _make_client()
-        run_query(
-            client,
-            RESOURCE_UUID,
-            _simple_clause(),
-            "count",
-            use_legacy_query_path=True,
-        )
+        run_query(client, _simple_clause(), "count", backend="open")
 
         import json
 
         body = json.loads(route.calls[0].request.content)
-        assert body["resourceUUID"] == RESOURCE_UUID
+        assert "resourceUUID" not in body
         query = body["query"]
         assert query["expectedResultType"] == "COUNT"
         assert "authorizationFilters" not in query
@@ -743,11 +733,11 @@ class TestRunQueryLegacyPath:
         assert query["id"] is None
 
     @respx.mock
-    def test_session_with_legacy_flag_routes_to_legacy(self):
-        legacy = respx.post(LEGACY_QUERY_URL).mock(
+    def test_session_with_open_backend_routes_to_open(self):
+        open_route = respx.post(OPEN_QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"3"),
         )
-        v3 = respx.post(QUERY_URL).mock(
+        auth = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(401, text="Unauthorized"),
         )
         client = _make_client()
@@ -759,22 +749,22 @@ class TestRunQueryLegacyPath:
                 Resource(uuid=RESOURCE_UUID, name="R", description="d"),
             ],
             resource_uuid=RESOURCE_UUID,
-            use_legacy_query_path=True,
+            backend="open",
         )
 
         result = session.runQuery(_simple_clause(), type=QueryType.COUNT)
 
         assert isinstance(result, CountResult)
         assert result.value == 3
-        assert legacy.call_count == 1
-        assert v3.call_count == 0
+        assert open_route.call_count == 1
+        assert auth.call_count == 0
 
     @respx.mock
-    def test_session_without_legacy_flag_routes_to_v3(self):
-        v3 = respx.post(QUERY_URL).mock(
+    def test_session_default_backend_routes_to_auth(self):
+        auth = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"5"),
         )
-        legacy = respx.post(LEGACY_QUERY_URL).mock(
+        open_route = respx.post(OPEN_QUERY_URL).mock(
             return_value=httpx.Response(401, text="Unauthorized"),
         )
         client = _make_client()
@@ -792,8 +782,8 @@ class TestRunQueryLegacyPath:
 
         assert isinstance(result, CountResult)
         assert result.value == 5
-        assert v3.call_count == 1
-        assert legacy.call_count == 0
+        assert auth.call_count == 1
+        assert open_route.call_count == 0
 
 
 class TestBuildQueryBodyGenomic:
@@ -803,7 +793,7 @@ class TestBuildQueryBodyGenomic:
 
         gf = buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
         q = buildQuery(genomicFilters=gf, includeConcepts=["\\bmi\\"])
-        body = build_query_body(q, "uuid-1", "COUNT")
+        body = build_query_body(q, "COUNT")
         assert body["query"]["genomicFilters"] == [
             {"key": "Gene_with_variant", "values": ["BRCA1"]}
         ]
@@ -813,7 +803,7 @@ class TestBuildQueryBodyGenomic:
         from picsure._services.query_run import build_query_body
 
         c = buildClause("\\path\\", type=PhenotypicFilterType.FILTER, categories="X")
-        body = build_query_body(c, "uuid-1", "COUNT")
+        body = build_query_body(c, "COUNT")
         assert body["query"]["genomicFilters"] == []
 
     def test_genomic_filters_do_not_affect_select(self):
@@ -822,7 +812,7 @@ class TestBuildQueryBodyGenomic:
 
         gf = buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
         q = buildQuery(genomicFilters=gf, includeConcepts=["\\bmi\\"])
-        body = build_query_body(q, "uuid-1", "DATAFRAME")
+        body = build_query_body(q, "DATAFRAME")
         assert body["query"]["select"] == ["\\bmi\\"]
 
 
@@ -943,7 +933,7 @@ class TestVariantResultParsing:
             return_value=httpx.Response(500, text="ri_error 500")
         )
         with pytest.raises(PicSureQueryError, match="not available on this"):
-            run_query(_make_client(), RESOURCE_UUID, _simple_clause(), "variant_count")
+            run_query(_make_client(), _simple_clause(), "variant_count", backend="auth")
 
     @respx.mock
     def test_nonvariant_500_stays_temporarily_unavailable(self):
@@ -951,4 +941,4 @@ class TestVariantResultParsing:
         # outage, not an unsupported feature.
         respx.post(QUERY_URL).mock(return_value=httpx.Response(500, text="boom"))
         with pytest.raises(PicSureConnectionError, match="temporarily unavailable"):
-            run_query(_make_client(), RESOURCE_UUID, _simple_clause(), "count")
+            run_query(_make_client(), _simple_clause(), "count", backend="auth")

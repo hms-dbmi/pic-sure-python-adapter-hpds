@@ -194,53 +194,6 @@ class TestSession:
             session.setResourceIDByName("nonexistent")
 
 
-class TestSessionDefaultResourceUuid:
-    def test_returns_explicit_resource_uuid_when_set(self):
-        client = MagicMock()
-        resources = [
-            Resource(uuid="uuid-1", name="A", description=""),
-            Resource(uuid="uuid-2", name="B", description=""),
-        ]
-        session = Session(
-            client=client,
-            user_email="u@e.com",
-            token_expiration="",
-            resources=resources,
-            resource_uuid="uuid-2",
-        )
-        assert session._default_resource_uuid() == "uuid-2"
-
-    def test_returns_single_resource_when_not_set(self):
-        session = _make_session(
-            resources=[Resource(uuid="only-uuid", name="Solo", description="")]
-        )
-        assert session._default_resource_uuid() == "only-uuid"
-
-    def test_raises_when_multiple_resources_unselected(self):
-        import pytest
-
-        from picsure.errors import PicSureValidationError
-
-        session = _make_session()
-        with pytest.raises(PicSureValidationError) as exc_info:
-            session._default_resource_uuid()
-        msg = str(exc_info.value)
-        assert "setResourceID" in msg
-        assert "Available resources:" in msg
-        assert "uuid-1" in msg
-        assert "Resource A" in msg
-        assert "uuid-2" in msg
-        assert "Resource B" in msg
-
-    def test_raises_when_no_resources(self):
-        session = _make_session(resources=[])
-        with __import__("pytest").raises(
-            __import__("picsure.errors", fromlist=["PicSureError"]).PicSureError,
-            match="No resources",
-        ):
-            session._default_resource_uuid()
-
-
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
 
@@ -269,7 +222,7 @@ def _session_with_resources(
     *,
     resources: list[Resource],
     resource_uuid: str | None = None,
-    use_legacy_query_path: bool = False,
+    backend: str = "auth",
 ) -> Session:
     return Session(
         client=client,
@@ -277,7 +230,7 @@ def _session_with_resources(
         token_expiration="2030-01-01",
         resources=resources,
         resource_uuid=resource_uuid,
-        use_legacy_query_path=use_legacy_query_path,
+        backend=backend,
     )
 
 
@@ -480,7 +433,7 @@ class TestSessionShowAllFacets:
 class TestSessionRunQuery:
     @respx.mock
     def test_run_query_count(self):
-        respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
+        respx.post(f"{BASE_URL}/hpds/auth/v3/query/sync").mock(
             return_value=httpx.Response(200, content=b"42")
         )
         from picsure._models.clause import Clause, PhenotypicFilterType
@@ -498,7 +451,7 @@ class TestSessionRunQuery:
 
     @respx.mock
     def test_run_query_participant(self, participant_response):
-        respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
+        respx.post(f"{BASE_URL}/hpds/auth/v3/query/sync").mock(
             return_value=httpx.Response(200, content=participant_response)
         )
         from picsure._models.clause import Clause, PhenotypicFilterType
@@ -519,13 +472,13 @@ class TestSessionExport:
         # Session.exportAsPFB drives the async flow:
         # submit -> poll status -> stream result.
         query_id = "session-pfb-1"
-        respx.post(f"{BASE_URL}/picsure/v3/query").mock(
+        respx.post(f"{BASE_URL}/hpds/auth/v3/query").mock(
             return_value=httpx.Response(200, json={"picsureResultId": query_id})
         )
-        respx.post(f"{BASE_URL}/picsure/v3/query/{query_id}/status").mock(
+        respx.post(f"{BASE_URL}/hpds/auth/v3/query/{query_id}/status").mock(
             return_value=httpx.Response(200, json={"status": "AVAILABLE"})
         )
-        respx.post(f"{BASE_URL}/picsure/v3/query/{query_id}/result").mock(
+        respx.post(f"{BASE_URL}/hpds/auth/v3/query/{query_id}/result").mock(
             return_value=httpx.Response(200, content=b"pfb_data")
         )
         from unittest.mock import patch
@@ -558,7 +511,7 @@ class TestSessionExport:
             token_expiration="N/A",
             resources=[Resource(uuid="uuid-1", name="open-hpds", description="")],
             resource_uuid="uuid-1",
-            use_legacy_query_path=True,
+            backend="open",
         )
         clause = Clause(
             keys=["\\sex\\"], type=PhenotypicFilterType.FILTER, categories=["Male"]
@@ -576,13 +529,12 @@ class TestSessionExport:
 
     def test_save_query_by_name_forwards_to_service(self, monkeypatch):
         # Verify Session.saveQueryByName forwards to the service layer with
-        # the session-bound client, resource UUID, and legacy-flag.
+        # the session-bound client and backend.
         from picsure._models import session as session_module
 
         session = _make_session(
             resources=[Resource(uuid="uuid-1", name="hpds", description="x")],
         )
-        session._resource_uuid = "uuid-1"
         clause = Clause(
             keys=["\\sex\\"], type=PhenotypicFilterType.FILTER, categories=["Male"]
         )
@@ -591,18 +543,16 @@ class TestSessionExport:
 
         def fake_save(
             client,
-            resource_uuid,
             query,
             name,
             *,
-            use_legacy_query_path,
+            backend,
             overwrite,
         ):
             captured["client"] = client
-            captured["resource_uuid"] = resource_uuid
             captured["query"] = query
             captured["name"] = name
-            captured["use_legacy_query_path"] = use_legacy_query_path
+            captured["backend"] = backend
             captured["overwrite"] = overwrite
             return "qid-fake-001"
 
@@ -616,10 +566,9 @@ class TestSessionExport:
 
         assert qid == "qid-fake-001"
         assert captured["client"] is session._client
-        assert captured["resource_uuid"] == "uuid-1"
         assert captured["query"] is clause
         assert captured["name"] == "Cohort A"
-        assert captured["use_legacy_query_path"] is False
+        assert captured["backend"] == "auth"
         assert captured["overwrite"] is True
         # Silence unused-import warning from ruff for the imported alias.
         assert session_module.Session is Session
@@ -675,10 +624,10 @@ class TestSessionClose:
 
 class TestSessionLoadQueryByID:
     @respx.mock
-    def test_always_hits_legacy_metadata_endpoint(self):
-        # The v3 metadata endpoint is broken on BDC; loadQueryByID pins
-        # reads to the legacy path regardless of how the session was
-        # connected (authorized v3 sessions still hit legacy here).
+    def test_hits_non_versioned_metadata_endpoint(self):
+        # Query metadata is version-agnostic in the query-service, so
+        # loadQueryByID reads the non-versioned /hpds/{backend}/query/{id}/
+        # metadata route, never the /v3 one.
         client = _client()
         session = _session_with_resources(
             client,
@@ -694,10 +643,10 @@ class TestSessionLoadQueryByID:
                 "not": False,
             },
         )
-        legacy = respx.get(f"{BASE_URL}/picsure/query/abc-123/metadata").mock(
+        legacy = respx.get(f"{BASE_URL}/hpds/auth/query/abc-123/metadata").mock(
             return_value=httpx.Response(200, json=body)
         )
-        v3 = respx.get(f"{BASE_URL}/picsure/v3/query/abc-123/metadata").mock(
+        v3 = respx.get(f"{BASE_URL}/hpds/auth/v3/query/abc-123/metadata").mock(
             return_value=httpx.Response(200, json=body)
         )
         result = session.loadQueryByID("abc-123")
@@ -721,7 +670,7 @@ class TestSessionLoadQueryByID:
                 "not": False,
             },
         )
-        respx.get(f"{BASE_URL}/picsure/query/abc-123/metadata").mock(
+        respx.get(f"{BASE_URL}/hpds/auth/query/abc-123/metadata").mock(
             return_value=httpx.Response(200, json=body)
         )
         result = session.loadQueryByID("abc-123")
@@ -750,10 +699,10 @@ class TestSessionRunQueryByID:
                 "not": False,
             },
         )
-        metadata = respx.get(f"{BASE_URL}/picsure/query/abc-123/metadata").mock(
+        metadata = respx.get(f"{BASE_URL}/hpds/auth/query/abc-123/metadata").mock(
             return_value=httpx.Response(200, json=body)
         )
-        sync = respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
+        sync = respx.post(f"{BASE_URL}/hpds/auth/v3/query/sync").mock(
             return_value=httpx.Response(200, content=b"42")
         )
 
@@ -781,10 +730,10 @@ class TestSessionRunQueryByID:
                 "not": False,
             },
         )
-        respx.get(f"{BASE_URL}/picsure/query/abc-123/metadata").mock(
+        respx.get(f"{BASE_URL}/hpds/auth/query/abc-123/metadata").mock(
             return_value=httpx.Response(200, json=body)
         )
-        respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
+        respx.post(f"{BASE_URL}/hpds/auth/v3/query/sync").mock(
             return_value=httpx.Response(200, content=participant_response)
         )
 

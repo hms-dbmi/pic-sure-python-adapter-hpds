@@ -176,25 +176,30 @@ def _to_query(
     )
 
 
-# Always use the legacy /picsure/query/{id}/metadata path.  The v3
-# /picsure/v3/query/{id}/metadata endpoint has a known issue on BDC, so
-# we pin reads to legacy regardless of how the session was connected.
-_PICSURE_QUERY_METADATA_PATH = "/picsure/query/{query_id}/metadata"
+# Query metadata is version-agnostic in the query-service (it reads the
+# stored query, not HPDS), so we use the non-versioned metadata route.  The
+# {backend} segment is required for routing but the read does not depend on
+# which backend is named.
+_HPDS_QUERY_METADATA_PATH = "/hpds/{backend}/query/{query_id}/metadata"
 
 
 def load_query(
     client: PicSureClient,
     query_id: str,
+    *,
+    backend: str,
 ) -> Query | Clause | ClauseGroup:
     """Load a previously-saved query by ID and rebuild it as a Query.
 
-    Always uses ``/picsure/query/{id}/metadata`` (legacy) — the v3
-    metadata endpoint is currently broken on BDC, so we read via legacy
-    for every deployment.
+    Reads ``/hpds/{backend}/query/{id}/metadata``.  Query metadata is
+    version-agnostic in the query-service (it reads the stored query row,
+    not HPDS), so the non-versioned route is used for every session.
 
     Args:
         client: Authenticated HTTP client.
         query_id: The UUID string of a previous query.
+        backend: ``"auth"`` or ``"open"`` — the HPDS backend segment for
+            the metadata route (does not affect the metadata read itself).
 
     Returns:
         A :class:`Clause` or :class:`ClauseGroup` that can be passed
@@ -213,7 +218,7 @@ def load_query(
         raise PicSureValidationError(
             "A non-empty query ID is required to load a saved query."
         )
-    path = _PICSURE_QUERY_METADATA_PATH.format(query_id=query_id.strip())
+    path = _HPDS_QUERY_METADATA_PATH.format(backend=backend, query_id=query_id.strip())
 
     try:
         response = client.get_json(path)

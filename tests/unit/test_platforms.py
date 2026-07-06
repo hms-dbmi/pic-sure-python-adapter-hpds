@@ -8,9 +8,6 @@ class TestPlatformEnum:
     def test_bdc_authorized_and_open_share_domain(self):
         assert Platform.BDC_AUTHORIZED.url == Platform.BDC_OPEN.url
 
-    def test_bdc_authorized_and_open_differ_by_uuid(self):
-        assert Platform.BDC_AUTHORIZED.resource_uuid != Platform.BDC_OPEN.resource_uuid
-
     def test_authorized_platforms_include_consents(self):
         assert Platform.BDC_AUTHORIZED.include_consents is True
         assert Platform.BDC_DEV_AUTHORIZED.include_consents is True
@@ -39,7 +36,6 @@ class TestResolvePlatform:
         info = resolve_platform(Platform.BDC_AUTHORIZED)
         assert isinstance(info, PlatformInfo)
         assert info.url == Platform.BDC_AUTHORIZED.url
-        assert info.resource_uuid == Platform.BDC_AUTHORIZED.resource_uuid
 
     def test_known_platform_propagates_include_consents(self):
         assert resolve_platform(Platform.BDC_AUTHORIZED).include_consents is True
@@ -49,16 +45,14 @@ class TestResolvePlatform:
         info = resolve_platform(Platform.BDC_OPEN, include_consents=True)
         assert info.include_consents is True
 
-    def test_bdc_open_returns_same_url_different_uuid(self):
+    def test_bdc_open_resolves_to_same_url(self):
         auth = resolve_platform(Platform.BDC_AUTHORIZED)
         open_ = resolve_platform(Platform.BDC_OPEN)
         assert auth.url == open_.url
-        assert auth.resource_uuid != open_.resource_uuid
 
     def test_custom_url_returned_as_is(self):
         info = resolve_platform("https://my-picsure.example.com")
         assert info.url == "https://my-picsure.example.com"
-        assert info.resource_uuid is None
 
     def test_custom_url_defaults_to_no_consents(self):
         info = resolve_platform("https://my-picsure.example.com")
@@ -107,7 +101,6 @@ class TestResolvePlatform:
     def test_nhanes_open_resolves(self):
         info = resolve_platform(Platform.NHANES_OPEN)
         assert info.url.startswith("https://")
-        assert info.resource_uuid is not None
 
 
 def test_authorized_platforms_support_genomic():

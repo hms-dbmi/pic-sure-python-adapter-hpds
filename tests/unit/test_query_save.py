@@ -18,10 +18,9 @@ from picsure.errors import (
 
 BASE_URL = "https://api.example.com"
 TOKEN = "test-token"
-RESOURCE_UUID = "res-uuid-1111"
 
 LIST_URL = f"{BASE_URL}/picsure/dataset/named"
-SUBMIT_URL = f"{BASE_URL}/picsure/v3/query"
+SUBMIT_URL = f"{BASE_URL}/hpds/auth/v3/query"
 SAVE_URL = f"{BASE_URL}/picsure/dataset/named"
 
 
@@ -56,10 +55,9 @@ class TestSaveQueryByNameHappyPath:
 
         qid = save_query_by_name(
             _client(),
-            RESOURCE_UUID,
             _clause(),
             "fun",
-            use_legacy_query_path=False,
+            backend="auth",
         )
 
         assert qid == "qid-123"
@@ -87,10 +85,9 @@ class TestSaveQueryByNameHappyPath:
 
         qid = save_query_by_name(
             _client(),
-            RESOURCE_UUID,
             _clause(),
             "fun",
-            use_legacy_query_path=False,
+            backend="auth",
         )
         assert qid == "qid-9"
         assert save.called
@@ -105,10 +102,9 @@ class TestSaveQueryByNameHappyPath:
 
         qid = save_query_by_name(
             _client(),
-            RESOURCE_UUID,
             _clause(),
             "fun",
-            use_legacy_query_path=False,
+            backend="auth",
         )
         assert qid == "qid-fallback"
 
@@ -137,10 +133,9 @@ class TestSaveQueryByNameDuplicates:
         with pytest.raises(PicSureValidationError, match="already exists"):
             save_query_by_name(
                 _client(),
-                RESOURCE_UUID,
                 _clause(),
                 "fun",
-                use_legacy_query_path=False,
+                backend="auth",
             )
 
         assert not submit.called
@@ -182,10 +177,9 @@ class TestSaveQueryByNameDuplicates:
 
         qid = save_query_by_name(
             _client(),
-            RESOURCE_UUID,
             _clause(),
             "fun",
-            use_legacy_query_path=False,
+            backend="auth",
             overwrite=True,
         )
 
@@ -225,10 +219,9 @@ class TestSaveQueryByNameDuplicates:
         with pytest.raises(PicSureQueryError, match="missing its identifier"):
             save_query_by_name(
                 _client(),
-                RESOURCE_UUID,
                 _clause(),
                 "fun",
-                use_legacy_query_path=False,
+                backend="auth",
                 overwrite=True,
             )
 
@@ -243,10 +236,9 @@ class TestSaveQueryByNameDuplicates:
 
         qid = save_query_by_name(
             _client(),
-            RESOURCE_UUID,
             _clause(),
             "fun",
-            use_legacy_query_path=False,
+            backend="auth",
             overwrite=True,
         )
         assert qid == "qid-new"
@@ -254,15 +246,14 @@ class TestSaveQueryByNameDuplicates:
 
 
 class TestSaveQueryByNameOpenAccess:
-    def test_refuses_when_use_legacy_query_path_true(self):
+    def test_refuses_when_open_backend(self):
         # No network — the guard fires before any HTTP call.
         with pytest.raises(PicSureValidationError, match="open-access"):
             save_query_by_name(
                 _client(),
-                RESOURCE_UUID,
                 _clause(),
                 "fun",
-                use_legacy_query_path=True,
+                backend="open",
             )
 
 
@@ -280,10 +271,9 @@ class TestSaveQueryByNameNameValidation:
         with pytest.raises(PicSureValidationError, match="unsupported characters"):
             save_query_by_name(
                 _client(),
-                RESOURCE_UUID,
                 _clause(),
                 bad_name,
-                use_legacy_query_path=False,
+                backend="auth",
             )
 
     @pytest.mark.parametrize(
@@ -297,20 +287,18 @@ class TestSaveQueryByNameNameValidation:
         with pytest.raises(PicSureValidationError, match="unsupported characters"):
             save_query_by_name(
                 _client(),
-                RESOURCE_UUID,
                 _clause(),
                 bad_name,
-                use_legacy_query_path=False,
+                backend="auth",
             )
 
     def test_rejects_empty_name(self):
         with pytest.raises(PicSureValidationError, match="non-empty"):
             save_query_by_name(
                 _client(),
-                RESOURCE_UUID,
                 _clause(),
                 "",
-                use_legacy_query_path=False,
+                backend="auth",
             )
 
     def test_rejects_overlong_name(self):
@@ -318,10 +306,9 @@ class TestSaveQueryByNameNameValidation:
         with pytest.raises(PicSureValidationError, match="255"):
             save_query_by_name(
                 _client(),
-                RESOURCE_UUID,
                 _clause(),
                 too_long,
-                use_legacy_query_path=False,
+                backend="auth",
             )
 
     @pytest.mark.parametrize(
@@ -344,10 +331,9 @@ class TestSaveQueryByNameNameValidation:
 
         qid = save_query_by_name(
             _client(),
-            RESOURCE_UUID,
             _clause(),
             good_name,
-            use_legacy_query_path=False,
+            backend="auth",
         )
         assert qid == "qid-z"
 
@@ -360,10 +346,9 @@ class TestSaveQueryByNameTransportErrors:
         with pytest.raises(PicSureAuthError):
             save_query_by_name(
                 _client(),
-                RESOURCE_UUID,
                 _clause(),
                 "fun",
-                use_legacy_query_path=False,
+                backend="auth",
             )
 
     @respx.mock
@@ -374,10 +359,9 @@ class TestSaveQueryByNameTransportErrors:
         with pytest.raises(PicSureValidationError, match="submit"):
             save_query_by_name(
                 _client(),
-                RESOURCE_UUID,
                 _clause(),
                 "fun",
-                use_legacy_query_path=False,
+                backend="auth",
             )
 
     @respx.mock
@@ -391,10 +375,9 @@ class TestSaveQueryByNameTransportErrors:
         with pytest.raises(PicSureConnectionError):
             save_query_by_name(
                 _client(),
-                RESOURCE_UUID,
                 _clause(),
                 "fun",
-                use_legacy_query_path=False,
+                backend="auth",
             )
 
     @respx.mock
@@ -407,8 +390,7 @@ class TestSaveQueryByNameTransportErrors:
         with pytest.raises(PicSureQueryError, match="picsureResultId"):
             save_query_by_name(
                 _client(),
-                RESOURCE_UUID,
                 _clause(),
                 "fun",
-                use_legacy_query_path=False,
+                backend="auth",
             )

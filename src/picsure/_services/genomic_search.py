@@ -5,6 +5,7 @@ from urllib.parse import urlencode
 import pandas as pd
 
 from picsure._services._errors import rate_limit_message
+from picsure._services._hpds_paths import search_values_path
 from picsure._transport.client import PicSureClient
 from picsure._transport.errors import (
     TransportAuthenticationError,
@@ -20,19 +21,21 @@ from picsure.errors import (
     PicSureValidationError,
 )
 
-_VALUES_PATH = "/picsure/search/{resource_uuid}/values/"
-
 
 def search_genomic_values(
     client: PicSureClient,
-    resource_uuid: str,
     genomic_concept_path: str,
     *,
+    backend: str,
     query: str = "",
     page: int = 1,
     size: int = 50,
 ) -> pd.DataFrame:
     """Fetch one page of valid values for a genomic annotation key.
+
+    Hits ``/hpds/{backend}/search/{resourceId}/values/`` — the backend is
+    chosen by URL path and the ``{resourceId}`` segment is an ignored
+    placeholder (see :func:`picsure._services._hpds_paths.search_values_path`).
 
     Returns a single-column (``value``) DataFrame. Pagination metadata is
     preserved on ``df.attrs``: ``total``, ``page``, ``size``,
@@ -51,7 +54,7 @@ def search_genomic_values(
             "size": size,
         }
     )
-    path = _VALUES_PATH.format(resource_uuid=resource_uuid) + "?" + params
+    path = search_values_path(backend) + "?" + params
 
     try:
         data = client.get_json(path)

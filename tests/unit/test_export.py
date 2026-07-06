@@ -17,12 +17,11 @@ from picsure.errors import (
 
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
-RESOURCE_UUID = "resource-uuid-aaaa-1111"
 QUERY_ID = "abc-123"
 
-SUBMIT_URL = f"{BASE_URL}/picsure/v3/query"
-STATUS_URL = f"{BASE_URL}/picsure/v3/query/{QUERY_ID}/status"
-RESULT_URL = f"{BASE_URL}/picsure/v3/query/{QUERY_ID}/result"
+SUBMIT_URL = f"{BASE_URL}/hpds/auth/v3/query"
+STATUS_URL = f"{BASE_URL}/hpds/auth/v3/query/{QUERY_ID}/status"
+RESULT_URL = f"{BASE_URL}/hpds/auth/v3/query/{QUERY_ID}/result"
 
 
 def _make_client() -> PicSureClient:
@@ -56,7 +55,7 @@ class TestExportPFBHappyPath:
 
         output = tmp_path / "out.pfb"
         with patch("picsure._services.export.time.sleep") as sleep_mock:
-            export_pfb(_make_client(), RESOURCE_UUID, _simple_clause(), output)
+            export_pfb(_make_client(), _simple_clause(), output, backend="auth")
 
         assert output.exists()
         assert output.read_bytes() == b"pfb_content"
@@ -79,14 +78,14 @@ class TestExportPFBHappyPath:
 
         output = tmp_path / "out.pfb"
         with patch("picsure._services.export.time.sleep") as sleep_mock:
-            export_pfb(_make_client(), RESOURCE_UUID, _simple_clause(), output)
+            export_pfb(_make_client(), _simple_clause(), output, backend="auth")
 
         assert output.exists()
         assert output.read_bytes() == b"pfb_content"
         sleep_mock.assert_called_once_with(1.0)
 
     @respx.mock
-    def test_sends_pfb_result_type_and_resource_uuid(self, tmp_path):
+    def test_sends_pfb_result_type(self, tmp_path):
         import json
 
         submit_route = respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
@@ -96,14 +95,13 @@ class TestExportPFBHappyPath:
         with patch("picsure._services.export.time.sleep"):
             export_pfb(
                 _make_client(),
-                RESOURCE_UUID,
                 _simple_clause(),
                 tmp_path / "out.pfb",
+                backend="auth",
             )
 
         body = json.loads(submit_route.calls[0].request.content)
         assert body["query"]["expectedResultType"] == "DATAFRAME_PFB"
-        assert body["resourceUUID"] == RESOURCE_UUID
         # The filter variable is returned as a PFB column without being
         # repeated in includeConcepts.
         assert body["query"]["select"] == ["\\phs1\\sex\\"]
@@ -130,9 +128,9 @@ class TestExportPFBBackoff:
         with patch("picsure._services.export.time.sleep") as sleep_mock:
             export_pfb(
                 _make_client(),
-                RESOURCE_UUID,
                 _simple_clause(),
                 tmp_path / "out.pfb",
+                backend="auth",
             )
 
         intervals = [call.args[0] for call in sleep_mock.call_args_list]
@@ -155,9 +153,9 @@ class TestExportPFBBackoff:
         ):
             export_pfb(
                 _make_client(),
-                RESOURCE_UUID,
                 _simple_clause(),
                 tmp_path / "out.pfb",
+                backend="auth",
             )
 
         intervals = [call.args[0] for call in sleep_mock.call_args_list]
@@ -177,7 +175,7 @@ class TestExportPFBErrorStatus:
             patch("picsure._services.export.time.sleep"),
             pytest.raises(PicSureQueryError, match="status=ERROR"),
         ):
-            export_pfb(_make_client(), RESOURCE_UUID, _simple_clause(), output)
+            export_pfb(_make_client(), _simple_clause(), output, backend="auth")
 
         assert not output.exists()
         assert not (tmp_path / "out.pfb.part").exists()
@@ -210,9 +208,9 @@ class TestExportPFBTimeout:
         ):
             export_pfb(
                 _make_client(),
-                RESOURCE_UUID,
                 _simple_clause(),
                 tmp_path / "out.pfb",
+                backend="auth",
             )
 
         assert not (tmp_path / "out.pfb").exists()
@@ -228,7 +226,7 @@ class TestExportPFB4xx:
 
         output = tmp_path / "out.pfb"
         with pytest.raises(PicSureValidationError):
-            export_pfb(_make_client(), RESOURCE_UUID, _simple_clause(), output)
+            export_pfb(_make_client(), _simple_clause(), output, backend="auth")
 
         assert not output.exists()
         assert not (tmp_path / "out.pfb.part").exists()
@@ -243,7 +241,7 @@ class TestExportPFB4xx:
             patch("picsure._services.export.time.sleep"),
             pytest.raises(PicSureQueryError),
         ):
-            export_pfb(_make_client(), RESOURCE_UUID, _simple_clause(), output)
+            export_pfb(_make_client(), _simple_clause(), output, backend="auth")
 
         assert not output.exists()
         assert not (tmp_path / "out.pfb.part").exists()
@@ -261,7 +259,7 @@ class TestExportPFB4xx:
             patch("picsure._services.export.time.sleep"),
             pytest.raises(PicSureValidationError),
         ):
-            export_pfb(_make_client(), RESOURCE_UUID, _simple_clause(), output)
+            export_pfb(_make_client(), _simple_clause(), output, backend="auth")
 
         assert not output.exists()
         assert not (tmp_path / "out.pfb.part").exists()
@@ -272,7 +270,7 @@ class TestExportPFB4xx:
 
         output = tmp_path / "out.pfb"
         with pytest.raises(PicSureConnectionError):
-            export_pfb(_make_client(), RESOURCE_UUID, _simple_clause(), output)
+            export_pfb(_make_client(), _simple_clause(), output, backend="auth")
 
         assert not output.exists()
 
@@ -298,7 +296,7 @@ class TestExportPFBAtomicWrite:
             ),
             pytest.raises(PicSureConnectionError, match="out.pfb"),
         ):
-            export_pfb(_make_client(), RESOURCE_UUID, _simple_clause(), output)
+            export_pfb(_make_client(), _simple_clause(), output, backend="auth")
 
         # Neither the final file nor the .part file should remain.
         assert not output.exists()
@@ -325,7 +323,7 @@ class TestExportPFBAtomicWrite:
             patch("picsure._services.export._stream_to_file", side_effect=boom),
             pytest.raises(PicSureConnectionError, match="out.pfb"),
         ):
-            export_pfb(_make_client(), RESOURCE_UUID, _simple_clause(), output)
+            export_pfb(_make_client(), _simple_clause(), output, backend="auth")
 
         assert not output.exists()
         assert not part.exists()

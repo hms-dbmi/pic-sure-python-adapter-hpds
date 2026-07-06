@@ -35,22 +35,25 @@ class Session:
         client: PicSureClient,
         user_email: str,
         token_expiration: str,
-        resources: list[Resource],
+        resources: list[Resource] | None = None,
         resource_uuid: str | None = None,
         consents: list[str] | None = None,
         dev_config: DevConfig | None = None,
-        use_legacy_query_path: bool = False,
+        backend: str = "auth",
         supports_genomic: bool = False,
         session_id: str = "",
     ) -> None:
         self._client = client
         self._user_email = user_email
         self._token_expiration = token_expiration
-        self._resources = resources
+        self._resources = list(resources) if resources else []
         self._resource_uuid = resource_uuid
         self._session_id = session_id
         self._consents: list[str] = list(consents) if consents else []
-        self._use_legacy_query_path = use_legacy_query_path
+        # "auth" or "open": selects the HPDS backend by URL path
+        # (/hpds/auth vs /hpds/open) and, with it, the v3 vs v1 query
+        # lifecycle.  Replaces the old resource-UUID backend selection.
+        self._backend = backend
         self._supports_genomic = supports_genomic
         self._dev_config = (
             dev_config
@@ -79,7 +82,14 @@ class Session:
         return list(self._consents)
 
     def getResourceID(self) -> pd.DataFrame:
-        """Return resource IDs and metadata as a DataFrame."""
+        """Return resource IDs and metadata as a DataFrame.
+
+        The resource registry has been removed — the gateway now selects
+        the HPDS backend by URL path rather than by a discovered resource
+        UUID — so this returns an empty frame unless a UUID was passed to
+        :func:`picsure.connect` or :meth:`setResourceID`.  Retained for
+        backwards compatibility; it no longer drives which data is queried.
+        """
         if not self._resources:
             return pd.DataFrame(columns=["uuid", "name", "description"])
         return pd.DataFrame(
@@ -94,15 +104,17 @@ class Session:
         )
 
     def setResourceID(self, resource_uuid: str) -> None:
-        """Set the active resource UUID for searches and queries.
+        """Set the resource UUID stored on this session.
+
+        Deprecated: the gateway selects the HPDS backend by URL path
+        (``/hpds/auth`` vs ``/hpds/open``), derived from the platform, so
+        the stored UUID no longer chooses a backend and is not sent in
+        query bodies.  Retained for backwards compatibility.  With the
+        resource registry removed there is nothing to validate against,
+        so any value is accepted.
 
         Args:
-            resource_uuid: The UUID of the resource to use. See
-                ``getResourceID()`` for available resources.
-
-        Raises:
-            PicSureValidationError: If the UUID does not match any
-                resource on this connection.
+            resource_uuid: A resource UUID to store on the session.
         """
         known_uuids = {r.uuid for r in self._resources}
         if known_uuids and resource_uuid not in known_uuids:
@@ -284,8 +296,8 @@ class Session:
 
         return search_genomic_values(
             self._client,
-            self._default_resource_uuid(),
             genomicConceptPath,
+            backend=self._backend,
             query=query,
             page=page,
             size=size,
@@ -345,10 +357,9 @@ class Session:
 
         return run_query(
             self._client,
-            self._default_resource_uuid(),
             query,
             type,
-            use_legacy_query_path=self._use_legacy_query_path,
+            backend=self._backend,
         )
 
     @timed("session.exportAsPFB")
@@ -372,7 +383,7 @@ class Session:
             PicSureValidationError: If the session was connected to an
                 open-access platform.
         """
-        if self._use_legacy_query_path:
+        if self._backend == "open":
             raise PicSureValidationError(
                 "PFB export is not supported on open-access platforms. "
                 "Connect with an authorized platform (e.g. "
@@ -383,9 +394,9 @@ class Session:
 
         export_pfb(
             self._client,
-            self._default_resource_uuid(),
             query,
             path,
+            backend=self._backend,
         )
 
     @timed("session.saveQueryByName")
@@ -419,10 +430,9 @@ class Session:
 
         return save_query_by_name(
             self._client,
-            self._default_resource_uuid(),
             query,
             name,
-            use_legacy_query_path=self._use_legacy_query_path,
+            backend=self._backend,
             overwrite=overwrite,
         )
 
@@ -524,7 +534,7 @@ class Session:
         """
         from picsure._services.query_load import load_query
 
-        return load_query(self._client, query_id)
+        return load_query(self._client, query_id, backend=self._backend)
 
     def close(self) -> None:
         """Close the underlying HTTP client and release its connection pool.
@@ -572,21 +582,3 @@ class Session:
                 "(e.g. Platform.BDC_AUTHORIZED); this session is connected "
                 "to an open or non-genomic resource."
             )
-
-    def _default_resource_uuid(self) -> str:
-        if self._resource_uuid is not None:
-            return self._resource_uuid
-        if not self._resources:
-            raise PicSureValidationError(
-                "No resources are available on this connection. "
-                "Check with your administrator."
-            )
-        if len(self._resources) == 1:
-            return self._resources[0].uuid
-        listing = "\n".join(f"  {r.uuid}  {r.name}" for r in self._resources)
-        raise PicSureValidationError(
-            "This connection has multiple resources and none has been "
-            "selected. Call session.setResourceID(uuid) to choose one "
-            "before searching or querying.\n\n"
-            f"Available resources:\n{listing}"
-        )

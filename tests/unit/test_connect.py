@@ -10,8 +10,6 @@ import respx
 from picsure._models.session import Session
 from picsure._services.connect import _token_expiration_from_jwt, connect
 from picsure.errors import (
-    PicSureAuthError,
-    PicSureConnectionError,
     PicSureValidationError,
 )
 
@@ -43,137 +41,65 @@ TOKEN = _make_jwt_claims(
     sub="test-user", email="researcher@university.edu", exp=_JWT_EXP
 )
 
-
-def _mock_connect_flow(
-    resources_response: dict,
-    host: str = BASE_URL,
-) -> None:
-    respx.get(f"{host}/picsure/info/resources").mock(
-        return_value=httpx.Response(200, json=resources_response)
-    )
+# connect() no longer discovers resources via /info/resources — the resource
+# registry was removed and the gateway routes by URL path — so a plain
+# authorized connect (token, no consents) makes no HTTP call at all.  The
+# consent fetch is the only connect-time request, and only when consents are
+# requested; the tests that need a request to inspect drive that path.
 
 
 class TestConnectSuccess:
     @respx.mock
-    def test_returns_session(self, resources_response):
-        _mock_connect_flow(resources_response)
+    def test_returns_session(self):
         session = connect(platform=BASE_URL, token=TOKEN)
         assert isinstance(session, Session)
 
     @respx.mock
-    def test_session_has_correct_email(self, resources_response):
-        _mock_connect_flow(resources_response)
+    def test_session_has_correct_email(self):
         session = connect(platform=BASE_URL, token=TOKEN)
         assert session._user_email == "researcher@university.edu"
 
     @respx.mock
-    def test_session_has_resources(self, resources_response):
-        _mock_connect_flow(resources_response)
+    def test_session_has_no_resources(self):
+        # The resource registry is gone: sessions start with no resources.
         session = connect(platform=BASE_URL, token=TOKEN)
-        assert len(session._resources) == 2
-        uuids = {r.uuid for r in session._resources}
-        assert "resource-uuid-aaaa-1111" in uuids
+        assert session._resources == []
 
     @respx.mock
-    def test_custom_url_has_no_resource_uuid(self, resources_response):
-        _mock_connect_flow(resources_response)
+    def test_custom_url_has_no_resource_uuid(self):
         session = connect(platform=BASE_URL, token=TOKEN)
         assert session._resource_uuid is None
 
     @respx.mock
-    def test_prints_success_message(self, resources_response, capsys):
-        _mock_connect_flow(resources_response)
+    def test_makes_no_registry_request(self):
+        # A plain authorized connect performs zero HTTP calls now.
+        connect(platform=BASE_URL, token=TOKEN)
+        assert len(respx.calls) == 0
+
+    @respx.mock
+    def test_prints_success_message(self, capsys):
         connect(platform=BASE_URL, token=TOKEN)
         captured = capsys.readouterr()
         assert "successfully connected" in captured.out.lower()
         assert "researcher@university.edu" in captured.out
 
     @respx.mock
-    def test_prints_token_expiration(self, resources_response, capsys):
-        _mock_connect_flow(resources_response)
+    def test_prints_token_expiration(self, capsys):
         connect(platform=BASE_URL, token=TOKEN)
         captured = capsys.readouterr()
         assert "token expires" in captured.out.lower()
         assert "2026-06-15" in captured.out
 
 
-class TestConnectAuthErrors:
-    @respx.mock
-    def test_401_raises_auth_error(self):
-        # /info/resources is now the first authenticated call, so it owns
-        # the friendly bad-token message the profile call used to surface.
-        respx.get(f"{BASE_URL}/picsure/info/resources").mock(
-            return_value=httpx.Response(401, text="Unauthorized")
-        )
-
-        with pytest.raises(PicSureAuthError) as exc_info:
-            connect(platform=BASE_URL, token=TOKEN)
-
-        msg = str(exc_info.value)
-        assert "invalid or expired" in msg.lower()
-        assert "picsure.connect()" in msg
-
-
-class TestConnectConnectionErrors:
-    @respx.mock
-    def test_network_error_raises_connection_error(self):
-        respx.get(f"{BASE_URL}/picsure/info/resources").mock(
-            side_effect=httpx.ConnectError("Connection refused")
-        )
-
-        with pytest.raises(PicSureConnectionError) as exc_info:
-            connect(platform=BASE_URL, token=TOKEN)
-
-        msg = str(exc_info.value)
-        assert "resources" in msg.lower()
-
-    @respx.mock
-    def test_resource_fetch_failure_raises_connection_error(self):
-        respx.get(f"{BASE_URL}/picsure/info/resources").mock(
-            return_value=httpx.Response(500, text="Internal Server Error")
-        )
-
-        with pytest.raises(PicSureConnectionError) as exc_info:
-            connect(platform=BASE_URL, token=TOKEN)
-
-        msg = str(exc_info.value)
-        assert "resources" in msg.lower()
-
-    @respx.mock
-    def test_null_resources_payload_raises_connection_error(self):
-        respx.get(f"{BASE_URL}/picsure/info/resources").mock(
-            return_value=httpx.Response(
-                200, content=b"null", headers={"content-type": "application/json"}
-            )
-        )
-
-        with pytest.raises(PicSureConnectionError, match="unexpected resources"):
-            connect(platform=BASE_URL, token=TOKEN)
-
-
 class TestConnectResourceUuid:
     @respx.mock
-    def test_explicit_uuid_overrides_platform(self, resources_response):
-        _mock_connect_flow(resources_response)
+    def test_explicit_uuid_is_stored(self):
+        # resource_uuid is retained for backwards compatibility; it is stored
+        # but no longer selects a backend.
         session = connect(
             platform=BASE_URL, token=TOKEN, resource_uuid="my-custom-uuid"
         )
         assert session._resource_uuid == "my-custom-uuid"
-
-    @respx.mock
-    def test_custom_url_no_uuid_prints_resources(self, resources_response, capsys):
-        _mock_connect_flow(resources_response)
-        connect(platform=BASE_URL, token=TOKEN)
-        captured = capsys.readouterr()
-        assert "Available resources" in captured.out
-        assert "setResourceID" in captured.out
-
-    @respx.mock
-    def test_custom_url_with_uuid_no_prompt(self, resources_response, capsys):
-        _mock_connect_flow(resources_response)
-        connect(platform=BASE_URL, token=TOKEN, resource_uuid="resource-uuid-aaaa-1111")
-        captured = capsys.readouterr()
-        assert "Available resources" not in captured.out
 
 
 class TestConnectValidation:
@@ -197,8 +123,7 @@ class TestConnectConsents:
     }
 
     @respx.mock
-    def test_custom_url_skips_consent_fetch_by_default(self, resources_response):
-        _mock_connect_flow(resources_response)
+    def test_custom_url_skips_consent_fetch_by_default(self):
         template_route = respx.get(self._TEMPLATE_URL).mock(
             return_value=httpx.Response(200, json=self._CONSENT_PAYLOAD)
         )
@@ -209,8 +134,7 @@ class TestConnectConsents:
         assert session.consents == []
 
     @respx.mock
-    def test_include_consents_kwarg_fetches_consents(self, resources_response):
-        _mock_connect_flow(resources_response)
+    def test_include_consents_kwarg_fetches_consents(self):
         respx.get(self._TEMPLATE_URL).mock(
             return_value=httpx.Response(200, json=self._CONSENT_PAYLOAD)
         )
@@ -220,11 +144,10 @@ class TestConnectConsents:
         assert session.consents == ["phs000007.c1", "phs001013.c1"]
 
     @respx.mock
-    def test_include_consents_false_override_skips_fetch(self, resources_response):
+    def test_include_consents_false_override_skips_fetch(self):
         from picsure._transport.platforms import Platform
 
         prod_url = Platform.BDC_AUTHORIZED.url
-        _mock_connect_flow(resources_response, host=prod_url)
         template_route = respx.get(f"{prod_url}/psama/user/me/queryTemplate/").mock(
             return_value=httpx.Response(200, json=self._CONSENT_PAYLOAD)
         )
@@ -239,13 +162,8 @@ class TestConnectConsents:
 
 class TestConnectOpenAccess:
     @respx.mock
-    def test_open_platform_connects_anonymously(self, resources_response):
+    def test_open_platform_connects_anonymously(self):
         from picsure._transport.platforms import Platform
-
-        host = Platform.BDC_DEV_OPEN.url
-        respx.get(f"{host}/picsure/info/resources").mock(
-            return_value=httpx.Response(200, json=resources_response)
-        )
 
         session = connect(platform=Platform.BDC_DEV_OPEN)
 
@@ -254,55 +172,16 @@ class TestConnectOpenAccess:
         assert session.consents == []
 
     @respx.mock
-    def test_open_platform_skips_consent_fetch(self, resources_response):
+    def test_open_platform_makes_no_request(self):
         from picsure._transport.platforms import Platform
-
-        host = Platform.BDC_DEV_OPEN.url
-        respx.get(f"{host}/picsure/info/resources").mock(
-            return_value=httpx.Response(200, json=resources_response)
-        )
-        template_route = respx.get(f"{host}/psama/user/me/queryTemplate/").mock(
-            return_value=httpx.Response(200, json={})
-        )
 
         connect(platform=Platform.BDC_DEV_OPEN)
 
-        assert template_route.called is False
+        assert len(respx.calls) == 0
 
     @respx.mock
-    def test_open_platform_resources_401_degrades_to_empty(self):
+    def test_open_platform_success_message(self, capsys):
         from picsure._transport.platforms import Platform
-
-        host = Platform.BDC_DEV_OPEN.url
-        respx.get(f"{host}/picsure/info/resources").mock(
-            return_value=httpx.Response(401)
-        )
-
-        session = connect(platform=Platform.BDC_DEV_OPEN)
-
-        assert session._resources == []
-
-    @respx.mock
-    def test_open_platform_no_auth_header_sent(self, resources_response):
-        from picsure._transport.platforms import Platform
-
-        host = Platform.BDC_DEV_OPEN.url
-        resources_route = respx.get(f"{host}/picsure/info/resources").mock(
-            return_value=httpx.Response(200, json=resources_response)
-        )
-
-        connect(platform=Platform.BDC_DEV_OPEN)
-
-        assert "authorization" not in resources_route.calls[0].request.headers
-
-    @respx.mock
-    def test_open_platform_success_message(self, resources_response, capsys):
-        from picsure._transport.platforms import Platform
-
-        host = Platform.BDC_DEV_OPEN.url
-        respx.get(f"{host}/picsure/info/resources").mock(
-            return_value=httpx.Response(200, json=resources_response)
-        )
 
         connect(platform=Platform.BDC_DEV_OPEN)
 
@@ -311,74 +190,55 @@ class TestConnectOpenAccess:
         assert "token expires" not in out.lower()
 
     @respx.mock
-    def test_requires_auth_false_override_on_custom_url(self, resources_response):
-        respx.get(f"{BASE_URL}/picsure/info/resources").mock(
-            return_value=httpx.Response(200, json=resources_response)
-        )
-
+    def test_requires_auth_false_override_on_custom_url(self):
         session = connect(platform=BASE_URL, requires_auth=False)
 
         assert session._user_email == "anonymous"
 
 
-class TestConnectLegacyQueryPath:
+class TestConnectBackendSelection:
     @respx.mock
-    def test_bdc_open_uses_legacy_query_path(self, resources_response):
-        # BDC's API gateway 401s open-access requests on /picsure/v3/query/sync.
-        # connect() must flip the session over to /picsure/query/sync whenever
-        # neither auth nor consents are required.
+    def test_bdc_open_uses_open_backend(self):
+        # Open-access (no auth, no consents) routes to /hpds/open and the v1
+        # query lifecycle.
         from picsure._transport.platforms import Platform
-
-        host = Platform.BDC_DEV_OPEN.url
-        respx.get(f"{host}/picsure/info/resources").mock(
-            return_value=httpx.Response(200, json=resources_response)
-        )
 
         session = connect(platform=Platform.BDC_DEV_OPEN)
 
-        assert session._use_legacy_query_path is True
+        assert session._backend == "open"
 
     @respx.mock
-    def test_authorized_platform_uses_v3_query_path(self, resources_response):
+    def test_authorized_platform_uses_auth_backend(self):
         from picsure._transport.platforms import Platform
 
         host = Platform.BDC_DEV_AUTHORIZED.url
-        _mock_connect_flow(resources_response, host=host)
         respx.get(f"{host}/psama/user/me/queryTemplate/").mock(
             return_value=httpx.Response(200, json={})
         )
 
         session = connect(platform=Platform.BDC_DEV_AUTHORIZED, token=TOKEN)
 
-        # BDC Authorized requires both auth AND consents; it stays on v3.
-        assert session._use_legacy_query_path is False
+        # BDC Authorized requires both auth AND consents; routes to /hpds/auth.
+        assert session._backend == "auth"
 
     @respx.mock
-    def test_custom_url_default_uses_v3_query_path(self, resources_response):
-        # Custom URLs default to requires_auth=True, so legacy routing
-        # stays off.
-        _mock_connect_flow(resources_response)
-
+    def test_custom_url_default_uses_auth_backend(self):
+        # Custom URLs default to requires_auth=True, so they route to /hpds/auth.
         session = connect(platform=BASE_URL, token=TOKEN)
 
-        assert session._use_legacy_query_path is False
+        assert session._backend == "auth"
 
     @respx.mock
-    def test_custom_url_open_override_uses_legacy_query_path(self, resources_response):
-        # Custom URL with requires_auth=False AND no consents — flag flips on.
-        respx.get(f"{BASE_URL}/picsure/info/resources").mock(
-            return_value=httpx.Response(200, json=resources_response)
-        )
-
+    def test_custom_url_open_override_uses_open_backend(self):
+        # Custom URL with requires_auth=False AND no consents => /hpds/open.
         session = connect(platform=BASE_URL, requires_auth=False)
 
-        assert session._use_legacy_query_path is True
+        assert session._backend == "open"
 
     @respx.mock
-    def test_consents_only_keeps_v3_query_path(self, resources_response):
-        # If the deployment requires consents (even with auth on), it's
-        # an authorized backend — stay on v3.
-        _mock_connect_flow(resources_response)
+    def test_consents_only_keeps_auth_backend(self):
+        # If the deployment requires consents (even with auth on), it's an
+        # authorized backend — routes to /hpds/auth.
         respx.get(f"{BASE_URL}/psama/user/me/queryTemplate/").mock(
             return_value=httpx.Response(200, json={})
         )
@@ -389,19 +249,17 @@ class TestConnectLegacyQueryPath:
             include_consents=True,
         )
 
-        assert session._use_legacy_query_path is False
+        assert session._backend == "auth"
 
 
 class TestConnectSupportsGenomic:
     @respx.mock
-    def test_connect_threads_supports_genomic_override(self, resources_response):
-        _mock_connect_flow(resources_response)
+    def test_connect_threads_supports_genomic_override(self):
         session = connect(platform=BASE_URL, token=TOKEN, supports_genomic=True)
         assert session._supports_genomic is True
 
     @respx.mock
-    def test_connect_supports_genomic_defaults_false(self, resources_response):
-        _mock_connect_flow(resources_response)
+    def test_connect_supports_genomic_defaults_false(self):
         session = connect(platform=BASE_URL, token=TOKEN)
         assert session._supports_genomic is False
 
@@ -462,10 +320,13 @@ class TestEmailFromJwt:
 
 
 class TestConnectCorrelationHeaders:
+    _TEMPLATE_URL = f"{BASE_URL}/psama/user/me/queryTemplate/"
+
     @respx.mock
-    def test_connect_sends_session_id_and_default_client_type(self, resources_response):
-        _mock_connect_flow(resources_response)
-        session = connect(platform=BASE_URL, token=TOKEN)
+    def test_connect_sends_session_id_and_default_client_type(self):
+        # Drive the consent fetch so there is a request to inspect.
+        respx.get(self._TEMPLATE_URL).mock(return_value=httpx.Response(200, json={}))
+        session = connect(platform=BASE_URL, token=TOKEN, include_consents=True)
 
         # session.session_id is a freshly generated uuid4 string.
         assert uuid.UUID(session.session_id)
@@ -477,9 +338,14 @@ class TestConnectCorrelationHeaders:
         assert first_req.headers["user-agent"].startswith("picsure-python-adapter/")
 
     @respx.mock
-    def test_connect_forwards_client_type_override(self, resources_response):
-        _mock_connect_flow(resources_response)
-        session = connect(platform=BASE_URL, token=TOKEN, client_type="R_ADAPTER")
+    def test_connect_forwards_client_type_override(self):
+        respx.get(self._TEMPLATE_URL).mock(return_value=httpx.Response(200, json={}))
+        session = connect(
+            platform=BASE_URL,
+            token=TOKEN,
+            include_consents=True,
+            client_type="R_ADAPTER",
+        )
 
         assert respx.calls[0].request.headers["x-client-type"] == "R_ADAPTER"
         assert (
@@ -491,8 +357,7 @@ class TestConnectCorrelationHeaders:
         assert uuid.UUID(session.session_id)
 
     @respx.mock
-    def test_each_connect_gets_a_distinct_session_id(self, resources_response):
-        _mock_connect_flow(resources_response)
+    def test_each_connect_gets_a_distinct_session_id(self):
         first = connect(platform=BASE_URL, token=TOKEN)
         second = connect(platform=BASE_URL, token=TOKEN)
         assert first.session_id != second.session_id
