@@ -19,6 +19,23 @@ TOKEN = "test-token-abc123"
 # the server before it responded -- the stale-connection symptom under test.
 STALE_CONN_MSG = "Server disconnected without sending a response."
 
+# The message httpx raises when the connection dies part-way through the
+# response body.  Same exception class as STALE_CONN_MSG, but here the server
+# received -- and may have executed -- the request, so a blind POST retry
+# would double-execute it.
+TRUNCATED_BODY_MSG = (
+    "peer closed connection without sending complete message body "
+    "(received 5 bytes, expected 100)"
+)
+
+
+class _FailsMidStream(httpx.SyncByteStream):
+    """Response stream that yields one chunk, then dies like a reset."""
+
+    def __iter__(self):
+        yield b"first-chunk"
+        raise httpx.ReadError("Connection reset by peer")
+
 
 class TestPicSureClient:
     @respx.mock
@@ -389,12 +406,186 @@ class TestPicSureClientStaleConnection:
         )
         client = PicSureClient(base_url=BASE_URL, token=TOKEN)
 
+        # Both attempts fail while opening the stream, so the failure
+        # surfaces from __enter__ -- a with-block body would be dead code.
+        stream = client.post_raw_stream("/export", body={"q": "x"})
+        with pytest.raises(TransportConnectionError, match="stale"):
+            stream.__enter__()
+        assert route.call_count == 2
+
+
+class TestPicSureClientRetrySafety:
+    """Retry/mapping policy across the httpx failure modes.
+
+    Two invariants:  (1) a request is re-sent only when it provably never
+    reached the server (or, for GETs, when re-sending is idempotent-safe);
+    (2) every httpx.TransportError surfaces as a Transport* exception --
+    never as a raw httpx error.
+    """
+
+    @respx.mock
+    def test_post_truncated_body_does_not_retry(self):
+        # Same exception class as the stale-connection case, but the server
+        # already received (and may have executed) the POST -- re-sending
+        # would double-execute it.
+        route = respx.post(f"{BASE_URL}/query/sync").mock(
+            side_effect=httpx.RemoteProtocolError(TRUNCATED_BODY_MSG)
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+
+        with pytest.raises(TransportConnectionError):
+            client.post_json("/query/sync", body={"q": "x"})
+        assert route.call_count == 1
+
+    @respx.mock
+    def test_get_truncated_body_retries(self):
+        route = respx.get(f"{BASE_URL}/flaky").mock(
+            side_effect=[
+                httpx.RemoteProtocolError(TRUNCATED_BODY_MSG),
+                httpx.Response(200, json={"ok": True}),
+            ]
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+
+        assert client.get_json("/flaky") == {"ok": True}
+        assert route.call_count == 2
+
+    @respx.mock
+    def test_post_write_error_retries_then_succeeds(self):
+        # EPIPE while sending: the RST flavor of a stale pooled connection.
+        # The server cannot process a request it never fully received.
+        route = respx.post(f"{BASE_URL}/query/sync").mock(
+            side_effect=[
+                httpx.WriteError("[Errno 32] Broken pipe"),
+                httpx.Response(200, json={"ok": True}),
+            ]
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+
+        assert client.post_json("/query/sync", body={"q": "x"}) == {"ok": True}
+        assert route.call_count == 2
+
+    @respx.mock
+    def test_post_read_error_maps_without_retry(self):
+        # ECONNRESET while reading the response: the POST may have been
+        # processed, so no retry -- but it must map, not escape raw.
+        route = respx.post(f"{BASE_URL}/query/sync").mock(
+            side_effect=httpx.ReadError("[Errno 54] Connection reset by peer")
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+
+        with pytest.raises(TransportConnectionError):
+            client.post_json("/query/sync", body={"q": "x"})
+        assert route.call_count == 1
+
+    @respx.mock
+    def test_get_read_error_retries_then_succeeds(self):
+        route = respx.get(f"{BASE_URL}/flaky").mock(
+            side_effect=[
+                httpx.ReadError("[Errno 54] Connection reset by peer"),
+                httpx.Response(200, json={"ok": True}),
+            ]
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+
+        assert client.get_json("/flaky") == {"ok": True}
+        assert route.call_count == 2
+
+    @respx.mock
+    def test_proxy_error_maps_without_retry(self):
+        route = respx.get(f"{BASE_URL}/x").mock(
+            side_effect=httpx.ProxyError("407 Proxy Authentication Required")
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+
+        with pytest.raises(TransportConnectionError):
+            client.get_json("/x")
+        assert route.call_count == 1
+
+    @respx.mock
+    def test_unsupported_protocol_maps_without_retry(self):
+        route = respx.post(f"{BASE_URL}/x").mock(
+            side_effect=httpx.UnsupportedProtocol("Request URL is missing scheme")
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+
+        with pytest.raises(TransportConnectionError):
+            client.post_json("/x", body={})
+        assert route.call_count == 1
+
+    @respx.mock
+    def test_post_connect_timeout_retries_then_succeeds(self):
+        # The TCP/TLS handshake never completed, so the request was never
+        # sent -- exactly as retry-safe as ConnectError.
+        route = respx.post(f"{BASE_URL}/query/sync").mock(
+            side_effect=[
+                httpx.ConnectTimeout("timed out"),
+                httpx.Response(200, json={"ok": True}),
+            ]
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+
+        assert client.post_json("/query/sync", body={"q": "x"}) == {"ok": True}
+        assert route.call_count == 2
+
+    @respx.mock
+    def test_post_pool_timeout_retries_then_succeeds(self):
+        # The request never left the local connection pool.
+        route = respx.post(f"{BASE_URL}/query/sync").mock(
+            side_effect=[
+                httpx.PoolTimeout("pool timeout"),
+                httpx.Response(200, json={"ok": True}),
+            ]
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+
+        assert client.post_json("/query/sync", body={"q": "x"}) == {"ok": True}
+        assert route.call_count == 2
+
+    @respx.mock
+    def test_stream_mid_body_failure_maps(self):
+        # The server drops the connection while the caller drains the
+        # stream: no retry is possible (bytes are already consumed), but the
+        # error must surface as TransportConnectionError, not raw httpx.
+        respx.post(f"{BASE_URL}/export").mock(
+            return_value=httpx.Response(200, stream=_FailsMidStream())
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+
         with (
-            pytest.raises(TransportConnectionError, match="stale"),
+            pytest.raises(TransportConnectionError, match="streaming"),
             client.post_raw_stream("/export", body={"q": "x"}) as response,
         ):
-            b"".join(response.iter_bytes())
-        assert route.call_count == 2
+            for _ in response.iter_bytes():
+                pass
+
+    @respx.mock
+    def test_stream_error_body_read_failure_still_maps_by_status(self):
+        # 500 whose error body can't be read (connection drops mid-read):
+        # the status alone must still drive the mapping.
+        respx.post(f"{BASE_URL}/fail").mock(
+            return_value=httpx.Response(500, stream=_FailsMidStream())
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+
+        stream = client.post_raw_stream("/fail", body={"q": "x"})
+        with pytest.raises(TransportServerError) as exc_info:
+            stream.__enter__()
+        assert exc_info.value.status_code == 500
+
+    @respx.mock
+    def test_stream_read_timeout_does_not_retry(self):
+        # A timeout waiting for response headers on this POST may mean the
+        # server is still executing it; re-sending could double-submit.
+        route = respx.post(f"{BASE_URL}/export").mock(
+            side_effect=httpx.ReadTimeout("timed out")
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+
+        stream = client.post_raw_stream("/export", body={"q": "x"})
+        with pytest.raises(TransportConnectionError, match="timed out"):
+            stream.__enter__()
+        assert route.call_count == 1
 
 
 class TestPicSureClientCorrelationHeaders:

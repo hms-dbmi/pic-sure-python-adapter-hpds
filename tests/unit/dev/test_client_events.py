@@ -69,9 +69,14 @@ def test_retry_emits_two_events():
 
 @respx.mock
 def test_stale_connection_retry_emits_error_event_then_success():
+    # Exact wording httpx/httpcore use for a stale pooled connection; the
+    # retry policy discriminates RemoteProtocolError variants on it, so the
+    # simulated failure must stay faithful to real traffic.
     respx.post(f"{BASE_URL}/query/sync").mock(
         side_effect=[
-            httpx.RemoteProtocolError("Server disconnected without responding."),
+            httpx.RemoteProtocolError(
+                "Server disconnected without sending a response."
+            ),
             httpx.Response(200, json={"ok": True}),
         ]
     )
