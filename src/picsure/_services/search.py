@@ -23,6 +23,11 @@ from picsure.errors import (
 _CONCEPTS_PATH = "/picsure/proxy/dictionary-api/concepts"
 _FACETS_PATH = "/picsure/proxy/dictionary-api/facets"
 
+# Page size for the "one big page" dictionary search.  Set to Java
+# ``Integer.MAX_VALUE`` (the backend's int width) so a single request
+# returns every concept the user can see, without a prior count probe.
+_MAX_PAGE_SIZE = 2_147_483_647
+
 _COLUMNS_WITH_VALUES = [
     "conceptPath",
     "name",
@@ -69,47 +74,6 @@ def _translate_dictionary_4xx(
     )
 
 
-def fetch_total_concepts(
-    client: PicSureClient,
-    consents: list[str] | None = None,
-) -> int:
-    """Probe the concepts endpoint to discover how many concepts exist.
-
-    The backend paginates results; to fetch all concepts in a single
-    call we need a page size equal to the total number of concepts.
-    This helper issues a minimal ``page_size=1`` request and returns
-    ``totalElements`` from the response.
-
-    Args:
-        client: Authenticated HTTP client.
-        consents: Optional consent list for authorized deployments.
-
-    Returns:
-        Total number of concepts available to the user.  ``0`` if the
-        response omits ``totalElements``.
-    """
-    body = _build_concepts_body(term="", facets=None, consents=consents)
-    url = f"{_CONCEPTS_PATH}?page_number=0&page_size=1"
-
-    try:
-        data = client.post_json(url, body=body)
-    except (TransportValidationError, TransportNotFoundError) as exc:
-        raise _translate_dictionary_4xx(exc, "initialize the data dictionary") from exc
-    except TransportRateLimitError as exc:
-        raise PicSureConnectionError(rate_limit_message(exc)) from exc
-    except TransportError as exc:
-        raise PicSureConnectionError(
-            "Could not initialize the data dictionary. "
-            "The server may be temporarily unavailable."
-        ) from exc
-
-    total = data.get("totalElements", 0)
-    try:
-        return int(total)
-    except (TypeError, ValueError):
-        return 0
-
-
 def searchDictionary(  # noqa: N802
     client: PicSureClient,
     term: str = "",
@@ -132,15 +96,14 @@ def searchDictionary(  # noqa: N802
         include_values: If False, omit the values column.
         consents: Optional consent list.  Passed through in the body
             for authorized deployments; omitted when ``None`` or empty.
-        page_size: Page size for the request.  Should be the total
-            number of concepts (from :func:`fetch_total_concepts`) so
-            the entire result set comes back in one page.  If omitted
-            or non-positive, defaults to ``100``.
+        page_size: Page size for the request.  If omitted or
+            non-positive, defaults to :data:`_MAX_PAGE_SIZE` so the
+            entire result set comes back in one page.
 
     Returns:
         DataFrame of matching dictionary entries.
     """
-    effective_page_size = page_size if page_size and page_size > 0 else 100
+    effective_page_size = page_size if page_size and page_size > 0 else _MAX_PAGE_SIZE
     body = _build_concepts_body(term=term, facets=facets, consents=consents)
     url = f"{_CONCEPTS_PATH}?page_number=0&page_size={effective_page_size}"
 
