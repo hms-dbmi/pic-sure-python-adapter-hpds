@@ -26,6 +26,84 @@ if TYPE_CHECKING:
 _MAX_RETRIES = 1
 _TIMEOUT_SECONDS = 30.0
 
+# Transport failures where the request provably never reached the server --
+# or never finished being sent -- so re-sending cannot double-execute even a
+# non-idempotent POST:
+#   - ConnectError / ConnectTimeout: no connection was ever established.
+#   - PoolTimeout: the request never left the local connection pool.
+#   - WriteError: sending the request failed part-way (e.g. EPIPE on a stale
+#     pooled connection the server killed with RST); the server cannot
+#     process a request it never fully received.
+_PRE_SEND_FAILURES = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    httpx.PoolTimeout,
+    httpx.WriteError,
+)
+
+# Deterministic configuration or client-side errors where a retry cannot
+# change the outcome: a proxy refusing the connection, a base URL whose
+# scheme httpx does not support, a request httpx itself considers malformed.
+_NO_RETRY_FAILURES = (
+    httpx.ProxyError,
+    httpx.UnsupportedProtocol,
+    httpx.LocalProtocolError,
+)
+
+
+def _server_disconnected_before_response(exc: httpx.RemoteProtocolError) -> bool:
+    """True for the stale pooled keep-alive symptom.
+
+    httpcore uses this exact wording only when the server closed the
+    connection before sending any part of a response -- meaning the request
+    was never processed.  Every other ``RemoteProtocolError`` (truncated
+    body, malformed response) arrives *after* the server received -- and may
+    have executed -- the request, so it must not be blindly re-sent for
+    non-GETs.  If a future httpcore rewords the message this degrades
+    safely: non-GETs simply stop retrying this case.
+    """
+    return str(exc).startswith("Server disconnected")
+
+
+def _should_retry(method: str, exc: httpx.TransportError) -> bool:
+    """Whether a failed request is safe to send again.
+
+    Safe for every method when the request provably never reached the
+    server; otherwise only for idempotent GETs (the server may already
+    have processed the request).
+    """
+    if isinstance(exc, _NO_RETRY_FAILURES):
+        return False
+    if isinstance(exc, _PRE_SEND_FAILURES):
+        return True
+    if isinstance(
+        exc, httpx.RemoteProtocolError
+    ) and _server_disconnected_before_response(exc):
+        return True
+    # ReadError, ReadTimeout, WriteTimeout, CloseError, truncated-body
+    # RemoteProtocolError, ...: the request was fully sent and the failure
+    # happened while receiving the response.
+    return method == "GET"
+
+
+def _connection_failure_message(exc: httpx.TransportError) -> str:
+    """Build the ``TransportConnectionError`` message for a failure."""
+    if isinstance(
+        exc, httpx.RemoteProtocolError
+    ) and _server_disconnected_before_response(exc):
+        return (
+            "Server closed the connection before responding "
+            f"(stale pooled connection): {exc}"
+        )
+    if isinstance(exc, httpx.TimeoutException):
+        return f"Request timed out: {exc}"
+    if isinstance(exc, (httpx.ReadError, httpx.WriteError, httpx.CloseError)):
+        return (
+            "Network error on an established connection (possibly a stale "
+            f"pooled connection closed by the server): {exc}"
+        )
+    return str(exc) or type(exc).__name__
+
 
 def _package_version() -> str:
     """Return the installed ``picsure`` version, or ``"unknown"``."""
@@ -135,7 +213,10 @@ class PicSureClient:
         to transport exceptions *before* the context manager yields, so
         callers don't need to re-check the status code.  The response
         body for the error mapping is read eagerly (it's small), but the
-        success-path body is left as a live stream.
+        success-path body is left as a live stream.  A transport failure
+        while the caller drains the stream is translated to
+        :class:`TransportConnectionError` as well, so no raw httpx
+        exception escapes this context manager.
         """
         last_exc: Exception | None = None
 
@@ -143,25 +224,29 @@ class PicSureClient:
             stream_cm = self._http.stream("POST", path, json=body)
             try:
                 response = stream_cm.__enter__()
-            except httpx.ConnectError as exc:
+            except httpx.TransportError as exc:
                 last_exc = exc
-                if attempt < _MAX_RETRIES:
+                # This stream is always a POST, so retry only the failures
+                # where the request provably never reached the server (see
+                # _should_retry).
+                if _should_retry("POST", exc) and attempt < _MAX_RETRIES:
                     continue
-                raise TransportConnectionError(str(exc)) from exc
-            except httpx.TimeoutException as exc:
-                last_exc = exc
-                if attempt < _MAX_RETRIES:
-                    continue
-                raise TransportConnectionError(f"Request timed out: {exc}") from exc
+                raise TransportConnectionError(
+                    _connection_failure_message(exc)
+                ) from exc
 
             status = response.status_code
 
             if status >= 400:
                 # Read the (presumably small) error body so the mapper
-                # below can include a preview, then close the stream.
+                # below can include a preview, then close the stream.  The
+                # status alone drives the mapping, so degrade to a
+                # placeholder if the connection drops mid-read.
                 try:
                     response.read()
                     body_text = response.text
+                except httpx.TransportError as exc:
+                    body_text = f"<error body unavailable: {exc}>"
                 finally:
                     stream_cm.__exit__(None, None, None)
                 if 400 <= status < 500:
@@ -169,9 +254,17 @@ class PicSureClient:
                 # POST /stream is non-idempotent; do not retry on 5xx.
                 raise TransportServerError(status, body_text)
 
-            # Happy path: hand the live response to the caller.
+            # Happy path: hand the live response to the caller.  A transport
+            # failure while the caller drains the stream is thrown back into
+            # this generator at the yield; translate it so callers see the
+            # Transport* contract, never a raw httpx error.  No retry is
+            # possible here -- part of the body has already been consumed.
             try:
                 yield response
+            except httpx.TransportError as exc:
+                raise TransportConnectionError(
+                    f"Connection failed while streaming the response: {exc}"
+                ) from exc
             finally:
                 stream_cm.__exit__(None, None, None)
             return
@@ -187,24 +280,18 @@ class PicSureClient:
             start = time.monotonic()
             try:
                 response = self._http.request(method, path, **kwargs)  # type: ignore[arg-type]
-            except httpx.ConnectError as exc:
+            except httpx.TransportError as exc:
                 last_exc = exc
                 self._emit_error(method, path, attempt, start, type(exc).__name__)
-                # Connection errors are idempotent-safe: the request never
-                # reached the server, so retrying can't double-execute.
-                if attempt < _MAX_RETRIES:
-                    continue
-                raise _mark_emitted(TransportConnectionError(str(exc))) from exc
-            except httpx.TimeoutException as exc:
-                last_exc = exc
-                self._emit_error(method, path, attempt, start, type(exc).__name__)
-                # Read-timeouts on POST may mean the server already processed
-                # the request; retrying could duplicate a non-idempotent
-                # mutation.  Only retry GETs.
-                if method == "GET" and attempt < _MAX_RETRIES:
+                # Retry only when re-sending cannot double-execute: failures
+                # where the request never reached the server retry for every
+                # method; failures after the request was fully sent (the
+                # server may have processed it) retry for GETs only.  See
+                # _should_retry for the per-exception classification.
+                if _should_retry(method, exc) and attempt < _MAX_RETRIES:
                     continue
                 raise _mark_emitted(
-                    TransportConnectionError(f"Request timed out: {exc}")
+                    TransportConnectionError(_connection_failure_message(exc))
                 ) from exc
 
             self._emit_http(method, path, body, response, attempt, start)
