@@ -1380,17 +1380,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#picsure.Session.total_concepts" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        total_concepts
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#picsure.Session.searchDictionary" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2714,17 +2703,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#picsure.Session.total_concepts" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        total_concepts
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#picsure.Session.searchDictionary" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3147,8 +3125,8 @@ flag; for custom URLs it defaults to <code>False</code>.  Pass
               <div class="doc-md-description">
                 <p>Override the platform's auth requirement.  Known
 Platform members default to their own flag; custom URLs
-default to <code>True</code>.  Pass <code>False</code> to skip the PSAMA
-profile call on an open-access deployment.</p>
+default to <code>True</code>.  Pass <code>False</code> on an open-access
+deployment to connect anonymously without a token.</p>
               </div>
             </td>
             <td>
@@ -5655,12 +5633,11 @@ the wire string yourself.</p>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">resources</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Resource</span><span class="p">],</span>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">resource_uuid</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">consents</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">total_concepts</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">dev_config</span><span class="p">:</span> <span class="n">DevConfig</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">use_legacy_query_path</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="n">supports_genomic</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    <span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">,</span>
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="p">)</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">dev_config</span><span class="p">:</span> <span class="n">DevConfig</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">use_legacy_query_path</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">supports_genomic</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="p">)</span>
 </code></pre></div>
 
     <div class="doc doc-contents first">
@@ -5712,32 +5689,6 @@ are added in later plans.</p>
 <p>Empty list on open-access deployments.  Dictionary-api calls
 on authorized deployments must include this list in the request
 body so the backend scopes results to accessible studies.</p>
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-attribute">
-
-
-
-<h3 id="picsure.Session.total_concepts" class="doc doc-heading">
-            <span class="doc doc-object-name doc-attribute-name">total_concepts</span>
-
-
-  <span class="doc doc-labels">
-      <small class="doc doc-label doc-label-property"><code>property</code></small>
-  </span>
-
-<a href="#picsure.Session.total_concepts" class="headerlink" title="Permanent link">&para;</a></h3>
-<div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">total_concepts</span><span class="p">:</span> <span class="nb">int</span>
-</code></pre></div>
-
-    <div class="doc doc-contents ">
-
-        <p>Total number of concepts in the data dictionary.</p>
-<p>Captured at connect time and used as the page size for search
-requests so every result comes back in one page.</p>
 
     </div>
 

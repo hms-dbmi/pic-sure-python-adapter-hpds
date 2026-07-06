@@ -1149,11 +1149,11 @@ client and translates <code>TransportError</code> subclasses to the public
 <tbody>
 <tr>
 <td><code>connect.py</code></td>
-<td><code>connect(platform, token, …)</code>. Resolves the platform, hits <code>/psama/user/me</code> (skipped on open-access), fetches resources, consents, dictionary size, and constructs the <code>Session</code>. Also handles the dev-mode toggle and the success/expiration banner.</td>
+<td><code>connect(platform, token, …)</code>. Resolves the platform, fetches resources and (on authorized deployments) consents, and constructs the <code>Session</code>. Reads the display email and expiry straight from the JWT — no <code>/psama/user/me</code> round trip. Also handles the dev-mode toggle and the success/expiration banner.</td>
 </tr>
 <tr>
 <td><code>search.py</code></td>
-<td><code>searchDictionary</code>, <code>fetch_facets</code>, <code>show_all_facets</code>, plus the smaller helpers that build dictionary-api request bodies, dedupe entries, and turn results into DataFrames. Also <code>fetch_total_concepts</code> (used by connect to pre-size search pages).</td>
+<td><code>searchDictionary</code>, <code>fetch_facets</code>, <code>show_all_facets</code>, plus the smaller helpers that build dictionary-api request bodies, dedupe entries, and turn results into DataFrames. Dictionary searches use a single max-int page (<code>_MAX_PAGE_SIZE</code>) so one request returns every concept.</td>
 </tr>
 <tr>
 <td><code>query_build.py</code></td>
@@ -1348,8 +1348,6 @@ small:</p>
 <li><code>_consents</code> — <code>list[str]</code> of study-consent identifiers. Empty on
   open-access; required in dictionary-api request bodies on
   authorized deployments.</li>
-<li><code>_total_concepts</code> — captured at connect time and used as the page
-  size for searches so results come back in one page.</li>
 <li><code>_dev_config</code> — opt-in <code>DevConfig</code> (off by default).</li>
 <li><code>_use_legacy_query_path</code> — set during connect when the platform is
   open-only and must use <code>/picsure/query/sync</code> (BDC's API gateway
