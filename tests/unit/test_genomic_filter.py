@@ -49,3 +49,61 @@ def test_is_variant_spec_matches_specs_not_annotation_keys():
     assert not is_variant_spec("Gene_with_variant")
     assert not is_variant_spec("Variant_consequence_calculated")
     assert not is_variant_spec("Variant_frequency_as_text")
+
+
+def test_genomic_filter_key_values():
+    from picsure._models.genomic_filter import GenomicFilterKey
+
+    assert GenomicFilterKey.GENE_WITH_VARIANT == "Gene_with_variant"
+    key = GenomicFilterKey.VARIANT_CONSEQUENCE_CALCULATED
+    assert key == "Variant_consequence_calculated"
+    assert GenomicFilterKey.VARIANT_FREQUENCY_AS_TEXT == "Variant_frequency_as_text"
+    assert GenomicFilterKey.VARIANT_CLASS == "Variant_class"
+    assert GenomicFilterKey.VARIANT_SEVERITY == "Variant_severity"
+
+
+def test_variant_severity_values():
+    from picsure._models.genomic_filter import VariantSeverity
+
+    assert VariantSeverity.HIGH == "High Severity"
+    assert VariantSeverity.MEDIUM == "Medium Severity"
+    assert VariantSeverity.LOW == "Low Severity"
+
+
+def test_known_severities_order():
+    from picsure._models.genomic_filter import known_severities
+
+    assert known_severities() == ("High Severity", "Medium Severity", "Low Severity")
+
+
+def test_severity_consequences_high_exact():
+    from picsure._models.genomic_filter import severity_consequences
+
+    assert severity_consequences("High Severity") == (
+        "splice_acceptor_variant",
+        "splice_donor_variant",
+        "stop_gained",
+        "frameshift_variant",
+        "stop_lost",
+        "start_lost",
+    )
+    assert "missense_variant" in severity_consequences("Medium Severity")
+    assert "synonymous_variant" in severity_consequences("Low Severity")
+
+
+def test_severity_consequences_unknown_raises_keyerror():
+    import pytest
+
+    from picsure._models.genomic_filter import severity_consequences
+
+    with pytest.raises(KeyError):
+        severity_consequences("HIGH")
+
+
+def test_key_and_severity_enums_re_exported():
+    import picsure
+
+    assert picsure.GenomicFilterKey.GENE_WITH_VARIANT == "Gene_with_variant"
+    assert picsure.VariantSeverity.HIGH == "High Severity"
+    assert "GenomicFilterKey" in picsure.__all__
+    assert "VariantSeverity" in picsure.__all__

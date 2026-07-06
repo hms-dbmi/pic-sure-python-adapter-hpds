@@ -6,7 +6,12 @@ from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure._models.count_result import CountResult
 from picsure._models.facet import FacetSet
-from picsure._models.genomic_filter import GenomicFilter, VariantFrequency
+from picsure._models.genomic_filter import (
+    GenomicFilter,
+    GenomicFilterKey,
+    VariantFrequency,
+    VariantSeverity,
+)
 from picsure._models.query import Query
 from picsure._models.query_type import QueryType
 from picsure._models.session import Session
@@ -56,6 +61,7 @@ __all__ = [
     "CountResult",
     "FacetSet",
     "GenomicFilter",
+    "GenomicFilterKey",
     "GroupOperator",
     "PhenotypicFilterType",
     "PicSureAuthError",
@@ -68,4 +74,5 @@ __all__ = [
     "QueryType",
     "Session",
     "VariantFrequency",
+    "VariantSeverity",
 ]
