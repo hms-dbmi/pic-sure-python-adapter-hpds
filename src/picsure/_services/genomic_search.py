@@ -33,9 +33,8 @@ def search_genomic_values(
 ) -> pd.DataFrame:
     """Fetch one page of valid values for a genomic annotation key.
 
-    Hits ``/hpds/{backend}/search/{resourceId}/values/`` — the backend is
-    chosen by URL path and the ``{resourceId}`` segment is an ignored
-    placeholder (see :func:`picsure._services._hpds_paths.search_values_path`).
+    Hits ``/hpds/{backend}/search/values`` — the backend is chosen by URL
+    path (see :func:`picsure._services._hpds_paths.search_values_path`).
 
     Returns a single-column (``value``) DataFrame. Pagination metadata is
     preserved on ``df.attrs``: ``total``, ``page``, ``size``,
