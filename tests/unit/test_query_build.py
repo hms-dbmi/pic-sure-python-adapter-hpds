@@ -363,3 +363,81 @@ class TestBuildQueryGenomic:
     def test_empty_still_rejected(self):
         with pytest.raises(PicSureValidationError):
             buildQuery()
+
+
+class TestGenomicFilterKeyEnum:
+    def test_accepts_enum_key(self):
+        from picsure import GenomicFilterKey, buildGenomicFilter
+
+        gf = buildGenomicFilter(GenomicFilterKey.GENE_WITH_VARIANT, values=["BRCA1"])
+        assert gf.key == "Gene_with_variant"
+        assert gf.values == ("BRCA1",)
+
+    def test_accepts_valid_string_key(self):
+        from picsure import buildGenomicFilter
+
+        gf = buildGenomicFilter("Variant_class", values=["SNV"])
+        assert gf.key == "Variant_class"
+
+    def test_unknown_string_key_is_rejected(self):
+        from picsure import PicSureValidationError, buildGenomicFilter
+
+        with pytest.raises(
+            PicSureValidationError, match="not a recognized genomic filter key"
+        ):
+            buildGenomicFilter("Variant_severty", values=["x"])
+
+    def test_unknown_key_error_lists_valid_keys(self):
+        from picsure import PicSureValidationError, buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError, match="Gene_with_variant"):
+            buildGenomicFilter("nope", values=["x"])
+
+    def test_snp_key_still_reports_snp(self):
+        from picsure import PicSureValidationError, buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError, match="SNP"):
+            buildGenomicFilter("rs123", values=["x"])
+
+    def test_severity_enum_expands_to_consequences(self):
+        from picsure import GenomicFilterKey, VariantSeverity, buildGenomicFilter
+
+        gf = buildGenomicFilter(
+            GenomicFilterKey.VARIANT_SEVERITY, values=VariantSeverity.HIGH
+        )
+        assert gf.key == "Variant_consequence_calculated"
+        assert gf.values == (
+            "splice_acceptor_variant",
+            "splice_donor_variant",
+            "stop_gained",
+            "frameshift_variant",
+            "stop_lost",
+            "start_lost",
+        )
+
+    def test_severity_string_label_expands(self):
+        from picsure import buildGenomicFilter
+
+        gf = buildGenomicFilter("Variant_severity", values="High Severity")
+        assert gf.key == "Variant_consequence_calculated"
+        assert "stop_gained" in gf.values
+
+    def test_multiple_severities_union_dedup_ordered(self):
+        from picsure import GenomicFilterKey, VariantSeverity, buildGenomicFilter
+
+        gf = buildGenomicFilter(
+            GenomicFilterKey.VARIANT_SEVERITY,
+            values=[VariantSeverity.HIGH, VariantSeverity.MEDIUM],
+        )
+        assert gf.key == "Variant_consequence_calculated"
+        assert gf.values[0] == "splice_acceptor_variant"
+        assert "missense_variant" in gf.values
+        assert len(gf.values) == len(set(gf.values))
+
+    def test_unknown_severity_value_is_rejected(self):
+        from picsure import GenomicFilterKey, PicSureValidationError, buildGenomicFilter
+
+        with pytest.raises(
+            PicSureValidationError, match="not a valid variant severity"
+        ):
+            buildGenomicFilter(GenomicFilterKey.VARIANT_SEVERITY, values="HIGH")

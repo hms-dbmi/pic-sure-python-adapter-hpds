@@ -93,6 +93,18 @@ Complete reference for all public functions, classes, and types in the
     options:
       members: true
 
+### GenomicFilterKey
+
+::: picsure.GenomicFilterKey
+    options:
+      members: true
+
+### VariantSeverity
+
+::: picsure.VariantSeverity
+    options:
+      members: true
+
 ## Session
 
 ::: picsure.Session

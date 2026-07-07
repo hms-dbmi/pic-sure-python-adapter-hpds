@@ -180,24 +180,65 @@ the phenotypic filter when the query runs.
 
 ### Building a genomic filter
 
+Pass the annotation key as a `GenomicFilterKey` member (preferred) or the
+equivalent string — an unrecognized string raises an error listing the valid
+keys.
+
 ```python
-from picsure import buildGenomicFilter, VariantFrequency
+import picsure
 
 # Filter to a specific gene
-gene_filter = buildGenomicFilter("Gene_with_variant", values="BRCA2")
+gene_filter = picsure.buildGenomicFilter(
+    key=picsure.GenomicFilterKey.GENE_WITH_VARIANT, values="BRCA2"
+)
 
 # Multiple genes at once
-multi_gene = buildGenomicFilter("Gene_with_variant", values=["BRCA1", "BRCA2"])
+multi_gene = picsure.buildGenomicFilter(
+    key=picsure.GenomicFilterKey.GENE_WITH_VARIANT, values=["BRCA1", "BRCA2"]
+)
 
 # Filter by variant consequence
-csq_filter = buildGenomicFilter("Variant_consequence_calculated", values="missense_variant")
+csq_filter = picsure.buildGenomicFilter(
+    key=picsure.GenomicFilterKey.VARIANT_CONSEQUENCE_CALCULATED,
+    values="missense_variant",
+)
 
-# Filter by frequency using the VariantFrequency enum
-freq_filter = buildGenomicFilter("Variant_frequency_as_text", values=VariantFrequency.RARE)
+# Filter by frequency bucket using the VariantFrequency enum
+freq_filter = picsure.buildGenomicFilter(
+    key=picsure.GenomicFilterKey.VARIANT_FREQUENCY_AS_TEXT,
+    values=picsure.VariantFrequency.RARE,
+)
 ```
 
-`values` is required. Variant-spec and SNP keys are rejected with an actionable error.
-`VariantFrequency` has three members: `RARE`, `COMMON`, and `NOVEL`.
+`values` is required. Keys are validated against `GenomicFilterKey`; an
+unrecognized string key — or a variant-spec / SNP key (an rsID or
+`chr,pos,ref,alt`) — is rejected with an actionable error. `VariantFrequency`
+has three members: `RARE`, `COMMON`, and `NOVEL`.
+
+### Filtering by variant severity
+
+`Variant_severity` is a **virtual** key: the backend has no severity filter, so
+`buildGenomicFilter` expands a `VariantSeverity` bucket into the matching
+`Variant_consequence_calculated` values. Filter as if severity were a real key:
+
+```python
+import picsure
+
+# High-severity variants -> a Variant_consequence_calculated filter
+severe = picsure.buildGenomicFilter(
+    key=picsure.GenomicFilterKey.VARIANT_SEVERITY,
+    values=picsure.VariantSeverity.HIGH,
+)
+# severe.key == "Variant_consequence_calculated"
+
+# Multiple severities are unioned
+severe_or_moderate = picsure.buildGenomicFilter(
+    key=picsure.GenomicFilterKey.VARIANT_SEVERITY,
+    values=[picsure.VariantSeverity.HIGH, picsure.VariantSeverity.MEDIUM],
+)
+```
+
+`VariantSeverity` has three members: `HIGH`, `MEDIUM`, and `LOW`.
 
 ### Genomic-only query
 
