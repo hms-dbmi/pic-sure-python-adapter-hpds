@@ -47,13 +47,24 @@ filter by gene, consequence, and variant frequency, and discover valid values
 for any genomic key:
 
 ```python
-from picsure import buildGenomicFilter, buildQuery, VariantFrequency
+import picsure
 
-gene_filter = buildGenomicFilter("Gene_with_variant", values="BRCA2")
-freq_filter = buildGenomicFilter("Variant_frequency_as_text", values=VariantFrequency.RARE)
+gene_filter = picsure.buildGenomicFilter(
+    key=picsure.GenomicFilterKey.GENE_WITH_VARIANT, values="BRCA2"
+)
+freq_filter = picsure.buildGenomicFilter(
+    key=picsure.GenomicFilterKey.VARIANT_FREQUENCY_AS_TEXT,
+    values=picsure.VariantFrequency.RARE,
+)
+
+# Variant severity is a virtual key -> expands to Variant_consequence_calculated
+severe_filter = picsure.buildGenomicFilter(
+    key=picsure.GenomicFilterKey.VARIANT_SEVERITY,
+    values=picsure.VariantSeverity.HIGH,
+)
 
 # Genomic-only query
-genomic_query = buildQuery(genomicFilters=[gene_filter, freq_filter])
+genomic_query = picsure.buildQuery(genomicFilters=[gene_filter, freq_filter])
 count_result = session.runQuery(genomic_query, type="count")
 
 # Discover valid values for a genomic key

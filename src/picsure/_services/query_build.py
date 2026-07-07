@@ -5,7 +5,13 @@ from enum import Enum
 
 from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
-from picsure._models.genomic_filter import GenomicFilter, is_variant_spec
+from picsure._models.genomic_filter import (
+    GenomicFilter,
+    GenomicFilterKey,
+    is_variant_spec,
+    known_severities,
+    severity_consequences,
+)
 from picsure._models.query import Query
 from picsure.errors import PicSureValidationError
 
@@ -213,47 +219,67 @@ def buildQuery(  # noqa: N802
 
 
 def buildGenomicFilter(  # noqa: N802
-    key: str,
+    key: str | GenomicFilterKey,
     *,
     values: str | Sequence[str],
 ) -> GenomicFilter:
     """Create a single categorical genomic (variant-annotation) filter.
 
     Args:
-        key: The genomic annotation to filter on. Known keys include
-            ``"Gene_with_variant"``, ``"Variant_consequence_calculated"``, and
-            ``"Variant_frequency_as_text"`` (use :class:`VariantFrequency`).
-            The exact set is platform-dependent and validated server-side.
-            Variant-spec (SNP) keys — an rsID or a ``chr,pos,ref,alt`` spec —
-            are not supported yet and are rejected.
+        key: The genomic annotation to filter on. Pass a
+            :class:`GenomicFilterKey` member (preferred) or the equivalent
+            string — an unrecognized string raises an error listing the valid
+            keys. ``GenomicFilterKey.VARIANT_SEVERITY`` is a *virtual* key: the
+            backend has no ``Variant_severity`` filter, so this builder expands
+            the requested :class:`VariantSeverity` buckets into the matching
+            ``Variant_consequence_calculated`` values. Variant-spec (SNP) keys —
+            an rsID or a ``chr,pos,ref,alt`` spec — are not supported and are
+            rejected.
         values: One value or a sequence of values that must match.
-            :class:`VariantFrequency` members are accepted and coerced to their
-            string value.
+            :class:`VariantFrequency` / :class:`VariantSeverity` members are
+            accepted and coerced to their string value.
 
     Returns:
         A :class:`GenomicFilter` to pass to ``buildQuery(genomicFilters=...)``.
+        For ``VARIANT_SEVERITY`` the returned filter's ``key`` is
+        ``"Variant_consequence_calculated"``.
 
     Raises:
-        PicSureValidationError: If ``key`` is empty, ``key`` is a variant-spec
-            (SNP) key, or ``values`` is empty or contains blank strings.
+        PicSureValidationError: If ``key`` is empty, unrecognized, or a
+            variant-spec (SNP) key; if ``values`` is empty or contains blank
+            strings; or if a ``VARIANT_SEVERITY`` value is not a valid severity.
 
     Example:
-        >>> from picsure import buildGenomicFilter, VariantFrequency
-        >>> gene = buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
-        >>> rare = buildGenomicFilter(
-        ...     "Variant_frequency_as_text", values=VariantFrequency.RARE
+        >>> from picsure import buildGenomicFilter, GenomicFilterKey, VariantSeverity
+        >>> gene = buildGenomicFilter(
+        ...     GenomicFilterKey.GENE_WITH_VARIANT, values=["BRCA1"]
+        ... )
+        >>> severe = buildGenomicFilter(
+        ...     GenomicFilterKey.VARIANT_SEVERITY, values=VariantSeverity.HIGH
         ... )
     """
-    if not isinstance(key, str) or not key.strip():
+    if isinstance(key, GenomicFilterKey):
+        resolved = key
+    elif isinstance(key, str) and key.strip():
+        try:
+            resolved = GenomicFilterKey(key)
+        except ValueError:
+            if is_variant_spec(key):
+                raise PicSureValidationError(
+                    "Variant-spec (SNP) genomic filtering is not supported yet; "
+                    f"the key {key!r} looks like a specific variant. Filter by a "
+                    "gene or annotation key (e.g. 'Gene_with_variant') instead."
+                ) from None
+            valid_keys = ", ".join(k.value for k in GenomicFilterKey)
+            raise PicSureValidationError(
+                f"{key!r} is not a recognized genomic filter key. Valid keys: "
+                f"{valid_keys}. Pass a GenomicFilterKey member or one of these "
+                "strings."
+            ) from None
+    else:
         raise PicSureValidationError(
-            "buildGenomicFilter requires a non-empty 'key' string."
-        )
-
-    if is_variant_spec(key):
-        raise PicSureValidationError(
-            f"Variant-spec (SNP) genomic filtering is not supported yet; the "
-            f"key {key!r} looks like a specific variant. Filter by a gene or "
-            "annotation key (e.g. 'Gene_with_variant') instead."
+            "buildGenomicFilter requires a non-empty 'key' string or a "
+            "GenomicFilterKey member."
         )
 
     items = [values] if isinstance(values, str) else list(values)
@@ -267,4 +293,22 @@ def buildGenomicFilter(  # noqa: N802
             "buildGenomicFilter 'values' must not contain empty or blank strings."
         )
 
-    return GenomicFilter(key=key, values=normalized)
+    if resolved is GenomicFilterKey.VARIANT_SEVERITY:
+        expanded: list[str] = []
+        for severity in normalized:
+            try:
+                expanded.extend(severity_consequences(severity))
+            except KeyError:
+                valid_severities = ", ".join(known_severities())
+                raise PicSureValidationError(
+                    f"{severity!r} is not a valid variant severity. Valid "
+                    f"severities: {valid_severities}. Pass a VariantSeverity "
+                    "member or one of these strings."
+                ) from None
+        effective_key = GenomicFilterKey.VARIANT_CONSEQUENCE_CALCULATED.value
+        effective_values = tuple(dict.fromkeys(expanded))
+    else:
+        effective_key = resolved.value
+        effective_values = normalized
+
+    return GenomicFilter(key=effective_key, values=effective_values)
