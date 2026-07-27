@@ -189,29 +189,29 @@ class TestConnectValidation:
 
 
 class TestConnectConsents:
-    _TEMPLATE_URL = f"{BASE_URL}/psama/user/me/queryTemplate/"
+    _CONSENTS_URL = f"{BASE_URL}/psama/user/me/consents"
     _CONSENT_PAYLOAD = {
-        "queryTemplate": (
-            '{"categoryFilters":{"\\\\_consents\\\\":["phs000007.c1","phs001013.c1"]}}'
-        )
+        "uuid": "8f14e45f-ceea-467a-a3cd-9f1ee0e5f0a1",
+        "userId": "3c59dc04-8e88-450b-a0f2-3a1e1f1b1c2d",
+        "consents": {"\\_consents\\": ["phs000007.c1", "phs001013.c1"]},
     }
 
     @respx.mock
     def test_custom_url_skips_consent_fetch_by_default(self, resources_response):
         _mock_connect_flow(resources_response)
-        template_route = respx.get(self._TEMPLATE_URL).mock(
+        consents_route = respx.get(self._CONSENTS_URL).mock(
             return_value=httpx.Response(200, json=self._CONSENT_PAYLOAD)
         )
 
         session = connect(platform=BASE_URL, token=TOKEN)
 
-        assert template_route.called is False
+        assert consents_route.called is False
         assert session.consents == []
 
     @respx.mock
     def test_include_consents_kwarg_fetches_consents(self, resources_response):
         _mock_connect_flow(resources_response)
-        respx.get(self._TEMPLATE_URL).mock(
+        respx.get(self._CONSENTS_URL).mock(
             return_value=httpx.Response(200, json=self._CONSENT_PAYLOAD)
         )
 
@@ -225,7 +225,7 @@ class TestConnectConsents:
 
         prod_url = Platform.BDC_AUTHORIZED.url
         _mock_connect_flow(resources_response, host=prod_url)
-        template_route = respx.get(f"{prod_url}/psama/user/me/queryTemplate/").mock(
+        consents_route = respx.get(f"{prod_url}/psama/user/me/consents").mock(
             return_value=httpx.Response(200, json=self._CONSENT_PAYLOAD)
         )
 
@@ -233,7 +233,7 @@ class TestConnectConsents:
             platform=Platform.BDC_AUTHORIZED, token=TOKEN, include_consents=False
         )
 
-        assert template_route.called is False
+        assert consents_route.called is False
         assert session.consents == []
 
 
@@ -261,13 +261,13 @@ class TestConnectOpenAccess:
         respx.get(f"{host}/picsure/info/resources").mock(
             return_value=httpx.Response(200, json=resources_response)
         )
-        template_route = respx.get(f"{host}/psama/user/me/queryTemplate/").mock(
+        consents_route = respx.get(f"{host}/psama/user/me/consents").mock(
             return_value=httpx.Response(200, json={})
         )
 
         connect(platform=Platform.BDC_DEV_OPEN)
 
-        assert template_route.called is False
+        assert consents_route.called is False
 
     @respx.mock
     def test_open_platform_resources_401_degrades_to_empty(self):
@@ -344,7 +344,7 @@ class TestConnectLegacyQueryPath:
 
         host = Platform.BDC_DEV_AUTHORIZED.url
         _mock_connect_flow(resources_response, host=host)
-        respx.get(f"{host}/psama/user/me/queryTemplate/").mock(
+        respx.get(f"{host}/psama/user/me/consents").mock(
             return_value=httpx.Response(200, json={})
         )
 
@@ -379,7 +379,7 @@ class TestConnectLegacyQueryPath:
         # If the deployment requires consents (even with auth on), it's
         # an authorized backend — stay on v3.
         _mock_connect_flow(resources_response)
-        respx.get(f"{BASE_URL}/psama/user/me/queryTemplate/").mock(
+        respx.get(f"{BASE_URL}/psama/user/me/consents").mock(
             return_value=httpx.Response(200, json={})
         )
 
