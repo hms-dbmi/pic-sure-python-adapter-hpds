@@ -16,8 +16,8 @@ from picsure.errors import PicSureConnectionError, PicSureQueryError
 
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
-CONCEPTS_BASE = f"{BASE_URL}/picsure/proxy/dictionary-api/concepts"
-FACETS_URL = f"{BASE_URL}/picsure/proxy/dictionary-api/facets"
+CONCEPTS_BASE = f"{BASE_URL}/dictionary/concepts"
+FACETS_URL = f"{BASE_URL}/dictionary/facets"
 
 
 def _make_client() -> PicSureClient:
@@ -93,8 +93,8 @@ class TestSearch:
         )
         df = searchDictionary(_make_client(), term="sex")
         assert df.iloc[0]["studyId"] == "phs000007"
-        assert df.iloc[0]["dataType"] == "categorical"
-        assert df.iloc[2]["dataType"] == "continuous"
+        assert df.iloc[0]["dataType"] == "Categorical"
+        assert df.iloc[2]["dataType"] == "Continuous"
 
     @respx.mock
     def test_body_shape(self, search_response):
@@ -209,13 +209,12 @@ class TestSearch:
     @respx.mock
     def test_deduplicates_by_concept_path(self):
         duplicate_response = {
-            "content": [
+            "results": [
                 {"conceptPath": "\\same\\", "name": "v1", "display": "First"},
                 {"conceptPath": "\\same\\", "name": "v1", "display": "Duplicate"},
                 {"conceptPath": "\\other\\", "name": "v2", "display": "Different"},
             ],
-            "totalElements": 3,
-            "last": True,
+            "total": 3,
         }
         respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
             return_value=httpx.Response(200, json=duplicate_response)
@@ -228,7 +227,7 @@ class TestSearch:
     def test_zero_results_returns_empty_dataframe(self):
         respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
             return_value=httpx.Response(
-                200, json={"content": [], "totalElements": 0, "last": True}
+                200, json={"results": [], "total": 0, "page": 0}
             )
         )
         df = searchDictionary(_make_client(), term="nonexistent")
@@ -239,7 +238,7 @@ class TestSearch:
     def test_zero_results_prints_note(self, capsys):
         respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
             return_value=httpx.Response(
-                200, json={"content": [], "totalElements": 0, "last": True}
+                200, json={"results": [], "total": 0, "page": 0}
             )
         )
         searchDictionary(_make_client(), term="nonexistent")
@@ -247,14 +246,12 @@ class TestSearch:
 
     @respx.mock
     def test_truncated_page_raises(self):
-        # Server says there are 5 total elements but returned only 1
-        # and flagged last=False. This indicates the "one big page"
-        # strategy underpaged; surface loudly rather than silently
-        # return a partial result.
+        # PaginatedResponse says total=5 but returned only 1 result. This
+        # indicates the "one big page" strategy underpaged; surface loudly
+        # rather than silently return a partial result.
         truncated = {
-            "content": [{"conceptPath": "\\x\\", "name": "x"}],
-            "totalElements": 5,
-            "last": False,
+            "results": [{"conceptPath": "\\x\\", "name": "x"}],
+            "total": 5,
         }
         respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
             return_value=httpx.Response(200, json=truncated)
@@ -263,12 +260,11 @@ class TestSearch:
             searchDictionary(_make_client(), term="x")
 
     @respx.mock
-    def test_last_missing_but_counts_match_ok(self):
-        # If last is missing but totalElements matches content length,
-        # there is no positive evidence of more pages -> complete.
+    def test_total_matching_results_length_ok(self):
+        # total matches len(results) -> no evidence of more pages, complete.
         response = {
-            "content": [{"conceptPath": "\\x\\", "name": "x"}],
-            "totalElements": 1,
+            "results": [{"conceptPath": "\\x\\", "name": "x"}],
+            "total": 1,
         }
         respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
             return_value=httpx.Response(200, json=response)
@@ -277,13 +273,12 @@ class TestSearch:
         assert len(df) == 1
 
     @respx.mock
-    def test_total_elements_mismatch_raises_even_when_last_true(self):
-        # last: True but totalElements doesn't match content length —
-        # still surface as truncated.
+    def test_total_mismatch_raises(self):
+        # total doesn't match len(results) -- surface as truncated.  The
+        # Spring Page "last" flag no longer exists to corroborate it.
         response = {
-            "content": [{"conceptPath": "\\x\\", "name": "x"}],
-            "totalElements": 3,
-            "last": True,
+            "results": [{"conceptPath": "\\x\\", "name": "x"}],
+            "total": 3,
         }
         respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
             return_value=httpx.Response(200, json=response)

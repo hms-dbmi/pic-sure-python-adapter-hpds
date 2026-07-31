@@ -234,41 +234,36 @@ def _session_with_resources(
     )
 
 
-def _metadata_envelope(
+def _metadata_response(
     *,
     select: list[str],
     phenotypic: dict | None,
 ) -> dict:  # type: ignore[type-arg]
+    # QueryStatusResponse: resultMetadata.queryJson is the BARE v3 query --
+    # no envelope, no resourceUUID/resourceCredentials/@type, no resourceID.
     return {
-        "status": "COMPLETED",
-        "resourceID": "resource-uuid-aaaa",
-        "picsureResultId": "abc-123",
+        "picsureId": "abc-123",
+        "status": "AVAILABLE",
+        "resourceStatus": None,
         "resourceResultId": "result-1",
+        "sizeInBytes": 0,
         "startTime": 1715000000000,
+        "duration": 0,
+        "expiration": 0,
         "resultMetadata": {
             "queryJson": {
-                "@type": "GeneralQueryRequest",
-                "resourceUUID": "resource-uuid-aaaa",
-                "resourceCredentials": {},
-                "query": {
-                    "select": select,
-                    "phenotypicClause": phenotypic,
-                    "genomicFilters": [],
-                    "expectedResultType": "COUNT",
-                    "picsureId": None,
-                    "id": None,
-                },
+                "select": select,
+                "phenotypicClause": phenotypic,
+                "genomicFilters": [],
+                "expectedResultType": "COUNT",
             },
             "queryResultMetadata": "",
         },
     }
 
 
-_CONCEPTS_URL = (
-    f"{BASE_URL}/picsure/proxy/dictionary-api/concepts"
-    "?page_number=0&page_size=2147483647"
-)
-_FACETS_URL = f"{BASE_URL}/picsure/proxy/dictionary-api/facets"
+_CONCEPTS_URL = f"{BASE_URL}/dictionary/concepts?page_number=0&page_size=2147483647"
+_FACETS_URL = f"{BASE_URL}/dictionary/facets"
 
 
 class TestSessionSearch:
@@ -473,9 +468,9 @@ class TestSessionExport:
         # submit -> poll status -> stream result.
         query_id = "session-pfb-1"
         respx.post(f"{BASE_URL}/hpds/auth/v3/query").mock(
-            return_value=httpx.Response(200, json={"picsureResultId": query_id})
+            return_value=httpx.Response(200, json={"picsureId": query_id})
         )
-        respx.post(f"{BASE_URL}/hpds/auth/v3/query/{query_id}/status").mock(
+        respx.get(f"{BASE_URL}/hpds/auth/v3/query/{query_id}/status").mock(
             return_value=httpx.Response(200, json={"status": "AVAILABLE"})
         )
         respx.post(f"{BASE_URL}/hpds/auth/v3/query/{query_id}/result").mock(
@@ -624,7 +619,7 @@ class TestSessionClose:
 
 class TestSessionLoadQueryByID:
     @respx.mock
-    def test_hits_non_versioned_metadata_endpoint(self):
+    def test_hits_v3_metadata_endpoint(self):
         # Query metadata is version-agnostic in the query-service, so
         # loadQueryByID reads the non-versioned /hpds/{backend}/query/{id}/
         # metadata route, never the /v3 one.
@@ -634,7 +629,7 @@ class TestSessionLoadQueryByID:
             resources=[Resource(uuid="r-1", name="hpds", description="x")],
             resource_uuid="r-1",
         )
-        body = _metadata_envelope(
+        body = _metadata_response(
             select=[],
             phenotypic={
                 "phenotypicFilterType": "FILTER",
@@ -643,15 +638,15 @@ class TestSessionLoadQueryByID:
                 "not": False,
             },
         )
-        legacy = respx.get(f"{BASE_URL}/hpds/auth/query/abc-123/metadata").mock(
-            return_value=httpx.Response(200, json=body)
-        )
         v3 = respx.get(f"{BASE_URL}/hpds/auth/v3/query/abc-123/metadata").mock(
             return_value=httpx.Response(200, json=body)
         )
+        legacy = respx.get(f"{BASE_URL}/hpds/auth/query/abc-123/metadata").mock(
+            return_value=httpx.Response(200, json=body)
+        )
         result = session.loadQueryByID("abc-123")
-        assert legacy.called
-        assert not v3.called
+        assert v3.called
+        assert not legacy.called
         assert isinstance(result, Clause)
         assert result.type == PhenotypicFilterType.FILTER
 
@@ -661,7 +656,7 @@ class TestSessionLoadQueryByID:
         # must not require setResourceID first.
         client = _client()
         session = _session_with_resources(client, resources=[])
-        body = _metadata_envelope(
+        body = _metadata_response(
             select=[],
             phenotypic={
                 "phenotypicFilterType": "FILTER",
@@ -670,7 +665,7 @@ class TestSessionLoadQueryByID:
                 "not": False,
             },
         )
-        respx.get(f"{BASE_URL}/hpds/auth/query/abc-123/metadata").mock(
+        respx.get(f"{BASE_URL}/hpds/auth/v3/query/abc-123/metadata").mock(
             return_value=httpx.Response(200, json=body)
         )
         result = session.loadQueryByID("abc-123")
@@ -690,7 +685,7 @@ class TestSessionRunQueryByID:
             resources=[Resource(uuid="r-1", name="hpds", description="x")],
             resource_uuid="r-1",
         )
-        body = _metadata_envelope(
+        body = _metadata_response(
             select=[],
             phenotypic={
                 "phenotypicFilterType": "FILTER",
@@ -699,7 +694,7 @@ class TestSessionRunQueryByID:
                 "not": False,
             },
         )
-        metadata = respx.get(f"{BASE_URL}/hpds/auth/query/abc-123/metadata").mock(
+        metadata = respx.get(f"{BASE_URL}/hpds/auth/v3/query/abc-123/metadata").mock(
             return_value=httpx.Response(200, json=body)
         )
         sync = respx.post(f"{BASE_URL}/hpds/auth/v3/query/sync").mock(
@@ -721,7 +716,7 @@ class TestSessionRunQueryByID:
             resources=[Resource(uuid="r-1", name="hpds", description="x")],
             resource_uuid="r-1",
         )
-        body = _metadata_envelope(
+        body = _metadata_response(
             select=["\\phs1\\age\\"],
             phenotypic={
                 "phenotypicFilterType": "FILTER",
@@ -730,7 +725,7 @@ class TestSessionRunQueryByID:
                 "not": False,
             },
         )
-        respx.get(f"{BASE_URL}/hpds/auth/query/abc-123/metadata").mock(
+        respx.get(f"{BASE_URL}/hpds/auth/v3/query/abc-123/metadata").mock(
             return_value=httpx.Response(200, json=body)
         )
         respx.post(f"{BASE_URL}/hpds/auth/v3/query/sync").mock(

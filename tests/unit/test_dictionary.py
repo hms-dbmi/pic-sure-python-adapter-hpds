@@ -105,11 +105,11 @@ class TestDictionaryEntry:
         assert not hasattr(entry, "unknownField")
 
     def test_from_dict_list_from_fixture(self, search_response):
-        entries = [DictionaryEntry.from_dict(r) for r in search_response["content"]]
+        entries = [DictionaryEntry.from_dict(r) for r in search_response["results"]]
         assert len(entries) == 3
         assert entries[0].concept_path == "\\phs000007\\pht000001\\phv00001\\sex\\"
         assert entries[0].study_id == "phs000007"
-        assert entries[2].data_type == "continuous"
+        assert entries[2].data_type == "Continuous"
 
     def test_frozen(self):
         data = {"conceptPath": "\\path\\", "name": "var"}

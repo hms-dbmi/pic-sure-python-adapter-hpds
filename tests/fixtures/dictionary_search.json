@@ -1,13 +1,17 @@
 {
-    "content": [
+    "results": [
         {
             "conceptPath": "\\phs000007\\pht000001\\phv00001\\sex\\",
             "name": "sex",
             "display": "Sex of participant",
             "description": "Biological sex of the participant",
             "dataset": "phs000007",
-            "type": "categorical",
-            "values": ["Male", "Female", "Unknown"],
+            "type": "Categorical",
+            "values": [
+                "Male",
+                "Female",
+                "Unknown"
+            ],
             "allowFiltering": true,
             "studyAcronym": "FHS"
         },
@@ -17,8 +21,11 @@
             "display": "Subject sex",
             "description": "Subject's biological sex",
             "dataset": "phs000179",
-            "type": "categorical",
-            "values": ["Male", "Female"],
+            "type": "Categorical",
+            "values": [
+                "Male",
+                "Female"
+            ],
             "allowFiltering": true,
             "studyAcronym": "COPDGene"
         },
@@ -28,21 +35,17 @@
             "display": "Age at enrollment",
             "description": "Age of participant at enrollment in years",
             "dataset": "phs000007",
-            "type": "continuous",
+            "type": "Continuous",
             "values": [],
             "min": 0.0,
             "max": 100.0,
             "allowFiltering": true,
-            "meta": {"units": "years"},
+            "meta": {
+                "units": "years"
+            },
             "studyAcronym": "FHS"
         }
     ],
-    "totalElements": 3,
-    "totalPages": 1,
-    "numberOfElements": 3,
-    "size": 100,
-    "number": 0,
-    "first": true,
-    "last": true,
-    "empty": false
+    "page": 0,
+    "total": 3
 }

@@ -20,8 +20,10 @@ from picsure.errors import (
     PicSureValidationError,
 )
 
-_CONCEPTS_PATH = "/picsure/proxy/dictionary-api/concepts"
-_FACETS_PATH = "/picsure/proxy/dictionary-api/facets"
+# The gateway routes the dictionary at /dictionary/** (StripPrefix=1); the
+# legacy /picsure/proxy/dictionary-api relay is gone.
+_CONCEPTS_PATH = "/dictionary/concepts"
+_FACETS_PATH = "/dictionary/facets"
 
 # Page size for the "one big page" dictionary search.  Set to Java
 # ``Integer.MAX_VALUE`` (the backend's int width) so a single request
@@ -84,10 +86,9 @@ def searchDictionary(  # noqa: N802
 ) -> pd.DataFrame:
     """Search the PIC-SURE data dictionary.
 
-    Issues a single POST to ``/picsure/proxy/dictionary-api/concepts``
-    with ``page_size`` large enough to return every match.  The
-    session computes ``page_size`` at connect time by probing
-    ``totalElements``.
+    Issues a single POST to ``/dictionary/concepts`` with ``page_size``
+    large enough to return every match, and reads the
+    ``PaginatedResponse{results, page, total}`` reply.
 
     Args:
         client: Authenticated HTTP client.
@@ -118,24 +119,23 @@ def searchDictionary(  # noqa: N802
             "Could not complete search. The server may be temporarily unavailable."
         ) from exc
 
-    content = data.get("content", [])
-    total_elements = data.get("totalElements")  # may be None
-    last = data.get("last")
+    # PaginatedResponse{results, page, total} -- the Spring Page shape
+    # (content / totalElements / number / totalPages / last) is gone.  ``page``
+    # is ZERO-BASED on the dictionary's /concepts endpoints (unlike HPDS's
+    # /search/values, which is 1-based).
+    results = data.get("results", [])
+    total = data.get("total")  # may be None
     # The "one big page" strategy assumes the single request returned every
-    # match. Only treat as truncated when there is positive evidence of more
-    # pages: an explicit ``last: false`` or a present-but-mismatched
-    # ``totalElements``. Missing fields must not trigger a false failure.
-    truncated = last is False or (
-        total_elements is not None and len(content) != total_elements
-    )
-    if truncated:
-        total_repr = total_elements if total_elements is not None else "unknown"
+    # match. Only treat as truncated when there is positive evidence of more:
+    # a present-but-mismatched ``total``. A missing field must not trigger a
+    # false failure.
+    if total is not None and len(results) != total:
         raise PicSureQueryError(
-            f"Search returned a truncated page ({len(content)}/{total_repr} "
+            f"Search returned a truncated page ({len(results)}/{total} "
             "entries). Reconnect to refresh the concept count."
         )
 
-    entries = [DictionaryEntry.from_dict(r) for r in content]
+    entries = [DictionaryEntry.from_dict(r) for r in results]
     entries = _deduplicate(entries)
 
     columns = _COLUMNS_WITH_VALUES if include_values else _COLUMNS_WITHOUT_VALUES
@@ -155,7 +155,7 @@ def fetch_facets(
 ) -> list[FacetCategory]:
     """Fetch facet categories from the server.
 
-    POSTs to ``/picsure/proxy/dictionary-api/facets`` with the same
+    POSTs to ``/dictionary/facets`` with the same
     body shape as :func:`search`.  The response is a top-level array
     of facet categories (not wrapped in an object).
 

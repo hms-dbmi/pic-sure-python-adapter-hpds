@@ -20,9 +20,9 @@ def _mock_platform_endpoints():
     respx.get(f"{CUSTOM_URL}/picsure/info/resources").mock(
         return_value=httpx.Response(200, json={"uuid-1": "hpds"})
     )
-    respx.post(
-        f"{CUSTOM_URL}/picsure/proxy/dictionary-api/concepts?page_number=0&page_size=1"
-    ).mock(return_value=httpx.Response(200, json={"content": [], "totalElements": 57}))
+    respx.post(f"{CUSTOM_URL}/dictionary/concepts?page_number=0&page_size=1").mock(
+        return_value=httpx.Response(200, json={"content": [], "totalElements": 57})
+    )
 
 
 @pytest.fixture(autouse=True)
