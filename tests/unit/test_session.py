@@ -622,9 +622,10 @@ class TestSessionClose:
 class TestSessionLoadQueryByID:
     @respx.mock
     def test_hits_v3_metadata_endpoint(self):
-        # Query metadata is version-agnostic in the query-service, so
-        # loadQueryByID reads the non-versioned /picsure/hpds/{backend}/query/{id}/
-        # metadata route, never the /v3 one.
+        # Query metadata is version-agnostic in the query-service, but the
+        # non-versioned alias has been deleted: loadQueryByID must read the
+        # /picsure/hpds/{backend}/v3/query/{id}/metadata route, never the
+        # rootless-version one.
         client = _client()
         session = _session_with_resources(
             client,

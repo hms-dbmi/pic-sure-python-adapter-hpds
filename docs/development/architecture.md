@@ -109,9 +109,9 @@ src/picsure/
 | `search.py`      | `searchDictionary`, `fetch_facets`, `show_all_facets`, plus the smaller helpers that build dictionary-api request bodies, dedupe entries, and turn results into DataFrames. Dictionary searches use a single max-int page (`_MAX_PAGE_SIZE`) so one request returns every concept. |
 | `query_build.py` | `buildClause`, `buildClauseGroup`, and `buildQuery` — the public constructors for `Clause`, `ClauseGroup`, and `Query` with input validation (rejects mutually-exclusive arguments before they reach the wire). |
 | `query_edit.py`  | `removeSubQuery(query, target)` and `replaceClause(query, target, replacement)`. Pure local tree edits — no network calls. Matching is structural (frozen-dataclass equality). Removals that empty a `ClauseGroup` prune the parent; removing the whole tree raises `PicSureValidationError`. |
-| `query_run.py`   | `run_query(client, query, type, *, backend)`. Serializes via `build_query_body`, posts to `/picsure/hpds/{backend}[/v3]/query/sync` (`auth` uses v3, `open` uses v1), and parses each response shape. Also `parse_count_string` for the obfuscated-count regexes. Route helpers live in `picsure/_paths.py`. |
-| `query_load.py`  | `load_query(client, query_id, *, backend)`. Hits `/picsure/hpds/{backend}/query/{id}/metadata` (version-agnostic) and reconstructs a `Clause` / `ClauseGroup` from the response so it can be re-run via `runQueryByID`. |
-| `query_save.py`  | `save_query_by_name(client, query, name, *, backend, overwrite)`. Submits the query via `POST /picsure/hpds/auth/v3/query`, then `POST`s a new record to `/dataset/named/` (or `PUT`-updates an existing one when `overwrite=True`). Validates `name` against the backend `NamedDataset` pattern client-side. Refused on open-access (`open` backend) deployments. |
+| `query_run.py`   | `run_query(client, query, type, *, backend)`. Serializes via `build_query_body`, posts to `/picsure/hpds/{backend}/v3/query/sync` (both backends are `/v3`; the non-versioned aliases are gone), and parses each response shape. Also `parse_count_string` for the obfuscated-count regexes. Route helpers live in `picsure/_paths.py`. |
+| `query_load.py`  | `load_query(client, query_id, *, backend)`. Hits `/picsure/hpds/{backend}/v3/query/{id}/metadata` (version-agnostic in the query-service, but served only on the `/v3` route) and reconstructs a `Clause` / `ClauseGroup` from the response so it can be re-run via `runQueryByID`. |
+| `query_save.py`  | `save_query_by_name(client, query, name, *, backend, overwrite)`. Submits the query via `POST /picsure/hpds/auth/v3/query`, then `POST`s a new record to `/picsure/operations/dataset/named` (or `PUT`-updates an existing one at `/picsure/operations/dataset/named/{id}` when `overwrite=True`). Validates `name` against the backend `NamedDataset` pattern client-side. Refused on open-access (`open` backend) deployments. |
 | `export.py`      | `export_pfb` — the async PFB flow (submit → poll with exponential backoff capped at 60s, 10-minute total deadline → stream result to a `.part` file → atomic rename). Plus `export_csv` and `export_tsv` for in-memory DataFrames. |
 | `consents.py`    | `fetch_consents(client)`. Reads `/psama/user/me/queryTemplate/`, parses the doubly-encoded JSON, and pulls the `\\_consents\\` study-consent list used by dictionary-api requests on authorized deployments. |
 
@@ -238,9 +238,11 @@ small:
   authorized deployments.
 - `_dev_config` — opt-in `DevConfig` (off by default).
 - `_backend` — `"auth"` or `"open"`, set during connect. Selects the
-  HPDS backend by URL path (`/picsure/hpds/auth` vs `/picsure/hpds/open`) and, with it,
-  the v3-vs-v1 query lifecycle. Open-only deployments use `/picsure/hpds/open`
-  (v1) because BDC's gateway rejects open traffic on the v3 endpoint.
+  HPDS backend by URL path (`/picsure/hpds/auth` vs `/picsure/hpds/open`):
+  the authorized (non-obfuscated) instance vs the open
+  (aggregate/obfuscated) one. Both share the same `/v3` query lifecycle —
+  the non-versioned aliases have been deleted server-side, open access
+  included.
 
 The resource-selection methods are retained for source compatibility
 but no longer drive routing. Two name-based helpers

@@ -1,3 +1,6 @@
+import re
+from pathlib import Path
+
 import httpx
 import respx
 
@@ -101,6 +104,62 @@ class TestNormalizeBaseUrl:
         assert normalize_base_url("https://host.example.com/gateway/") == (
             "https://host.example.com/gateway"
         )
+
+    # Only the PATH is trimmed: a HOST named "picsure" (a container name or
+    # an /etc/hosts entry in a local dev stack) must survive intact.
+    def test_host_named_picsure_survives(self):
+        assert normalize_base_url("http://picsure") == "http://picsure"
+
+    def test_host_named_picsure_with_trailing_slash_survives(self):
+        assert normalize_base_url("https://picsure/") == "https://picsure"
+
+    def test_host_named_picsure_with_port_survives(self):
+        assert normalize_base_url("http://picsure:8080") == "http://picsure:8080"
+
+    def test_host_named_picsure_keeps_its_picsure_path_trimmed(self):
+        assert normalize_base_url("http://picsure:8080/picsure") == (
+            "http://picsure:8080"
+        )
+
+
+class TestRouteTableIsTheOnlySourceOfPaths:
+    """No service may hand the client a path literal of its own.
+
+    The ``/picsure`` ingress prefix cannot be enforced in the transport
+    layer (PSAMA is deliberately unprefixed), so the guard is here: every
+    request path must come from :mod:`picsure._paths`.  A new service that
+    writes ``client.get_json("/whatever")`` would silently bypass the route
+    table -- and the prefix with it.
+    """
+
+    # e.g. client.post_json("/dictionary/concepts", ...) or
+    # client.get_json(f"/hpds/{backend}/v3/query")
+    _CALL_WITH_LITERAL_PATH = re.compile(
+        r"""client\.(?:get|post|put)_(?:json|raw)(?:_stream)?\(\s*[a-z]*["']/"""
+    )
+
+    def test_no_path_literals_outside_the_route_table(self):
+        source_root = Path(__file__).resolve().parents[2] / "src" / "picsure"
+        offenders = [
+            f"{path.relative_to(source_root)}:{lineno}: {line.strip()}"
+            for path in sorted(source_root.rglob("*.py"))
+            if path.name != "_paths.py"
+            for lineno, line in enumerate(path.read_text().splitlines(), start=1)
+            if self._CALL_WITH_LITERAL_PATH.search(line)
+        ]
+
+        assert not offenders, (
+            "Request paths must be defined in picsure/_paths.py, not inlined "
+            "at the call site (the /picsure ingress prefix lives there): "
+            + "; ".join(offenders)
+        )
+
+    def test_guard_regex_actually_matches_a_violation(self):
+        assert self._CALL_WITH_LITERAL_PATH.search('client.get_json("/hpds/auth")')
+        assert self._CALL_WITH_LITERAL_PATH.search(
+            'client.post_raw_stream(f"/hpds/{backend}/v3/query")'
+        )
+        assert not self._CALL_WITH_LITERAL_PATH.search("client.get_json(path)")
 
 
 class TestClientPrefixOnTheWire:

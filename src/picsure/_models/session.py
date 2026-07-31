@@ -51,8 +51,9 @@ class Session:
         self._session_id = session_id
         self._consents: list[str] = list(consents) if consents else []
         # "auth" or "open": selects the HPDS backend by URL path
-        # (/picsure/hpds/auth vs /picsure/hpds/open) and, with it, the v3 vs v1 query
-        # lifecycle.  Replaces the old resource-UUID backend selection.
+        # (/picsure/hpds/auth vs /picsure/hpds/open).  Replaces the old
+        # resource-UUID backend selection.  Both backends share the same /v3
+        # query lifecycle; the non-versioned aliases are gone.
         self._backend = backend
         self._supports_genomic = supports_genomic
         self._dev_config = (

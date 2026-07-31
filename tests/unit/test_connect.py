@@ -199,8 +199,8 @@ class TestConnectOpenAccess:
 class TestConnectBackendSelection:
     @respx.mock
     def test_bdc_open_uses_open_backend(self):
-        # Open-access (no auth, no consents) routes to /picsure/hpds/open and the v1
-        # query lifecycle.
+        # Open-access (no auth, no consents) routes to /picsure/hpds/open —
+        # on the same /v3 query lifecycle as the authorized backend.
         from picsure._transport.platforms import Platform
 
         session = connect(platform=Platform.BDC_DEV_OPEN)

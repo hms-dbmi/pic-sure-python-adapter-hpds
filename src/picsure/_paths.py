@@ -30,6 +30,8 @@ authorized sessions alike.
 
 from __future__ import annotations
 
+from urllib.parse import urlsplit, urlunsplit
+
 # The httpd-stripped ingress prefix shared by every gateway-bound route.
 GATEWAY_PREFIX = "/picsure"
 
@@ -46,12 +48,26 @@ def normalize_base_url(url: str) -> str:
     may have copied out of a browser URL bar, so
     ``https://host/picsure`` and ``https://host`` behave identically
     instead of producing ``/picsure/picsure/...``.
+
+    Only the PATH component is trimmed.  A host that happens to be named
+    ``picsure`` (``http://picsure``, ``http://picsure:8080``) is left
+    untouched -- trimming the raw string would silently destroy it.
     """
-    normalized = url.strip().rstrip("/")
+    parts = urlsplit(url.strip())
     prefix_segment = GATEWAY_PREFIX.strip("/")
-    while normalized.rsplit("/", 1)[-1].lower() == prefix_segment:
-        normalized = normalized[: -(len(prefix_segment) + 1)].rstrip("/")
-    return normalized
+
+    path = parts.path
+    while True:
+        head, separator, last = path.rstrip("/").rpartition("/")
+        # No separator means the remainder is not a path segment we can
+        # safely drop (e.g. a scheme-less "picsure.example.com").
+        if not separator or last.lower() != prefix_segment:
+            break
+        path = head
+
+    return urlunsplit(
+        (parts.scheme, parts.netloc, path.rstrip("/"), parts.query, parts.fragment)
+    )
 
 
 # --- HPDS (query-service) --------------------------------------------------

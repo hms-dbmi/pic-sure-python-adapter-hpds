@@ -177,10 +177,10 @@ def connect(
         )
 
     # HPDS backend is chosen by URL path, not a resource UUID: open-access
-    # deployments (no auth, no consents) route to /picsure/hpds/open and use the v1
-    # query lifecycle; authorized and consent-gated deployments route to
-    # /picsure/hpds/auth and use v3.  This preserves the split where BDC's gateway
-    # serves open-access traffic only on v1 and authorized traffic on v3.
+    # deployments (no auth, no consents) route to /picsure/hpds/open and
+    # authorized or consent-gated deployments to /picsure/hpds/auth.  Both
+    # use the SAME /v3 query lifecycle -- the non-versioned (v1) aliases have
+    # been deleted server-side, open-access included.
     backend = "open" if not info.requires_auth and not info.include_consents else "auth"
 
     return Session(
