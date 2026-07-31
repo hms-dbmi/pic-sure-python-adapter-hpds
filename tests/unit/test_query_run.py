@@ -21,7 +21,7 @@ BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
 RESOURCE_UUID = "resource-uuid-aaaa-1111"
 QUERY_URL = f"{BASE_URL}/hpds/auth/v3/query/sync"
-OPEN_QUERY_URL = f"{BASE_URL}/hpds/open/query/sync"
+OPEN_QUERY_URL = f"{BASE_URL}/hpds/open/v3/query/sync"
 
 
 def _make_client() -> PicSureClient:
@@ -61,15 +61,13 @@ class TestRunQueryCount:
         # The gateway selects the HPDS backend by URL path, so the body
         # must not carry a top-level resourceUUID sibling anymore.
         assert "resourceUUID" not in body
-        query = body["query"]
+        query = body  # bare v3 Query -- no envelope
         assert query["expectedResultType"] == "COUNT"
         # The clause's own concept path is folded into ``select`` so a
         # query's filter variables are returned without being repeated in
         # includeConcepts.
         assert query["select"] == ["\\phs1\\sex\\"]
         assert query["genomicFilters"] == []
-        assert query["picsureId"] is None
-        assert query["id"] is None
         pheno = query["phenotypicClause"]
         assert pheno["phenotypicFilterType"] == "FILTER"
         assert pheno["conceptPath"] == "\\phs1\\sex\\"
@@ -90,7 +88,7 @@ class TestRunQueryCount:
         import json
 
         body = json.loads(route.calls[0].request.content)
-        assert "authorizationFilters" not in body["query"]
+        assert "authorizationFilters" not in body
 
     @respx.mock
     def test_invalid_count_raises_query_error(self):
@@ -173,7 +171,7 @@ class TestRunQueryParticipant:
         import json
 
         body = json.loads(route.calls[0].request.content)
-        assert body["query"]["expectedResultType"] == "DATAFRAME"
+        assert body["expectedResultType"] == "DATAFRAME"
 
     @respx.mock
     def test_empty_csv_returns_empty_dataframe(self):
@@ -195,7 +193,7 @@ class TestRunQueryTimestamp:
         import json
 
         body = json.loads(route.calls[0].request.content)
-        assert body["query"]["expectedResultType"] == "DATAFRAME_TIMESERIES"
+        assert body["expectedResultType"] == "DATAFRAME_TIMESERIES"
 
     @respx.mock
     def test_returns_dataframe(self):
@@ -269,7 +267,7 @@ class TestRunQueryCrossCount:
         import json
 
         body = json.loads(route.calls[0].request.content)
-        assert body["query"]["expectedResultType"] == "CROSS_COUNT"
+        assert body["expectedResultType"] == "CROSS_COUNT"
 
     @respx.mock
     def test_cross_count_body_includes_filter_concepts(self):
@@ -284,7 +282,7 @@ class TestRunQueryCrossCount:
         import json
 
         body = json.loads(route.calls[0].request.content)
-        assert body["query"]["select"] == ["\\phs1\\sex\\"]
+        assert body["select"] == ["\\phs1\\sex\\"]
 
     @respx.mock
     def test_returns_dict_of_count_results(self):
@@ -418,7 +416,7 @@ class TestRunQueryWithClauseGroup:
         import json
 
         body = json.loads(route.calls[0].request.content)
-        pheno = body["query"]["phenotypicClause"]
+        pheno = body["phenotypicClause"]
         assert pheno["operator"] == "AND"
         assert pheno["not"] is False
         assert len(pheno["phenotypicClauses"]) == 2
@@ -442,8 +440,8 @@ class TestRunQueryWithClauseGroup:
         import json
 
         body = json.loads(route.calls[0].request.content)
-        assert body["query"]["select"] == ["\\out_a\\", "\\out_b\\", "\\phs1\\sex\\"]
-        pheno = body["query"]["phenotypicClause"]
+        assert body["select"] == ["\\out_a\\", "\\out_b\\", "\\phs1\\sex\\"]
+        pheno = body["phenotypicClause"]
         assert pheno is not None
         assert pheno["phenotypicFilterType"] == "FILTER"
 
@@ -459,8 +457,8 @@ class TestRunQueryWithClauseGroup:
         import json
 
         body = json.loads(route.calls[0].request.content)
-        assert body["query"]["phenotypicClause"] is None
-        assert body["query"]["select"] == ["\\a\\", "\\b\\"]
+        assert body["phenotypicClause"] is None
+        assert body["select"] == ["\\a\\", "\\b\\"]
 
     @respx.mock
     def test_bare_clause_selects_filter_concepts(self):
@@ -476,8 +474,8 @@ class TestRunQueryWithClauseGroup:
         import json
 
         body = json.loads(route.calls[0].request.content)
-        assert body["query"]["select"] == ["\\phs1\\sex\\"]
-        assert body["query"]["phenotypicClause"] is not None
+        assert body["select"] == ["\\phs1\\sex\\"]
+        assert body["phenotypicClause"] is not None
 
 
 class TestSelectIncludesFilterConcepts:
@@ -491,7 +489,7 @@ class TestSelectIncludesFilterConcepts:
 
         import json
 
-        return json.loads(route.calls[0].request.content)["query"]["select"]
+        return json.loads(route.calls[0].request.content)["select"]
 
     @respx.mock
     def test_bare_clause_group_selects_all_filter_concepts(self):
@@ -645,7 +643,7 @@ class TestRunQueryWithQueryTypeMember:
         import json
 
         body = json.loads(route.calls[0].request.content)
-        assert body["query"]["expectedResultType"] == "COUNT"
+        assert body["expectedResultType"] == "COUNT"
 
 
 class TestSessionRunQueryWithMember:
@@ -715,7 +713,7 @@ class TestRunQueryBackendRouting:
     def test_open_path_preserves_body_shape(self):
         # The open endpoint accepts the same body shape as auth; we should
         # not start emitting a different shape just because we're routing
-        # to /hpds/open/query/sync.
+        # to /hpds/open/v3/query/sync.
         route = respx.post(OPEN_QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"7"),
         )
@@ -726,11 +724,9 @@ class TestRunQueryBackendRouting:
 
         body = json.loads(route.calls[0].request.content)
         assert "resourceUUID" not in body
-        query = body["query"]
+        query = body  # bare v3 Query -- no envelope
         assert query["expectedResultType"] == "COUNT"
         assert "authorizationFilters" not in query
-        assert query["picsureId"] is None
-        assert query["id"] is None
 
     @respx.mock
     def test_session_with_open_backend_routes_to_open(self):
@@ -794,7 +790,7 @@ class TestBuildQueryBodyGenomic:
         gf = buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
         q = buildQuery(genomicFilters=gf, includeConcepts=["\\bmi\\"])
         body = build_query_body(q, "COUNT")
-        assert body["query"]["genomicFilters"] == [
+        assert body["genomicFilters"] == [
             {"key": "Gene_with_variant", "values": ["BRCA1"]}
         ]
 
@@ -804,7 +800,7 @@ class TestBuildQueryBodyGenomic:
 
         c = buildClause("\\path\\", type=PhenotypicFilterType.FILTER, categories="X")
         body = build_query_body(c, "COUNT")
-        assert body["query"]["genomicFilters"] == []
+        assert body["genomicFilters"] == []
 
     def test_genomic_filters_do_not_affect_select(self):
         from picsure._services.query_build import buildGenomicFilter, buildQuery
@@ -813,7 +809,7 @@ class TestBuildQueryBodyGenomic:
         gf = buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
         q = buildQuery(genomicFilters=gf, includeConcepts=["\\bmi\\"])
         body = build_query_body(q, "DATAFRAME")
-        assert body["query"]["select"] == ["\\bmi\\"]
+        assert body["select"] == ["\\bmi\\"]
 
 
 class TestVariantResultParsing:

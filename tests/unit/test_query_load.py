@@ -243,37 +243,41 @@ from picsure.errors import PicSureAuthError, PicSureConnectionError
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
 QUERY_ID = "11111111-2222-3333-4444-555555555555"
-META_URL = f"{BASE_URL}/hpds/auth/query/{QUERY_ID}/metadata"
-V3_META_URL = f"{BASE_URL}/hpds/auth/v3/query/{QUERY_ID}/metadata"
+META_URL = f"{BASE_URL}/hpds/auth/v3/query/{QUERY_ID}/metadata"
+LEGACY_META_URL = f"{BASE_URL}/hpds/auth/query/{QUERY_ID}/metadata"
 
 
 def _make_client() -> PicSureClient:
     return PicSureClient(base_url=BASE_URL, token=TOKEN)
 
 
-def _envelope(
+def _metadata_response(
     query_body: dict,
     *,
-    include_at_type: bool = True,
-    inner_query_as_string: bool = False,
+    query_json_as_string: bool = False,
 ) -> dict:  # type: ignore[type-arg]
+    """Build a QueryStatusResponse as /query/{id}/metadata now returns it.
+
+    ``resultMetadata.queryJson`` IS the bare v3 query -- the server unwraps
+    the legacy ``{"query": {...}}`` envelope and strips ``resourceUUID`` /
+    ``resourceCredentials`` / ``@type`` before emitting it.  ``resourceID``
+    is gone and the id field is ``picsureId``, not ``picsureResultId``.
+    """
     import json as _json
 
-    inner = {
-        "resourceUUID": "resource-uuid-aaaa",
-        "resourceCredentials": {"BEARER_TOKEN": "tok"},
-        "query": _json.dumps(query_body) if inner_query_as_string else query_body,
-    }
-    if include_at_type:
-        inner["@type"] = "GeneralQueryRequest"
     return {
-        "status": "COMPLETED",
-        "resourceID": "resource-uuid-aaaa",
-        "picsureResultId": QUERY_ID,
+        "picsureId": QUERY_ID,
+        "status": "AVAILABLE",
+        "resourceStatus": None,
         "resourceResultId": "result-1",
+        "sizeInBytes": 0,
         "startTime": 1715000000000,
+        "duration": 0,
+        "expiration": 0,
         "resultMetadata": {
-            "queryJson": inner,
+            "queryJson": _json.dumps(query_body)
+            if query_json_as_string
+            else query_body,
             "queryResultMetadata": "",
         },
     }
@@ -291,7 +295,7 @@ def _filter_leaf(path: str, val: str) -> dict:  # type: ignore[type-arg]
 class TestLoadQueryHappyPath:
     @respx.mock
     def test_phenotypic_only_returns_clause(self):
-        body = _envelope(
+        body = _metadata_response(
             {
                 "select": [],
                 "phenotypicClause": _filter_leaf("\\phs1\\sex\\", "Male"),
@@ -308,7 +312,7 @@ class TestLoadQueryHappyPath:
 
     @respx.mock
     def test_select_plus_phenotypic_returns_group(self):
-        body = _envelope(
+        body = _metadata_response(
             {
                 "select": ["\\phs1\\out\\"],
                 "phenotypicClause": _filter_leaf("\\phs1\\sex\\", "Male"),
@@ -324,12 +328,12 @@ class TestLoadQueryHappyPath:
         assert result.includeConcepts == ("\\phs1\\out\\",)
 
     @respx.mock
-    def test_inner_query_arrives_as_json_string(self):
+    def test_query_json_arrives_as_json_string(self):
         # The backend stores the entire QueryRequest as a JSON string and
         # only parses the outer envelope; the inner ``query`` field comes
         # back as a string that we must decode ourselves.  Real BDC saved
         # queries hit this path.
-        body = _envelope(
+        body = _metadata_response(
             {
                 "select": ["\\phs1\\out\\"],
                 "phenotypicClause": _filter_leaf("\\phs1\\sex\\", "Male"),
@@ -341,7 +345,7 @@ class TestLoadQueryHappyPath:
                 "picsureId": None,
                 "id": None,
             },
-            inner_query_as_string=True,
+            query_json_as_string=True,
         )
         respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
         result = load_query(_make_client(), QUERY_ID, backend="auth")
@@ -349,11 +353,11 @@ class TestLoadQueryHappyPath:
         assert result.includeConcepts == ("\\phs1\\out\\",)
 
     @respx.mock
-    def test_always_uses_non_versioned_path(self):
-        # Query metadata is version-agnostic in the query-service; loadQueryByID
-        # pins reads to the non-versioned metadata route for every deployment,
-        # regardless of how the session was connected.
-        body = _envelope(
+    def test_always_uses_v3_path(self):
+        # The non-versioned metadata alias was deleted server-side; every
+        # deployment reads the /v3 route regardless of how the session was
+        # connected.
+        body = _metadata_response(
             {
                 "select": [],
                 "phenotypicClause": _filter_leaf("\\phs1\\sex\\", "Male"),
@@ -363,19 +367,19 @@ class TestLoadQueryHappyPath:
                 "id": None,
             }
         )
-        non_versioned = respx.get(META_URL).mock(
+        v3 = respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
+        legacy = respx.get(LEGACY_META_URL).mock(
             return_value=httpx.Response(200, json=body)
         )
-        v3 = respx.get(V3_META_URL).mock(return_value=httpx.Response(200, json=body))
         load_query(_make_client(), QUERY_ID, backend="auth")
-        assert non_versioned.called
-        assert not v3.called
+        assert v3.called
+        assert not legacy.called
 
 
 class TestLoadQueryStrictness:
     @respx.mock
     def test_not_true_in_phenotypic_raises_validation(self):
-        body = _envelope(
+        body = _metadata_response(
             {
                 "select": [],
                 "phenotypicClause": {
@@ -396,7 +400,7 @@ class TestLoadQueryStrictness:
 
     @respx.mock
     def test_malformed_genomic_filter_missing_key_raises(self):
-        body = _envelope(
+        body = _metadata_response(
             {
                 "select": [],
                 "phenotypicClause": _filter_leaf("\\phs1\\sex\\", "Male"),
@@ -416,7 +420,7 @@ class TestLoadQueryGenomic:
     def test_round_trips_categorical_genomic_filter(self):
         from picsure._models.genomic_filter import GenomicFilter
 
-        body = _envelope(
+        body = _metadata_response(
             {
                 "select": [],
                 "phenotypicClause": None,
@@ -439,7 +443,7 @@ class TestLoadQueryGenomic:
         # Numeric range (min/max) genomic filtering was removed; a saved query
         # carrying one cannot be represented and must be rejected loudly rather
         # than silently dropping the constraint.
-        body = _envelope(
+        body = _metadata_response(
             {
                 "select": ["\\bmi\\"],
                 "phenotypicClause": _filter_leaf("\\phs1\\sex\\", "Male"),
@@ -459,7 +463,7 @@ class TestLoadQueryGenomic:
     def test_filter_with_any_min_max_rejected(self):
         # Any min/max on a genomic filter is rejected outright, even alongside
         # categorical values.
-        body = _envelope(
+        body = _metadata_response(
             {
                 "select": [],
                 "phenotypicClause": None,
@@ -479,7 +483,7 @@ class TestLoadQueryGenomic:
     def test_rejects_variant_spec_genomic_filter(self):
         # Variant-spec (SNP) filtering is not supported yet; a saved query
         # carrying one cannot be represented and must be rejected.
-        body = _envelope(
+        body = _metadata_response(
             {
                 "select": [],
                 "phenotypicClause": None,
@@ -536,19 +540,15 @@ class TestLoadQueryErrors:
             load_query(_make_client(), QUERY_ID, backend="auth")
 
     @respx.mock
-    def test_missing_inner_query_raises_query_error(self):
-        body = {
-            "resultMetadata": {
-                "queryJson": {"@type": "GeneralQueryRequest"},
-            }
-        }
+    def test_non_object_query_json_raises_query_error(self):
+        body = {"resultMetadata": {"queryJson": ["not", "an", "object"]}}
         respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
-        with pytest.raises(PicSureQueryError, match="query"):
+        with pytest.raises(PicSureQueryError, match="queryJson"):
             load_query(_make_client(), QUERY_ID, backend="auth")
 
     @respx.mock
     def test_empty_select_and_null_phenotypic_raises_query_error(self):
-        body = _envelope(
+        body = _metadata_response(
             {
                 "select": [],
                 "phenotypicClause": None,
@@ -563,17 +563,8 @@ class TestLoadQueryErrors:
             load_query(_make_client(), QUERY_ID, backend="auth")
 
     @respx.mock
-    def test_inner_query_string_with_invalid_json_raises_query_error(self):
-        body = {
-            "resultMetadata": {
-                "queryJson": {
-                    "@type": "GeneralQueryRequest",
-                    "resourceUUID": "r",
-                    "resourceCredentials": {},
-                    "query": "{not valid json",
-                },
-            }
-        }
+    def test_query_json_string_with_invalid_json_raises_query_error(self):
+        body = {"resultMetadata": {"queryJson": "{not valid json"}}
         respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
         with pytest.raises(PicSureQueryError, match="JSON"):
             load_query(_make_client(), QUERY_ID, backend="auth")

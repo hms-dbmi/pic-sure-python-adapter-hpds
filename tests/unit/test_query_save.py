@@ -19,9 +19,9 @@ from picsure.errors import (
 BASE_URL = "https://api.example.com"
 TOKEN = "test-token"
 
-LIST_URL = f"{BASE_URL}/picsure/dataset/named"
+LIST_URL = f"{BASE_URL}/operations/dataset/named"
 SUBMIT_URL = f"{BASE_URL}/hpds/auth/v3/query"
-SAVE_URL = f"{BASE_URL}/picsure/dataset/named"
+SAVE_URL = f"{BASE_URL}/operations/dataset/named"
 
 
 def _client() -> PicSureClient:
@@ -37,7 +37,7 @@ class TestSaveQueryByNameHappyPath:
     def test_creates_new_named_dataset(self):
         listing = respx.get(LIST_URL).mock(return_value=httpx.Response(200, json=[]))
         submit = respx.post(SUBMIT_URL).mock(
-            return_value=httpx.Response(200, json={"picsureResultId": "qid-123"})
+            return_value=httpx.Response(200, json={"picsureId": "qid-123"})
         )
         save = respx.post(SAVE_URL).mock(
             return_value=httpx.Response(
@@ -79,7 +79,7 @@ class TestSaveQueryByNameHappyPath:
         # Some shapes wrap the list in {"results": [...]}; we accept either.
         respx.get(LIST_URL).mock(return_value=httpx.Response(200, json={"results": []}))
         respx.post(SUBMIT_URL).mock(
-            return_value=httpx.Response(200, json={"picsureResultId": "qid-9"})
+            return_value=httpx.Response(200, json={"picsureId": "qid-9"})
         )
         save = respx.post(SAVE_URL).mock(return_value=httpx.Response(200, json={}))
 
@@ -93,20 +93,23 @@ class TestSaveQueryByNameHappyPath:
         assert save.called
 
     @respx.mock
-    def test_submit_response_uses_resource_result_id_when_only_field(self):
+    def test_resource_result_id_is_not_accepted_as_the_picsure_id(self):
+        # resourceResultId is the BACKING RESOURCE's id, not the
+        # PIC-SURE-wide one, and must never be used as the /query/{id}
+        # path parameter.  Only picsureId counts.
         respx.get(LIST_URL).mock(return_value=httpx.Response(200, json=[]))
         respx.post(SUBMIT_URL).mock(
             return_value=httpx.Response(200, json={"resourceResultId": "qid-fallback"})
         )
         respx.post(SAVE_URL).mock(return_value=httpx.Response(200, json={}))
 
-        qid = save_query_by_name(
-            _client(),
-            _clause(),
-            "fun",
-            backend="auth",
-        )
-        assert qid == "qid-fallback"
+        with pytest.raises(PicSureQueryError, match="picsureId"):
+            save_query_by_name(
+                _client(),
+                _clause(),
+                "fun",
+                backend="auth",
+            )
 
 
 class TestSaveQueryByNameDuplicates:
@@ -158,9 +161,9 @@ class TestSaveQueryByNameDuplicates:
             )
         )
         respx.post(SUBMIT_URL).mock(
-            return_value=httpx.Response(200, json={"picsureResultId": "qid-new"})
+            return_value=httpx.Response(200, json={"picsureId": "qid-new"})
         )
-        put = respx.put(f"{BASE_URL}/picsure/dataset/named/nd-old").mock(
+        put = respx.put(f"{BASE_URL}/operations/dataset/named/nd-old").mock(
             return_value=httpx.Response(
                 200,
                 json={
@@ -213,7 +216,7 @@ class TestSaveQueryByNameDuplicates:
             )
         )
         respx.post(SUBMIT_URL).mock(
-            return_value=httpx.Response(200, json={"picsureResultId": "qid-new"})
+            return_value=httpx.Response(200, json={"picsureId": "qid-new"})
         )
 
         with pytest.raises(PicSureQueryError, match="missing its identifier"):
@@ -230,7 +233,7 @@ class TestSaveQueryByNameDuplicates:
         # overwrite=True should still create-via-POST if there is no match.
         respx.get(LIST_URL).mock(return_value=httpx.Response(200, json=[]))
         respx.post(SUBMIT_URL).mock(
-            return_value=httpx.Response(200, json={"picsureResultId": "qid-new"})
+            return_value=httpx.Response(200, json={"picsureId": "qid-new"})
         )
         save = respx.post(SAVE_URL).mock(return_value=httpx.Response(200, json={}))
 
@@ -325,7 +328,7 @@ class TestSaveQueryByNameNameValidation:
     def test_accepts_allowed_characters(self, good_name):
         respx.get(LIST_URL).mock(return_value=httpx.Response(200, json=[]))
         respx.post(SUBMIT_URL).mock(
-            return_value=httpx.Response(200, json={"picsureResultId": "qid-z"})
+            return_value=httpx.Response(200, json={"picsureId": "qid-z"})
         )
         respx.post(SAVE_URL).mock(return_value=httpx.Response(200, json={}))
 
@@ -368,7 +371,7 @@ class TestSaveQueryByNameTransportErrors:
     def test_save_500_raises_connection_error(self):
         respx.get(LIST_URL).mock(return_value=httpx.Response(200, json=[]))
         respx.post(SUBMIT_URL).mock(
-            return_value=httpx.Response(200, json={"picsureResultId": "qid-x"})
+            return_value=httpx.Response(200, json={"picsureId": "qid-x"})
         )
         respx.post(SAVE_URL).mock(return_value=httpx.Response(500, text="boom"))
 
@@ -387,7 +390,7 @@ class TestSaveQueryByNameTransportErrors:
             return_value=httpx.Response(200, json={"unrelated": "field"})
         )
 
-        with pytest.raises(PicSureQueryError, match="picsureResultId"):
+        with pytest.raises(PicSureQueryError, match="picsureId"):
             save_query_by_name(
                 _client(),
                 _clause(),

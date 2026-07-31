@@ -25,12 +25,13 @@ typical session flows:
    into a phenotypic filter tree and the output `select` — the filter's own
    variables folded together with any `includeConcepts` — serializes to the
    query wire format, POSTs to `/hpds/auth/v3/query/sync` (or
-   `/hpds/open/query/sync` on open sessions), and parses the response
+   `/hpds/open/v3/query/sync` on open sessions), and parses the response
    into a `CountResult`, a `dict[str, CountResult]`, or a
    `DataFrame`. The gateway selects the HPDS backend by path (`auth` vs
    `open`), so no `resourceUUID` is sent in the body.
 4. **Export.** `session.exportAsPFB(...)` uses the async flow
-   (`/hpds/auth/v3/query` → poll status → fetch result), streaming the
+   (POST `/hpds/auth/v3/query` → GET `/query/{picsureId}/status` →
+   POST `/query/{picsureId}/result` with an empty body), streaming the
    bytes to disk; `session.exportCSV` / `exportTSV` write a DataFrame
    in memory to disk.
 
@@ -46,9 +47,11 @@ picsure._models.session.Session.runQuery
 picsure._services.query_run.run_query
   │  build_query_body(query, query_type)
   │      ├─ Clause.to_query_json()  /  ClauseGroup.to_query_json()
-  │      └─ wraps in envelope { query: { ... } }  (no resourceUUID)
+  │      └─ emits the BARE v3 Query (no { query: ... } envelope, no
+  │         resourceUUID / resourceCredentials / @type -- the server
+  │         deserializes strictly and 400s on unknown members)
   │
-  │  client.post_raw(query_prefix(backend, v3=...) + "/query/sync", body)
+  │  client.post_raw(query_prefix(backend) + "/query/sync", body)
   ▼
 picsure._transport.client.PicSureClient._request
   │  httpx.Client.request("POST", "/hpds/auth/v3/query/sync", ...)

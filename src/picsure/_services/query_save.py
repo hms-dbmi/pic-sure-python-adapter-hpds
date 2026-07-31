@@ -18,11 +18,12 @@ from picsure.errors import (
 if TYPE_CHECKING:
     from picsure._transport.client import PicSureClient
 
-# The named-dataset collection lives on the operations service, not HPDS; its
-# path is out of scope for the HPDS ingress migration and still resolves via
-# the gateway's legacy catch-all.
-_NAMED_DATASET_COLLECTION_PATH = "/picsure/dataset/named"
-_NAMED_DATASET_ITEM_PATH = "/picsure/dataset/named/{named_dataset_id}"
+# The named-dataset collection lives on the operations service, not HPDS.  The
+# gateway routes it at its verbatim public path (no prefix strip) and the
+# service's own context-path is /operations, so the legacy /picsure/dataset
+# catch-all is gone.
+_NAMED_DATASET_COLLECTION_PATH = "/operations/dataset/named"
+_NAMED_DATASET_ITEM_PATH = "/operations/dataset/named/{named_dataset_id}"
 
 # Mirrors the @Pattern on NamedDatasetRequest.name in pic-sure-api-data.
 _NAME_PATTERN = re.compile(r"\A[\w\d \-\\/?+=\[\]\.():\"']+\Z")
@@ -66,7 +67,7 @@ def save_query_by_name(
         )
 
     body = build_query_body(query, "COUNT")
-    submit_path = query_prefix(backend, v3=True) + "/query"
+    submit_path = query_prefix(backend) + "/query"
     query_id = _submit_and_extract_id(client, submit_path, body)
 
     if existing is None:
@@ -183,11 +184,13 @@ def _submit_and_extract_id(
         raise translate_stage_error(
             exc, service="saveQueryByName", stage="submit"
         ) from exc
-    for field in ("picsureResultId", "resourceResultId", "queryId"):
-        v = response.get(field)
-        if isinstance(v, str) and v:
-            return v
+    # QueryStatusResponse.picsureId -- the PIC-SURE-wide query id.  NOT
+    # resourceResultId (the backing resource's own id) and not the retired
+    # picsureResultId spelling.
+    v = response.get("picsureId")
+    if isinstance(v, str) and v:
+        return v
     raise PicSureQueryError(
         "Server did not return a query id in the submit response "
-        "(expected 'picsureResultId')."
+        "(expected 'picsureId')."
     )

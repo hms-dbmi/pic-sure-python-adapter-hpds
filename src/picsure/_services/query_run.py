@@ -74,10 +74,9 @@ def run_query(
             or one of the strings ``"count"``, ``"participant"``,
             ``"timestamp"``, ``"cross_count"``.
         backend: ``"auth"`` or ``"open"`` — selects the HPDS backend by
-            URL path.  ``"open"`` posts to ``/hpds/open/query/sync`` (v1);
-            ``"auth"`` posts to ``/hpds/auth/v3/query/sync``.  This
-            preserves the split where BDC's gateway serves open-access
-            traffic only on v1 and authorized traffic on v3.
+            URL path.  ``"open"`` posts to ``/hpds/open/v3/query/sync``,
+            ``"auth"`` to ``/hpds/auth/v3/query/sync``.  The non-versioned
+            aliases were deleted server-side; both backends are v3 now.
 
     Returns:
         - ``count``        → :class:`CountResult`
@@ -101,7 +100,7 @@ def run_query(
     """
     resolved_type = _resolve_query_type(query_type)
     body = build_query_body(query, resolved_type)
-    path = query_prefix(backend, v3=backend == "auth") + "/query/sync"
+    path = query_prefix(backend) + "/query/sync"
 
     try:
         raw = client.post_raw(path, body=body)
@@ -146,33 +145,37 @@ def build_query_body(
     query: Query | Clause | ClauseGroup,
     expected_result_type: str,
 ) -> dict[str, object]:
-    """Assemble the ``/hpds/{auth,open}[/v3]/query`` request body.
+    """Assemble the ``/hpds/{auth,open}/v3/query`` request body.
 
     Normalizes the query into a phenotypic filter tree and a list of
     ``includeConcepts``; the tree becomes ``phenotypicClause`` and the
     concept paths become the top-level ``select`` array.
 
     Notes:
-        No ``resourceUUID`` is sent: the gateway selects the HPDS backend
-        by URL path (``/hpds/auth`` vs ``/hpds/open``), not by a
-        resource-selection UUID in the body.
+        The body is the BARE v3 ``Query``.  The legacy ``{"query": {...}}``
+        envelope is gone, and so are ``resourceUUID``, ``resourceCredentials``
+        and ``@type``: the server binds this object directly and deserializes
+        STRICTLY, so any unknown member is a 400.  Only the fields the v3
+        ``Query`` record declares may appear here.
+
+        The gateway selects the HPDS backend by URL path (``/hpds/auth`` vs
+        ``/hpds/open``), not by a resource-selection UUID in the body.
 
         ``authorizationFilters`` is intentionally omitted from the body.
         PSAMA populates it server-side from the user's token; sending a
         client-asserted list (especially with a long-term token) is
         treated as tampering and can be rejected with a 401.
+
+        ``picsureId``/``id`` are likewise omitted rather than sent as
+        explicit nulls -- the server assigns both.
     """
     filter_tree, select_paths, genomic = _split(query)
     phenotypic = filter_tree.to_query_json() if filter_tree is not None else None
     return {
-        "query": {
-            "select": select_paths,
-            "phenotypicClause": phenotypic,
-            "genomicFilters": [g.to_query_json() for g in genomic],
-            "expectedResultType": expected_result_type,
-            "picsureId": None,
-            "id": None,
-        },
+        "select": select_paths,
+        "phenotypicClause": phenotypic,
+        "genomicFilters": [g.to_query_json() for g in genomic],
+        "expectedResultType": expected_result_type,
     }
 
 

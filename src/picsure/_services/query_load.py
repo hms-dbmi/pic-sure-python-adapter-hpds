@@ -177,10 +177,10 @@ def _to_query(
 
 
 # Query metadata is version-agnostic in the query-service (it reads the
-# stored query, not HPDS), so we use the non-versioned metadata route.  The
-# {backend} segment is required for routing but the read does not depend on
-# which backend is named.
-_HPDS_QUERY_METADATA_PATH = "/hpds/{backend}/query/{query_id}/metadata"
+# stored query row, not HPDS), but the non-versioned alias has been deleted:
+# the route is /v3 like every other HPDS route.  The {backend} segment is
+# required for routing; the read itself does not depend on which is named.
+_HPDS_QUERY_METADATA_PATH = "/hpds/{backend}/v3/query/{query_id}/metadata"
 
 
 def load_query(
@@ -191,9 +191,9 @@ def load_query(
 ) -> Query | Clause | ClauseGroup:
     """Load a previously-saved query by ID and rebuild it as a Query.
 
-    Reads ``/hpds/{backend}/query/{id}/metadata``.  Query metadata is
+    Reads ``GET /hpds/{backend}/v3/query/{id}/metadata``.  Query metadata is
     version-agnostic in the query-service (it reads the stored query row,
-    not HPDS), so the non-versioned route is used for every session.
+    not HPDS), but is served only on the ``/v3`` route.
 
     Args:
         client: Authenticated HTTP client.
@@ -255,23 +255,22 @@ def _build_query_from_response(response: object) -> Query | Clause | ClauseGroup
     metadata = response.get("resultMetadata")
     if not isinstance(metadata, dict):
         raise PicSureQueryError("Metadata response is missing 'resultMetadata' object.")
-    query_json = metadata.get("queryJson")
-    if not isinstance(query_json, dict):
-        raise PicSureQueryError(
-            "Metadata response is missing 'resultMetadata.queryJson' object."
-        )
-    inner = query_json.get("query")
+    # resultMetadata.queryJson IS the bare v3 query.  The server unwraps the
+    # legacy {"query": {...}} envelope (and strips resourceCredentials) before
+    # emitting it, whatever the age of the stored row, so there is no nested
+    # 'query' member to dig through any more.
+    inner = metadata.get("queryJson")
     if isinstance(inner, str):
         try:
             inner = json.loads(inner)
         except json.JSONDecodeError as exc:
             raise PicSureQueryError(
-                "Metadata response 'resultMetadata.queryJson.query' was a "
-                f"string but could not be decoded as JSON: {inner[:200]!r}"
+                "Metadata response 'resultMetadata.queryJson' was a string "
+                f"but could not be decoded as JSON: {inner[:200]!r}"
             ) from exc
     if not isinstance(inner, dict):
         raise PicSureQueryError(
-            "Metadata response is missing 'resultMetadata.queryJson.query' object."
+            "Metadata response is missing 'resultMetadata.queryJson' object."
         )
     genomic_filters = _parse_genomic_filters(inner.get("genomicFilters"))
     raw_select = inner.get("select")

@@ -47,13 +47,14 @@ def export_pfb(
 
     Uses PIC-SURE's async flow on the authorized v3 routes:
 
-    1. ``POST /hpds/auth/v3/query`` — submit the query, receive a query id.
-    2. ``POST /hpds/auth/v3/query/{id}/status`` — poll with exponential
+    1. ``POST /hpds/auth/v3/query`` — submit the BARE v3 query, receive a
+       ``QueryStatusResponse`` carrying ``picsureId``.
+    2. ``GET /hpds/auth/v3/query/{id}/status`` — poll with exponential
        backoff (1s, 2s, 4s, ..., capped at 60s per poll) until the
-       server reports ``AVAILABLE``.  Total elapsed time is bounded at
-       10 minutes.
-    3. ``POST /hpds/auth/v3/query/{id}/result`` — stream the Avro-binary
-       PFB bytes straight to disk.
+       server reports ``AVAILABLE``.  The status read takes NO body.
+       Total elapsed time is bounded at 10 minutes.
+    3. ``POST /hpds/auth/v3/query/{id}/result`` — with an EMPTY body,
+       streaming the Avro-binary PFB bytes straight to disk.
 
     The output file is written atomically: bytes land at
     ``<path>.part``, then :func:`os.replace` promotes that to ``path``
@@ -82,7 +83,7 @@ def export_pfb(
     target = Path(path)
     part_path = target.with_suffix(target.suffix + ".part")
 
-    base = query_prefix(backend, v3=True)
+    base = query_prefix(backend)
     body = build_query_body(query, "DATAFRAME_PFB")
 
     # 1. Submit the query.
@@ -90,10 +91,10 @@ def export_pfb(
     query_id = _extract_query_id(submit_response)
 
     # 2. Poll until AVAILABLE (or timeout / error).
-    _poll_until_available(client, base, query_id, body)
+    _poll_until_available(client, base, query_id)
 
     # 3. Stream the result to disk atomically.
-    _download_result(client, base, query_id, body, target, part_path)
+    _download_result(client, base, query_id, target, part_path)
 
 
 def _submit_query(
@@ -108,20 +109,21 @@ def _submit_query(
 
 
 def _extract_query_id(response: dict[str, object]) -> str:
-    """Pull the query id out of the submit response.
+    """Pull the query id out of the ``QueryStatusResponse`` submit response.
 
-    The gateway populates ``picsureResultId`` (and mirrors it into
-    ``resourceResultId``).  Either field is acceptable; prefer
-    ``picsureResultId`` because that's the path parameter the
-    ``/query/{id}/status`` and ``/query/{id}/result`` routes match on.
+    ``picsureId`` is the PIC-SURE-wide query id and the path parameter the
+    ``/query/{id}/status``, ``/query/{id}/result`` and
+    ``/query/{id}/signed-url`` routes match on.  The old ``picsureResultId``
+    spelling (and the ``resourceID`` field beside it) no longer exists;
+    ``resourceResultId`` still does, but it is the BACKING RESOURCE's id and
+    must never be used as the PIC-SURE path parameter.
     """
-    for field in ("picsureResultId", "resourceResultId", "queryId"):
-        value = response.get(field)
-        if isinstance(value, str) and value:
-            return value
+    value = response.get("picsureId")
+    if isinstance(value, str) and value:
+        return value
     raise PicSureQueryError(
         "Server did not return a query id in the PFB submit response "
-        "(expected 'picsureResultId')."
+        "(expected 'picsureId')."
     )
 
 
@@ -129,8 +131,9 @@ def _poll_until_available(
     client: PicSureClient,
     base: str,
     query_id: str,
-    body: dict[str, object],
 ) -> None:
+    # GET, no body: the status read is a pure lookup by id.  It used to be a
+    # POST that re-sent the whole query.
     status_path = f"{base}/query/{query_id}/status"
 
     interval = _INITIAL_POLL_INTERVAL_SECONDS
@@ -138,7 +141,7 @@ def _poll_until_available(
 
     while True:
         try:
-            status_response = client.post_json(status_path, body=body)
+            status_response = client.get_json(status_path)
         except TransportError as exc:
             raise translate_stage_error(exc, service="PFB", stage="status") from exc
 
@@ -164,11 +167,12 @@ def _poll_until_available(
 
 
 def _extract_status(response: dict[str, object]) -> str:
-    """Pull the status string out of a ``QueryStatus`` response.
+    """Pull the status string out of a ``QueryStatusResponse``.
 
-    PIC-SURE's ``QueryStatus`` has both a top-level ``status`` (the
-    canonical ``PicSureStatus`` enum) and ``resourceStatus`` (the raw
-    string from HPDS).  They should agree in v3; prefer ``status``.
+    ``status`` is the canonical PIC-SURE value -- one of ``QUEUED``,
+    ``PENDING``, ``ERROR``, ``AVAILABLE``.  ``resourceStatus`` is the raw,
+    free-form string reported by the backing resource and is only a
+    fallback; prefer ``status``.
     """
     for field in ("status", "resourceStatus"):
         value = response.get(field)
@@ -183,14 +187,15 @@ def _download_result(
     client: PicSureClient,
     base: str,
     query_id: str,
-    body: dict[str, object],
     target: Path,
     part_path: Path,
 ) -> None:
+    # POST with an EMPTY body: the result fetch is identified entirely by the
+    # {id} path segment.  Re-sending the query here would now be rejected.
     result_path = f"{base}/query/{query_id}/result"
 
     try:
-        with client.post_raw_stream(result_path, body=body) as response:
+        with client.post_raw_stream(result_path, body=None) as response:
             _stream_to_file(response, part_path)
     except TransportError as exc:
         _cleanup_partial(part_path)
