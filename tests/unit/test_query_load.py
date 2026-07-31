@@ -243,8 +243,8 @@ from picsure.errors import PicSureAuthError, PicSureConnectionError
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
 QUERY_ID = "11111111-2222-3333-4444-555555555555"
-META_URL = f"{BASE_URL}/hpds/auth/v3/query/{QUERY_ID}/metadata"
-LEGACY_META_URL = f"{BASE_URL}/hpds/auth/query/{QUERY_ID}/metadata"
+META_URL = f"{BASE_URL}/picsure/hpds/auth/v3/query/{QUERY_ID}/metadata"
+LEGACY_META_URL = f"{BASE_URL}/picsure/hpds/auth/query/{QUERY_ID}/metadata"
 
 
 def _make_client() -> PicSureClient:

@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import json
 
+from picsure._paths import PSAMA_QUERY_TEMPLATE_PATH
 from picsure._transport.client import PicSureClient
 from picsure._transport.errors import TransportError
 from picsure.errors import PicSureConnectionError
 
-_QUERY_TEMPLATE_PATH = "/psama/user/me/queryTemplate/"
 _CONSENTS_KEY = "\\_consents\\"
 
 
@@ -32,7 +32,7 @@ def fetch_consents(client: PicSureClient) -> list[str]:
             is not valid JSON.
     """
     try:
-        response = client.get_json(_QUERY_TEMPLATE_PATH)
+        response = client.get_json(PSAMA_QUERY_TEMPLATE_PATH)
     except TransportError as exc:
         raise PicSureConnectionError(
             "Could not fetch your consent list from PSAMA. "

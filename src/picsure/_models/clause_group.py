@@ -27,7 +27,7 @@ class ClauseGroup:
 
     **Wire format.** :meth:`to_query_json` emits a v3
     ``PhenotypicSubquery`` (``operator`` / ``phenotypicClauses``) per
-    the ``/hpds/{auth,open}[/v3]/query`` contract. The previous wire format
+    the ``/picsure/hpds/{auth,open}[/v3]/query`` contract. The previous wire format
     is not supported.
     """
 

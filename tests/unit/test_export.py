@@ -19,9 +19,9 @@ BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
 QUERY_ID = "abc-123"
 
-SUBMIT_URL = f"{BASE_URL}/hpds/auth/v3/query"
-STATUS_URL = f"{BASE_URL}/hpds/auth/v3/query/{QUERY_ID}/status"
-RESULT_URL = f"{BASE_URL}/hpds/auth/v3/query/{QUERY_ID}/result"
+SUBMIT_URL = f"{BASE_URL}/picsure/hpds/auth/v3/query"
+STATUS_URL = f"{BASE_URL}/picsure/hpds/auth/v3/query/{QUERY_ID}/status"
+RESULT_URL = f"{BASE_URL}/picsure/hpds/auth/v3/query/{QUERY_ID}/result"
 
 
 def _make_client() -> PicSureClient:

@@ -54,7 +54,7 @@ def test_dev_clear_is_noop_when_off():
 
 @respx.mock
 def test_runquery_count_emits_http_and_function_events():
-    respx.post(f"{BASE_URL}/hpds/auth/v3/query/sync").mock(
+    respx.post(f"{BASE_URL}/picsure/hpds/auth/v3/query/sync").mock(
         return_value=httpx.Response(200, content=b"42")
     )
     session = _make_session(dev_enabled=True)
@@ -75,7 +75,7 @@ def test_runquery_count_emits_http_and_function_events():
 
 @respx.mock
 def test_dev_stats_aggregates_from_live_calls():
-    respx.post(f"{BASE_URL}/hpds/auth/v3/query/sync").mock(
+    respx.post(f"{BASE_URL}/picsure/hpds/auth/v3/query/sync").mock(
         return_value=httpx.Response(200, content=b"42")
     )
     session = _make_session(dev_enabled=True)
@@ -96,7 +96,7 @@ def test_dev_stats_aggregates_from_live_calls():
 
 @respx.mock
 def test_dev_clear_empties_buffer():
-    respx.post(f"{BASE_URL}/hpds/auth/v3/query/sync").mock(
+    respx.post(f"{BASE_URL}/picsure/hpds/auth/v3/query/sync").mock(
         return_value=httpx.Response(200, content=b"1")
     )
     session = _make_session(dev_enabled=True)

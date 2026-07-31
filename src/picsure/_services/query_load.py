@@ -12,6 +12,7 @@ from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure._models.dictionary import coerce_float
 from picsure._models.genomic_filter import GenomicFilter, is_variant_spec
 from picsure._models.query import Query
+from picsure._paths import query_metadata_path
 from picsure._services._errors import rate_limit_message
 from picsure._transport.errors import (
     TransportAuthenticationError,
@@ -176,13 +177,6 @@ def _to_query(
     )
 
 
-# Query metadata is version-agnostic in the query-service (it reads the
-# stored query row, not HPDS), but the non-versioned alias has been deleted:
-# the route is /v3 like every other HPDS route.  The {backend} segment is
-# required for routing; the read itself does not depend on which is named.
-_HPDS_QUERY_METADATA_PATH = "/hpds/{backend}/v3/query/{query_id}/metadata"
-
-
 def load_query(
     client: PicSureClient,
     query_id: str,
@@ -191,7 +185,7 @@ def load_query(
 ) -> Query | Clause | ClauseGroup:
     """Load a previously-saved query by ID and rebuild it as a Query.
 
-    Reads ``GET /hpds/{backend}/v3/query/{id}/metadata``.  Query metadata is
+    Reads ``GET /picsure/hpds/{backend}/v3/query/{id}/metadata``.  Query metadata is
     version-agnostic in the query-service (it reads the stored query row,
     not HPDS), but is served only on the ``/v3`` route.
 
@@ -218,7 +212,7 @@ def load_query(
         raise PicSureValidationError(
             "A non-empty query ID is required to load a saved query."
         )
-    path = _HPDS_QUERY_METADATA_PATH.format(backend=backend, query_id=query_id.strip())
+    path = query_metadata_path(backend, query_id.strip())
 
     try:
         response = client.get_json(path)

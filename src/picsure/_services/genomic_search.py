@@ -4,8 +4,8 @@ from urllib.parse import urlencode
 
 import pandas as pd
 
+from picsure._paths import search_values_path
 from picsure._services._errors import rate_limit_message
-from picsure._services._hpds_paths import search_values_path
 from picsure._transport.client import PicSureClient
 from picsure._transport.errors import (
     TransportAuthenticationError,
@@ -33,8 +33,8 @@ def search_genomic_values(
 ) -> pd.DataFrame:
     """Fetch one page of valid values for a genomic annotation key.
 
-    Hits ``/hpds/{backend}/search/values`` — the backend is chosen by URL
-    path (see :func:`picsure._services._hpds_paths.search_values_path`).
+    Hits ``/picsure/hpds/{backend}/v3/search/values`` — the backend is chosen
+    by URL path (see :func:`picsure._paths.search_values_path`).
 
     Returns a single-column (``value``) DataFrame. Pagination metadata is
     preserved on ``df.attrs``: ``total``, ``page``, ``size``,

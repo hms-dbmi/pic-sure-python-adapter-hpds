@@ -48,7 +48,7 @@ class Clause:
 
     **Wire format.** :meth:`to_query_json` emits a v3 ``PhenotypicFilter``
     leaf (or an ``OR`` ``PhenotypicSubquery`` of leaves for multi-key
-    clauses) per the ``/hpds/{auth,open}[/v3]/query`` contract.
+    clauses) per the ``/picsure/hpds/{auth,open}[/v3]/query`` contract.
     """
 
     keys: list[str]

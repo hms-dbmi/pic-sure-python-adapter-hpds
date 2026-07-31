@@ -19,9 +19,9 @@ from picsure.errors import (
 BASE_URL = "https://api.example.com"
 TOKEN = "test-token"
 
-LIST_URL = f"{BASE_URL}/operations/dataset/named"
-SUBMIT_URL = f"{BASE_URL}/hpds/auth/v3/query"
-SAVE_URL = f"{BASE_URL}/operations/dataset/named"
+LIST_URL = f"{BASE_URL}/picsure/operations/dataset/named"
+SUBMIT_URL = f"{BASE_URL}/picsure/hpds/auth/v3/query"
+SAVE_URL = f"{BASE_URL}/picsure/operations/dataset/named"
 
 
 def _client() -> PicSureClient:
@@ -163,7 +163,7 @@ class TestSaveQueryByNameDuplicates:
         respx.post(SUBMIT_URL).mock(
             return_value=httpx.Response(200, json={"picsureId": "qid-new"})
         )
-        put = respx.put(f"{BASE_URL}/operations/dataset/named/nd-old").mock(
+        put = respx.put(f"{BASE_URL}/picsure/operations/dataset/named/nd-old").mock(
             return_value=httpx.Response(
                 200,
                 json={

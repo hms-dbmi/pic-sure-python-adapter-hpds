@@ -199,7 +199,7 @@ class TestConnectOpenAccess:
 class TestConnectBackendSelection:
     @respx.mock
     def test_bdc_open_uses_open_backend(self):
-        # Open-access (no auth, no consents) routes to /hpds/open and the v1
+        # Open-access (no auth, no consents) routes to /picsure/hpds/open and the v1
         # query lifecycle.
         from picsure._transport.platforms import Platform
 
@@ -218,19 +218,20 @@ class TestConnectBackendSelection:
 
         session = connect(platform=Platform.BDC_DEV_AUTHORIZED, token=TOKEN)
 
-        # BDC Authorized requires both auth AND consents; routes to /hpds/auth.
+        # BDC Authorized requires both auth AND consents; routes to /picsure/hpds/auth.
         assert session._backend == "auth"
 
     @respx.mock
     def test_custom_url_default_uses_auth_backend(self):
-        # Custom URLs default to requires_auth=True, so they route to /hpds/auth.
+        # Custom URLs default to requires_auth=True, so they route to
+        # /picsure/hpds/auth.
         session = connect(platform=BASE_URL, token=TOKEN)
 
         assert session._backend == "auth"
 
     @respx.mock
     def test_custom_url_open_override_uses_open_backend(self):
-        # Custom URL with requires_auth=False AND no consents => /hpds/open.
+        # Custom URL with requires_auth=False AND no consents => /picsure/hpds/open.
         session = connect(platform=BASE_URL, requires_auth=False)
 
         assert session._backend == "open"
@@ -238,7 +239,7 @@ class TestConnectBackendSelection:
     @respx.mock
     def test_consents_only_keeps_auth_backend(self):
         # If the deployment requires consents (even with auth on), it's an
-        # authorized backend — routes to /hpds/auth.
+        # authorized backend — routes to /picsure/hpds/auth.
         respx.get(f"{BASE_URL}/psama/user/me/queryTemplate/").mock(
             return_value=httpx.Response(200, json={})
         )

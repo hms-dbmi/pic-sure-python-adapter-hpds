@@ -16,8 +16,8 @@ from picsure.errors import PicSureConnectionError, PicSureQueryError
 
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
-CONCEPTS_BASE = f"{BASE_URL}/dictionary/concepts"
-FACETS_URL = f"{BASE_URL}/dictionary/facets"
+CONCEPTS_BASE = f"{BASE_URL}/picsure/dictionary/concepts"
+FACETS_URL = f"{BASE_URL}/picsure/dictionary/facets"
 
 
 def _make_client() -> PicSureClient:

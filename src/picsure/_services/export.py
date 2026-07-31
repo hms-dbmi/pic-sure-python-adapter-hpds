@@ -10,8 +10,8 @@ import pandas as pd
 from picsure._models.clause import Clause
 from picsure._models.clause_group import ClauseGroup
 from picsure._models.query import Query
+from picsure._paths import query_prefix
 from picsure._services._errors import translate_stage_error
-from picsure._services._hpds_paths import query_prefix
 from picsure._services.query_run import build_query_body
 from picsure._transport.client import PicSureClient
 from picsure._transport.errors import TransportError
@@ -47,13 +47,13 @@ def export_pfb(
 
     Uses PIC-SURE's async flow on the authorized v3 routes:
 
-    1. ``POST /hpds/auth/v3/query`` — submit the BARE v3 query, receive a
+    1. ``POST /picsure/hpds/auth/v3/query`` — submit the BARE v3 query, receive a
        ``QueryStatusResponse`` carrying ``picsureId``.
-    2. ``GET /hpds/auth/v3/query/{id}/status`` — poll with exponential
+    2. ``GET /picsure/hpds/auth/v3/query/{id}/status`` — poll with exponential
        backoff (1s, 2s, 4s, ..., capped at 60s per poll) until the
        server reports ``AVAILABLE``.  The status read takes NO body.
        Total elapsed time is bounded at 10 minutes.
-    3. ``POST /hpds/auth/v3/query/{id}/result`` — with an EMPTY body,
+    3. ``POST /picsure/hpds/auth/v3/query/{id}/result`` — with an EMPTY body,
        streaming the Avro-binary PFB bytes straight to disk.
 
     The output file is written atomically: bytes land at

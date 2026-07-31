@@ -6,8 +6,12 @@ from typing import TYPE_CHECKING
 from picsure._models.clause import Clause
 from picsure._models.clause_group import ClauseGroup
 from picsure._models.query import Query
+from picsure._paths import (
+    NAMED_DATASET_COLLECTION_PATH,
+    NAMED_DATASET_ITEM_PATH,
+    query_prefix,
+)
 from picsure._services._errors import translate_stage_error
-from picsure._services._hpds_paths import query_prefix
 from picsure._services.query_run import build_query_body
 from picsure._transport.errors import TransportError
 from picsure.errors import (
@@ -18,12 +22,7 @@ from picsure.errors import (
 if TYPE_CHECKING:
     from picsure._transport.client import PicSureClient
 
-# The named-dataset collection lives on the operations service, not HPDS.  The
-# gateway routes it at its verbatim public path (no prefix strip) and the
-# service's own context-path is /operations, so the legacy /picsure/dataset
-# catch-all is gone.
-_NAMED_DATASET_COLLECTION_PATH = "/operations/dataset/named"
-_NAMED_DATASET_ITEM_PATH = "/operations/dataset/named/{named_dataset_id}"
+# Named-dataset routes live in picsure._paths.
 
 # Mirrors the @Pattern on NamedDatasetRequest.name in pic-sure-api-data.
 _NAME_PATTERN = re.compile(r"\A[\w\d \-\\/?+=\[\]\.():\"']+\Z")
@@ -104,7 +103,7 @@ def _find_existing_by_name(
     uuid) so behavior is stable.
     """
     try:
-        response = client.get_json(_NAMED_DATASET_COLLECTION_PATH)
+        response = client.get_json(NAMED_DATASET_COLLECTION_PATH)
     except TransportError as exc:
         raise translate_stage_error(
             exc, service="saveQueryByName", stage="list"
@@ -130,7 +129,7 @@ def _create_named_dataset(client: PicSureClient, *, query_id: str, name: str) ->
         "metadata": {},
     }
     try:
-        client.post_json(_NAMED_DATASET_COLLECTION_PATH, body=body)
+        client.post_json(NAMED_DATASET_COLLECTION_PATH, body=body)
     except TransportError as exc:
         raise translate_stage_error(
             exc, service="saveQueryByName", stage="save"
@@ -146,7 +145,7 @@ def _update_named_dataset(
     archived: bool,
     metadata: dict[str, object],
 ) -> None:
-    path = _NAMED_DATASET_ITEM_PATH.format(named_dataset_id=named_dataset_id)
+    path = NAMED_DATASET_ITEM_PATH.format(named_dataset_id=named_dataset_id)
     body = {
         "queryId": query_id,
         "name": name,

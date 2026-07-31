@@ -34,7 +34,7 @@ class Platform(Enum):
 
     Each member stores a :class:`PlatformConfig`.  BDC Authorized and BDC
     Open share a domain; they are distinguished by which HPDS the gateway
-    routes to — the ``/hpds/auth`` vs ``/hpds/open`` path — not by a
+    routes to — the ``/picsure/hpds/auth`` vs ``/picsure/hpds/open`` path — not by a
     resource UUID.  ``include_consents`` controls whether dictionary-api
     requests must carry the user's consent list; ``requires_auth``
     controls whether the connection needs a PIC-SURE token at all.

@@ -57,7 +57,7 @@ class GenomicFilter:
     A filter matches when the annotation named by ``key`` is one of ``values``.
 
     **Wire format.** :meth:`to_query_json` emits a v3 ``GenomicFilter`` record
-    (``{"key", "values"?}``) per the ``/hpds/{auth,open}[/v3]/query`` contract.
+    (``{"key", "values"?}``) per the ``/picsure/hpds/{auth,open}[/v3]/query`` contract.
     """
 
     key: str

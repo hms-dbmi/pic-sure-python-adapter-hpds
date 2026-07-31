@@ -135,7 +135,7 @@ class TestPaginatedResponse:
             assert retired not in page
 
     def test_genomic_value_search_parses_it(self, page):
-        # /hpds/{backend}/v3/search/values returns this exact envelope.
+        # /picsure/hpds/{backend}/v3/search/values returns this exact envelope.
         client = _FakeClient(
             {
                 "results": ["BRCA1", "BRCA2"],
@@ -152,7 +152,7 @@ class TestPaginatedResponse:
     def test_genomic_value_search_uses_the_v3_route(self, page):
         client = _FakeClient({"results": [], "page": 1, "total": 0})
         search_genomic_values(client, "Gene_with_variant", backend="auth")
-        assert client.last_path.startswith("/hpds/auth/v3/search/values?")
+        assert client.last_path.startswith("/picsure/hpds/auth/v3/search/values?")
 
 
 class TestQueryRequestIsBare:

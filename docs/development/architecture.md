@@ -24,13 +24,13 @@ typical session flows:
    service, which splits the `Query` (or bare `Clause` / `ClauseGroup`)
    into a phenotypic filter tree and the output `select` — the filter's own
    variables folded together with any `includeConcepts` — serializes to the
-   query wire format, POSTs to `/hpds/auth/v3/query/sync` (or
-   `/hpds/open/v3/query/sync` on open sessions), and parses the response
+   query wire format, POSTs to `/picsure/hpds/auth/v3/query/sync` (or
+   `/picsure/hpds/open/v3/query/sync` on open sessions), and parses the response
    into a `CountResult`, a `dict[str, CountResult]`, or a
    `DataFrame`. The gateway selects the HPDS backend by path (`auth` vs
    `open`), so no `resourceUUID` is sent in the body.
 4. **Export.** `session.exportAsPFB(...)` uses the async flow
-   (POST `/hpds/auth/v3/query` → GET `/query/{picsureId}/status` →
+   (POST `/picsure/hpds/auth/v3/query` → GET `/query/{picsureId}/status` →
    POST `/query/{picsureId}/result` with an empty body), streaming the
    bytes to disk; `session.exportCSV` / `exportTSV` write a DataFrame
    in memory to disk.
@@ -54,7 +54,7 @@ picsure._services.query_run.run_query
   │  client.post_raw(query_prefix(backend) + "/query/sync", body)
   ▼
 picsure._transport.client.PicSureClient._request
-  │  httpx.Client.request("POST", "/hpds/auth/v3/query/sync", ...)
+  │  httpx.Client.request("POST", "/picsure/hpds/auth/v3/query/sync", ...)
   │  4xx → _raise_for_status → TransportAuthenticationError /
   │        TransportValidationError / TransportNotFoundError /
   │        TransportRateLimitError
@@ -109,12 +109,23 @@ src/picsure/
 | `search.py`      | `searchDictionary`, `fetch_facets`, `show_all_facets`, plus the smaller helpers that build dictionary-api request bodies, dedupe entries, and turn results into DataFrames. Dictionary searches use a single max-int page (`_MAX_PAGE_SIZE`) so one request returns every concept. |
 | `query_build.py` | `buildClause`, `buildClauseGroup`, and `buildQuery` — the public constructors for `Clause`, `ClauseGroup`, and `Query` with input validation (rejects mutually-exclusive arguments before they reach the wire). |
 | `query_edit.py`  | `removeSubQuery(query, target)` and `replaceClause(query, target, replacement)`. Pure local tree edits — no network calls. Matching is structural (frozen-dataclass equality). Removals that empty a `ClauseGroup` prune the parent; removing the whole tree raises `PicSureValidationError`. |
-| `query_run.py`   | `run_query(client, query, type, *, backend)`. Serializes via `build_query_body`, posts to `/hpds/{backend}[/v3]/query/sync` (`auth` uses v3, `open` uses v1), and parses each response shape. Also `parse_count_string` for the obfuscated-count regexes. HPDS route helpers live in `_hpds_paths.py`. |
-| `query_load.py`  | `load_query(client, query_id, *, backend)`. Hits `/hpds/{backend}/query/{id}/metadata` (version-agnostic) and reconstructs a `Clause` / `ClauseGroup` from the response so it can be re-run via `runQueryByID`. |
-| `query_save.py`  | `save_query_by_name(client, query, name, *, backend, overwrite)`. Submits the query via `POST /hpds/auth/v3/query`, then `POST`s a new record to `/dataset/named/` (or `PUT`-updates an existing one when `overwrite=True`). Validates `name` against the backend `NamedDataset` pattern client-side. Refused on open-access (`open` backend) deployments. |
-| `_hpds_paths.py` | `query_prefix(backend, *, v3)` and `search_values_path(backend)` — the single place the `/hpds/{auth,open}[/v3]/…` route shape (and the ignored search `{resourceId}` placeholder) is built. |
+| `query_run.py`   | `run_query(client, query, type, *, backend)`. Serializes via `build_query_body`, posts to `/picsure/hpds/{backend}[/v3]/query/sync` (`auth` uses v3, `open` uses v1), and parses each response shape. Also `parse_count_string` for the obfuscated-count regexes. Route helpers live in `picsure/_paths.py`. |
+| `query_load.py`  | `load_query(client, query_id, *, backend)`. Hits `/picsure/hpds/{backend}/query/{id}/metadata` (version-agnostic) and reconstructs a `Clause` / `ClauseGroup` from the response so it can be re-run via `runQueryByID`. |
+| `query_save.py`  | `save_query_by_name(client, query, name, *, backend, overwrite)`. Submits the query via `POST /picsure/hpds/auth/v3/query`, then `POST`s a new record to `/dataset/named/` (or `PUT`-updates an existing one when `overwrite=True`). Validates `name` against the backend `NamedDataset` pattern client-side. Refused on open-access (`open` backend) deployments. |
 | `export.py`      | `export_pfb` — the async PFB flow (submit → poll with exponential backoff capped at 60s, 10-minute total deadline → stream result to a `.part` file → atomic rename). Plus `export_csv` and `export_tsv` for in-memory DataFrames. |
 | `consents.py`    | `fetch_consents(client)`. Reads `/psama/user/me/queryTemplate/`, parses the doubly-encoded JSON, and pulls the `\\_consents\\` study-consent list used by dictionary-api requests on authorized deployments. |
+
+### `_paths.py` (top level)
+
+The single source of truth for every request path the adapter sends.
+Deployments front the API with httpd, which proxies `/picsure/**` to the
+gateway and strips the prefix on the way in, so every gateway-bound route
+(HPDS, dictionary, operations) is written here *with* the `/picsure`
+prefix — the same convention the web client uses
+(`PIC-SURE-Frontend/src/lib/paths.ts`). PSAMA is the exception: httpd
+proxies `/psama/**` straight to the auth service, so it carries no prefix.
+`normalize_base_url()` trims a trailing `/picsure` off a user-supplied URL
+so the prefix is never doubled; `connect()` still takes the bare origin.
 
 ### `_transport/` — HTTP
 
@@ -227,8 +238,8 @@ small:
   authorized deployments.
 - `_dev_config` — opt-in `DevConfig` (off by default).
 - `_backend` — `"auth"` or `"open"`, set during connect. Selects the
-  HPDS backend by URL path (`/hpds/auth` vs `/hpds/open`) and, with it,
-  the v3-vs-v1 query lifecycle. Open-only deployments use `/hpds/open`
+  HPDS backend by URL path (`/picsure/hpds/auth` vs `/picsure/hpds/open`) and, with it,
+  the v3-vs-v1 query lifecycle. Open-only deployments use `/picsure/hpds/open`
   (v1) because BDC's gateway rejects open traffic on the v3 endpoint.
 
 The resource-selection methods are retained for source compatibility

@@ -51,7 +51,7 @@ def redact_for_log(
         return json.dumps(_redact_psama_secrets(body))
 
     # Suppress based on body SHAPE, not path: the async PFB export posts the
-    # same participant-bearing query body to /hpds/auth/v3/query (and
+    # same participant-bearing query body to /picsure/hpds/auth/v3/query (and
     # /status, /result), none of which end in /query/sync.
     if _body_is_participant_like(body):
         return None

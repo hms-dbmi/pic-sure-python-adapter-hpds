@@ -51,7 +51,7 @@ class Session:
         self._session_id = session_id
         self._consents: list[str] = list(consents) if consents else []
         # "auth" or "open": selects the HPDS backend by URL path
-        # (/hpds/auth vs /hpds/open) and, with it, the v3 vs v1 query
+        # (/picsure/hpds/auth vs /picsure/hpds/open) and, with it, the v3 vs v1 query
         # lifecycle.  Replaces the old resource-UUID backend selection.
         self._backend = backend
         self._supports_genomic = supports_genomic
@@ -107,8 +107,8 @@ class Session:
         """Set the resource UUID stored on this session.
 
         Deprecated: the gateway selects the HPDS backend by URL path
-        (``/hpds/auth`` vs ``/hpds/open``), derived from the platform, so
-        the stored UUID no longer chooses a backend and is not sent in
+        (``/picsure/hpds/auth`` vs ``/picsure/hpds/open``), derived from the
+        platform, so the stored UUID no longer chooses a backend and is not sent in
         query bodies.  Retained for backwards compatibility.  With the
         resource registry removed there is nothing to validate against,
         so any value is accepted.

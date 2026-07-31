@@ -33,13 +33,13 @@ def resources_response() -> dict[str, str]:
 
 @pytest.fixture()
 def search_response() -> dict:
-    """Sample /dictionary/concepts response."""
+    """Sample /picsure/dictionary/concepts response."""
     return json.loads((_FIXTURES_DIR / "dictionary_search.json").read_text())
 
 
 @pytest.fixture()
 def facets_response() -> list:
-    """Sample /dictionary/facets response (top-level array)."""
+    """Sample /picsure/dictionary/facets response (top-level array)."""
     return json.loads((_FIXTURES_DIR / "facets_response.json").read_text())
 
 

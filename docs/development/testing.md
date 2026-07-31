@@ -52,7 +52,7 @@ import respx
 from picsure._services.query_run import run_query
 
 BASE_URL = "https://test.example.com"
-QUERY_URL = f"{BASE_URL}/hpds/auth/v3/query/sync"
+QUERY_URL = f"{BASE_URL}/picsure/hpds/auth/v3/query/sync"
 
 
 class TestRunQueryCount:

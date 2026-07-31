@@ -12,8 +12,8 @@ from picsure._models.count_result import CountResult
 from picsure._models.genomic_filter import GenomicFilter
 from picsure._models.query import Query
 from picsure._models.query_type import QueryType
+from picsure._paths import query_prefix
 from picsure._services._errors import rate_limit_message
-from picsure._services._hpds_paths import query_prefix
 from picsure._transport.client import PicSureClient
 from picsure._transport.errors import (
     TransportError,
@@ -74,8 +74,8 @@ def run_query(
             or one of the strings ``"count"``, ``"participant"``,
             ``"timestamp"``, ``"cross_count"``.
         backend: ``"auth"`` or ``"open"`` — selects the HPDS backend by
-            URL path.  ``"open"`` posts to ``/hpds/open/v3/query/sync``,
-            ``"auth"`` to ``/hpds/auth/v3/query/sync``.  The non-versioned
+            URL path.  ``"open"`` posts to ``/picsure/hpds/open/v3/query/sync``,
+            ``"auth"`` to ``/picsure/hpds/auth/v3/query/sync``.  The non-versioned
             aliases were deleted server-side; both backends are v3 now.
 
     Returns:
@@ -145,7 +145,7 @@ def build_query_body(
     query: Query | Clause | ClauseGroup,
     expected_result_type: str,
 ) -> dict[str, object]:
-    """Assemble the ``/hpds/{auth,open}/v3/query`` request body.
+    """Assemble the ``/picsure/hpds/{auth,open}/v3/query`` request body.
 
     Normalizes the query into a phenotypic filter tree and a list of
     ``includeConcepts``; the tree becomes ``phenotypicClause`` and the
@@ -158,8 +158,8 @@ def build_query_body(
         STRICTLY, so any unknown member is a 400.  Only the fields the v3
         ``Query`` record declares may appear here.
 
-        The gateway selects the HPDS backend by URL path (``/hpds/auth`` vs
-        ``/hpds/open``), not by a resource-selection UUID in the body.
+        The gateway selects the HPDS backend by URL path (``/picsure/hpds/auth`` vs
+        ``/picsure/hpds/open``), not by a resource-selection UUID in the body.
 
         ``authorizationFilters`` is intentionally omitted from the body.
         PSAMA populates it server-side from the user's token; sending a

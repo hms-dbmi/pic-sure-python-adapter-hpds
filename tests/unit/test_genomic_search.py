@@ -20,7 +20,7 @@ def test_builds_path_with_encoded_params():
         client, "Gene_with_variant", backend="auth", query="BRCA", page=1, size=50
     )
     assert client.last_path == (
-        "/hpds/auth/v3/search/values"
+        "/picsure/hpds/auth/v3/search/values"
         "?genomicConceptPath=Gene_with_variant&query=BRCA&page=1&size=50"
     )
 

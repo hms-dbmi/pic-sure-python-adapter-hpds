@@ -39,13 +39,16 @@ def connect(
     Args:
         platform: A :class:`Platform` enum member (e.g.
             ``Platform.BDC_AUTHORIZED``) or a full URL
-            (e.g. ``"https://my-picsure.example.com"``).
+            (e.g. ``"https://my-picsure.example.com"``).  Pass the bare
+            origin: the ``/picsure`` ingress prefix is part of the routes
+            this adapter builds, and a URL that already ends in
+            ``/picsure`` is normalized so it is never doubled.
         token: Your PIC-SURE API token.  Leave empty for open-access
             platforms (e.g. ``Platform.BDC_OPEN``) that don't require
             authentication.
         resource_uuid: Deprecated and no longer used for routing. The
             gateway now selects the HPDS backend by URL path
-            (``/hpds/auth`` vs ``/hpds/open``), derived from the
+            (``/picsure/hpds/auth`` vs ``/picsure/hpds/open``), derived from the
             platform, so a resource UUID no longer chooses a backend.
             Accepted for backwards compatibility and stored on the
             session, but it does not affect which data is queried.
@@ -174,9 +177,9 @@ def connect(
         )
 
     # HPDS backend is chosen by URL path, not a resource UUID: open-access
-    # deployments (no auth, no consents) route to /hpds/open and use the v1
+    # deployments (no auth, no consents) route to /picsure/hpds/open and use the v1
     # query lifecycle; authorized and consent-gated deployments route to
-    # /hpds/auth and use v3.  This preserves the split where BDC's gateway
+    # /picsure/hpds/auth and use v3.  This preserves the split where BDC's gateway
     # serves open-access traffic only on v1 and authorized traffic on v3.
     backend = "open" if not info.requires_auth and not info.include_consents else "auth"
 

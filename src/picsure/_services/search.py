@@ -6,6 +6,7 @@ import pandas as pd
 
 from picsure._models.dictionary import DictionaryEntry
 from picsure._models.facet import FacetCategory, FacetSet
+from picsure._paths import CONCEPTS_PATH, FACETS_PATH
 from picsure._services._errors import rate_limit_message
 from picsure._transport.client import PicSureClient
 from picsure._transport.errors import (
@@ -20,10 +21,8 @@ from picsure.errors import (
     PicSureValidationError,
 )
 
-# The gateway routes the dictionary at /dictionary/** (StripPrefix=1); the
-# legacy /picsure/proxy/dictionary-api relay is gone.
-_CONCEPTS_PATH = "/dictionary/concepts"
-_FACETS_PATH = "/dictionary/facets"
+# Dictionary routes live in picsure._paths (they carry the /picsure ingress
+# prefix that httpd strips before the gateway sees them).
 
 # Page size for the "one big page" dictionary search.  Set to Java
 # ``Integer.MAX_VALUE`` (the backend's int width) so a single request
@@ -86,7 +85,7 @@ def searchDictionary(  # noqa: N802
 ) -> pd.DataFrame:
     """Search the PIC-SURE data dictionary.
 
-    Issues a single POST to ``/dictionary/concepts`` with ``page_size``
+    Issues a single POST to ``/picsure/dictionary/concepts`` with ``page_size``
     large enough to return every match, and reads the
     ``PaginatedResponse{results, page, total}`` reply.
 
@@ -106,7 +105,7 @@ def searchDictionary(  # noqa: N802
     """
     effective_page_size = page_size if page_size and page_size > 0 else _MAX_PAGE_SIZE
     body = _build_concepts_body(term=term, facets=facets, consents=consents)
-    url = f"{_CONCEPTS_PATH}?page_number=0&page_size={effective_page_size}"
+    url = f"{CONCEPTS_PATH}?page_number=0&page_size={effective_page_size}"
 
     try:
         data = client.post_json(url, body=body)
@@ -155,7 +154,7 @@ def fetch_facets(
 ) -> list[FacetCategory]:
     """Fetch facet categories from the server.
 
-    POSTs to ``/dictionary/facets`` with the same
+    POSTs to ``/picsure/dictionary/facets`` with the same
     body shape as :func:`search`.  The response is a top-level array
     of facet categories (not wrapped in an object).
 
@@ -179,7 +178,7 @@ def fetch_facets(
     body = _build_concepts_body(term=term, facets=facets, consents=consents)
 
     try:
-        data = client.post_json(_FACETS_PATH, body=body)
+        data = client.post_json(FACETS_PATH, body=body)
     except (TransportValidationError, TransportNotFoundError) as exc:
         raise _translate_dictionary_4xx(exc, "fetch facets") from exc
     except TransportRateLimitError as exc:

@@ -10,6 +10,7 @@ import httpx
 
 from picsure._dev.events import Event
 from picsure._dev.redaction import body_is_sensitive
+from picsure._paths import normalize_base_url
 from picsure._transport.errors import (
     TransportAuthenticationError,
     TransportConnectionError,
@@ -59,6 +60,12 @@ class PicSureClient:
 
     Wraps httpx.Client with Bearer token auth, retries on 5xx and
     connection errors, and translation to internal transport exceptions.
+
+    ``base_url`` is the deployment ORIGIN (e.g.
+    ``https://picsure.biodatacatalyst.nhlbi.nih.gov``); the ``/picsure``
+    ingress prefix belongs to the request paths themselves (see
+    :mod:`picsure._paths`).  An origin that already carries a trailing
+    ``/picsure`` is normalized away so the prefix is never doubled.
     """
 
     def __init__(
@@ -71,7 +78,7 @@ class PicSureClient:
     ) -> None:
         # BDC's API gateway routes auth based on a "request-source" header:
         # "Authorized" when a bearer token is present, "Open" otherwise.
-        # Without it, authorized endpoints (e.g. /hpds/auth/v3/query/sync) can
+        # Without it, authorized endpoints (e.g. /picsure/hpds/auth/v3/query/sync) can
         # reject tokens that are otherwise valid on PSAMA or the data-dictionary.
         token = token.strip()
         headers = {
@@ -90,7 +97,7 @@ class PicSureClient:
         if session_id:
             headers["X-Session-Id"] = session_id
         self._http = httpx.Client(
-            base_url=base_url,
+            base_url=normalize_base_url(base_url),
             headers=headers,
             timeout=_TIMEOUT_SECONDS,
         )
