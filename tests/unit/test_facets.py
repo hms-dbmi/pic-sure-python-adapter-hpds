@@ -160,16 +160,22 @@ class TestFacetSet:
         categories = {r["category"] for r in result}
         assert categories == {"study_ids", "data_type"}
         study_facet = next(r for r in result if r["category"] == "study_ids")
-        assert study_facet["name"] == "phs000007"
-        assert study_facet["count"] == 42
-        assert study_facet["categoryRef"] == {
-            "name": "study_ids",
-            "display": "Study",
-            "description": "",
-        }
-        assert study_facet["children"] == []
-        assert study_facet["fullName"] is None
-        assert study_facet["meta"] is None
+        assert study_facet == {"name": "phs000007", "category": "study_ids"}
+
+    def test_to_request_facets_sends_only_the_filter_key(self):
+        """The server's nested ``Facet`` record rejects unknown members.
+
+        ``categoryRef`` — which this used to send — is not a member of
+        the Java record, so its presence 400s every search that has a
+        facet selected.  ``display``/``count``/``children`` bind, but
+        mean nothing as input, so they go too.
+        """
+        fs = self._make_facet_set()
+        fs.add("study_ids", "phs000007")
+        (sent,) = fs.to_request_facets()
+        assert sorted(sent) == ["category", "name"]
+        for rejected in ("categoryRef", "parentRef"):
+            assert rejected not in sent
 
     def test_to_request_facets_multiple_values_same_category(self):
         fs = self._make_facet_set()
@@ -180,17 +186,17 @@ class TestFacetSet:
         assert names == {"phs000007", "phs000179"}
         for entry in result:
             assert entry["category"] == "study_ids"
-            assert entry["categoryRef"]["name"] == "study_ids"
+            assert sorted(entry) == ["category", "name"]
 
-    def test_to_request_facets_unknown_value_falls_back(self):
+    def test_to_request_facets_passes_through_value_not_in_catalog(self):
         fs = self._make_facet_set()
         # Skip validation by reaching into internal state so we can
-        # exercise the "not in catalog" branch.
+        # exercise the "not in catalog" branch: the filter key needs no
+        # catalog lookup, so an unknown value still serializes cleanly
+        # and the server decides whether it matches anything.
         fs._selected["study_ids"] = ["phs999999"]
         result = fs.to_request_facets()
-        assert result[0]["name"] == "phs999999"
-        assert result[0]["display"] == "phs999999"
-        assert result[0]["count"] == 0
+        assert result == [{"name": "phs999999", "category": "study_ids"}]
 
     def test_parses_arbitrarily_deep_tree(self):
         """A tree far deeper than Python's default recursion limit must parse."""
@@ -235,9 +241,9 @@ class TestFacetSet:
         )
         fs.add("Consortium_Curated_Facets", "Infected")
         result = fs.to_request_facets()
-        assert result[0]["name"] == "Infected"
-        assert result[0]["count"] == 84173
-        assert result[0]["display"] == "Infected"
+        # A nested child filters by its own name and its category's name;
+        # the parent it hangs under is not part of the filter key.
+        assert result == [{"name": "Infected", "category": "Consortium_Curated_Facets"}]
 
     def test_clear(self):
         fs = self._make_facet_set()

@@ -348,9 +348,7 @@ class TestSessionFacets:
         last_body = json.loads(concepts_route.calls[-1].request.content)
         assert len(last_body["facets"]) == 1
         sent = last_body["facets"][0]
-        assert sent["category"] == "dataset_id"
-        assert sent["name"] == "phs000007"
-        assert sent["categoryRef"]["name"] == "dataset_id"
+        assert sent == {"name": "phs000007", "category": "dataset_id"}
 
     @respx.mock
     def test_facets_forwards_term(self, facets_response):

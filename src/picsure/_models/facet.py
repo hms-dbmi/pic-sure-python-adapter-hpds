@@ -159,40 +159,22 @@ class FacetSet:
     def to_request_facets(self) -> list[dict[str, object]]:
         """Serialize selected facets for the concepts/facets request body.
 
-        The backend expects each selected option to arrive as the full
-        facet object (the shape returned by ``/dictionary-api/facets``)
-        with an added ``categoryRef`` pointing back at its category.
+        Only ``(name, category)`` goes out: that pair is the filter key,
+        and the Java ``Facet`` record has a convenience constructor for
+        exactly it.  The server binds request bodies strictly
+        (``FAIL_ON_UNKNOWN_PROPERTIES``) and, while the top-level
+        ``Filter`` record tolerates extra members, the nested ``Facet``
+        record does not — a ``categoryRef`` back-reference, which this
+        used to send, is a 400 on every search that has a facet
+        selected.  Everything else on a response facet (display,
+        description, count, children) is output, meaningless as input.
         """
-        result: list[dict[str, object]] = []
-        for cat_name, values in self._selected.items():
-            if not values:
-                continue
-            cat = self._available[cat_name]
-            category_ref = {
-                "name": cat.name,
-                "display": cat.display,
-                "description": cat.description,
-            }
-            by_value = _flatten_options_by_value(cat.options)
-            for value in values:
-                opt = by_value.get(value)
-                display = opt.display if opt is not None else value
-                description = opt.description if opt is not None else ""
-                count = opt.count if opt is not None else 0
-                result.append(
-                    {
-                        "name": value,
-                        "display": display,
-                        "description": description,
-                        "fullName": None,
-                        "count": count,
-                        "children": [],
-                        "category": cat.name,
-                        "meta": None,
-                        "categoryRef": category_ref,
-                    }
-                )
-        return result
+        return [
+            {"name": value, "category": cat_name}
+            for cat_name, values in self._selected.items()
+            if values
+            for value in values
+        ]
 
     def _validate_category(self, category: str) -> None:
         if category not in self._available:
@@ -201,8 +183,3 @@ class FacetSet:
                 f"'{category}' is not a valid facet category. "
                 f"Valid categories: {valid}."
             )
-
-
-def _flatten_options_by_value(options: list[Facet]) -> dict[str, Facet]:
-    """Return a map of value → Facet covering the tree of options."""
-    return {opt.value: opt for opt in _walk_tree(options)}

@@ -132,23 +132,11 @@ class TestSearch:
 
         searchDictionary(_make_client(), term="sex", facets=facets)
         body = json.loads(route.calls[0].request.content)
-        assert body["facets"] == [
-            {
-                "name": "phs000007",
-                "display": "FHS (phs000007)",
-                "description": "Framingham Cohort",
-                "fullName": None,
-                "count": 54984,
-                "children": [],
-                "category": "dataset_id",
-                "meta": None,
-                "categoryRef": {
-                    "name": "dataset_id",
-                    "display": "Dataset",
-                    "description": "First node of concept path",
-                },
-            }
-        ]
+        # Exactly the (name, category) filter key on the wire. The server
+        # binds the nested `Facet` record strictly, so the response fields
+        # we hold locally — display, description, count, and the
+        # `categoryRef` back-reference — must not be echoed back.
+        assert body["facets"] == [{"name": "phs000007", "category": "dataset_id"}]
 
     @respx.mock
     def test_consents_included_when_provided(self, search_response):
