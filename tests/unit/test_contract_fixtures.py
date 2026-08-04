@@ -18,6 +18,13 @@ import pandas as pd
 import pytest
 
 from picsure._models.clause import Clause, PhenotypicFilterType
+from picsure._services.consents import (
+    CONSENTS_KEY,
+    HARMONIZED_CONSENTS_KEY,
+    TOPMED_CONSENTS_KEY,
+    consent_values,
+    fetch_consents,
+)
 from picsure._services.export import _extract_query_id, _extract_status
 from picsure._services.genomic_search import search_genomic_values
 from picsure._services.query_run import build_query_body
@@ -190,3 +197,63 @@ class TestDispatchResponse:
         assert "resourceUUID" not in inner
         assert "resourceCredentials" not in inner
         assert inner["expectedResultType"] == "COUNT"
+
+
+class TestUserConsentsResponse:
+    """user-consents-response.json -- GET /psama/user/me/consents."""
+
+    @pytest.fixture()
+    def consents(self) -> dict:
+        return load_contract_fixture("user-consents-response")
+
+    def test_has_the_contract_fields(self, consents):
+        # Two keys, and no more.  The response used to be PSAMA's
+        # `user_consents` JPA entity, which also shipped the persisted row's
+        # own `uuid`; that is storage, not answer, and reading it would bind
+        # this adapter to PSAMA's schema.
+        assert set(consents) == {"userId", "consents"}
+        assert "uuid" not in consents
+
+    def test_is_keyed_by_the_concept_paths_the_server_writes(self, consents):
+        # Map KEYS, not study accessions.  A drift of a single backslash on
+        # either side reads as "no consents" and silently drops every
+        # authorization filter rather than failing.
+        assert set(consents["consents"]) == {
+            CONSENTS_KEY,
+            HARMONIZED_CONSENTS_KEY,
+            TOPMED_CONSENTS_KEY,
+        }
+
+    def test_parses_each_concept_path_through_the_real_helper(self, consents):
+        # Identifiers ride verbatim -- matched against dictionary values and
+        # put into a v3 query as-is, never parsed or reformatted.
+        assert consent_values(consents["consents"], CONSENTS_KEY) == [
+            "phs000007.c1",
+            "phs000179.c2",
+            "open_access-1000Genomes",
+        ]
+        assert consent_values(consents["consents"], HARMONIZED_CONSENTS_KEY) == [
+            "phs000007.c1"
+        ]
+        assert consent_values(consents["consents"], TOPMED_CONSENTS_KEY) == [
+            "phs000179.c2",
+            "open_access-1000Genomes",
+        ]
+
+    def test_unknown_concept_path_is_nothing_authorized(self, consents):
+        # The server documents the keys it writes as KNOWN, not exhaustive.
+        assert consent_values(consents["consents"], "\\_future_consent\\") == []
+
+    def test_fetch_consents_reads_the_golden_body_off_the_self_scoped_path(
+        self, consents
+    ):
+        # End to end through the real helper: the subject comes from the
+        # token, so no user id appears in the path.
+        client = _FakeClient(consents)
+
+        assert fetch_consents(client) == [
+            "phs000007.c1",
+            "phs000179.c2",
+            "open_access-1000Genomes",
+        ]
+        assert client.last_path == "/psama/user/me/consents"

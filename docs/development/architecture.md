@@ -113,7 +113,7 @@ src/picsure/
 | `query_load.py`  | `load_query(client, query_id, *, backend)`. Hits `/picsure/hpds/{backend}/v3/query/{id}/metadata` (version-agnostic in the query-service, but served only on the `/v3` route) and reconstructs a `Clause` / `ClauseGroup` from the response so it can be re-run via `runQueryByID`. |
 | `query_save.py`  | `save_query_by_name(client, query, name, *, backend, overwrite)`. Submits the query via `POST /picsure/hpds/auth/v3/query`, then `POST`s a new record to `/picsure/operations/dataset/named` (or `PUT`-updates an existing one at `/picsure/operations/dataset/named/{id}` when `overwrite=True`). Validates `name` against the backend `NamedDataset` pattern client-side. Refused on open-access (`open` backend) deployments. |
 | `export.py`      | `export_pfb` — the async PFB flow (submit → poll with exponential backoff capped at 60s, 10-minute total deadline → stream result to a `.part` file → atomic rename). Plus `export_csv` and `export_tsv` for in-memory DataFrames. |
-| `consents.py`    | `fetch_consents(client)`. Reads `/psama/user/me/queryTemplate/`, parses the doubly-encoded JSON, and pulls the `\\_consents\\` study-consent list used by dictionary-api requests on authorized deployments. |
+| `consents.py`    | `fetch_consents(client)`. Reads `/psama/user/me/consents` (PSAMA's `UserConsentsResponse`) and pulls the `\\_consents\\` study-consent list used by dictionary-api requests on authorized deployments. The map is keyed by CONCEPT PATH and its values are the consent identifiers verbatim; `consent_values()` is the single parsing helper. Replaces a read of the deleted `/psama/user/me/queryTemplate/`, which carried the same map doubly-encoded. |
 
 ### `_paths.py` (top level)
 

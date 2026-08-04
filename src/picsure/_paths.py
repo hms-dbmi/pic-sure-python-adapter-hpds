@@ -130,4 +130,8 @@ NAMED_DATASET_ITEM_PATH = NAMED_DATASET_COLLECTION_PATH + "/{named_dataset_id}"
 # httpd proxies /psama/** directly to the auth service (rewriting it to that
 # service's own /auth context path), bypassing the gateway entirely -- so this
 # route deliberately carries no /picsure prefix.
-PSAMA_QUERY_TEMPLATE_PATH = "/psama/user/me/queryTemplate/"
+# The user's study authorizations.  Self-scoped: the subject comes from the
+# token, so no user id appears in the path.  This replaced
+# /psama/user/me/queryTemplate/, which carried the same map inside a
+# JSON-encoded string and has been DELETED server-side.
+PSAMA_USER_CONSENTS_PATH = "/psama/user/me/consents"

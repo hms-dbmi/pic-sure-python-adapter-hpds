@@ -10,7 +10,7 @@ from picsure._paths import (
     GATEWAY_PREFIX,
     NAMED_DATASET_COLLECTION_PATH,
     NAMED_DATASET_ITEM_PATH,
-    PSAMA_QUERY_TEMPLATE_PATH,
+    PSAMA_USER_CONSENTS_PATH,
     normalize_base_url,
     query_metadata_path,
     query_prefix,
@@ -58,8 +58,8 @@ class TestGatewayPrefixedPaths:
     def test_psama_is_not_gateway_bound(self):
         # httpd proxies /psama/** straight to the auth service, bypassing the
         # gateway -- so this route must NOT carry the /picsure prefix.
-        assert PSAMA_QUERY_TEMPLATE_PATH == "/psama/user/me/queryTemplate/"
-        assert not PSAMA_QUERY_TEMPLATE_PATH.startswith(GATEWAY_PREFIX)
+        assert PSAMA_USER_CONSENTS_PATH == "/psama/user/me/consents"
+        assert not PSAMA_USER_CONSENTS_PATH.startswith(GATEWAY_PREFIX)
 
 
 class TestNormalizeBaseUrl:
