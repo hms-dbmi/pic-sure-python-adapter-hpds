@@ -236,15 +236,18 @@ class TestToQuery:
 import httpx
 import respx
 
-from picsure._services.query_load import load_query
+from picsure._services.query_load import _HPDS_QUERY_METADATA_PATH, load_query
 from picsure._transport.client import PicSureClient
 from picsure.errors import PicSureAuthError, PicSureConnectionError
 
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
 QUERY_ID = "11111111-2222-3333-4444-555555555555"
-META_URL = f"{BASE_URL}/hpds/auth/query/{QUERY_ID}/metadata"
-V3_META_URL = f"{BASE_URL}/hpds/auth/v3/query/{QUERY_ID}/metadata"
+META_URL = f"{BASE_URL}" + _HPDS_QUERY_METADATA_PATH.format(
+    backend="auth", query_id=QUERY_ID
+)
+# The retired non-versioned route, used only as a negative in routing tests.
+LEGACY_META_URL = f"{BASE_URL}/picsure/hpds/auth/query/{QUERY_ID}/metadata"
 
 
 def _make_client() -> PicSureClient:
@@ -349,10 +352,10 @@ class TestLoadQueryHappyPath:
         assert result.includeConcepts == ("\\phs1\\out\\",)
 
     @respx.mock
-    def test_always_uses_non_versioned_path(self):
-        # Query metadata is version-agnostic in the query-service; loadQueryByID
-        # pins reads to the non-versioned metadata route for every deployment,
-        # regardless of how the session was connected.
+    def test_always_uses_versioned_path(self):
+        # Query metadata is served under the versioned (/v3) query routes;
+        # loadQueryByID pins reads to the versioned metadata route for every
+        # deployment, regardless of how the session was connected.
         body = _envelope(
             {
                 "select": [],
@@ -363,13 +366,15 @@ class TestLoadQueryHappyPath:
                 "id": None,
             }
         )
-        non_versioned = respx.get(META_URL).mock(
+        versioned = respx.get(META_URL).mock(
             return_value=httpx.Response(200, json=body)
         )
-        v3 = respx.get(V3_META_URL).mock(return_value=httpx.Response(200, json=body))
+        legacy = respx.get(LEGACY_META_URL).mock(
+            return_value=httpx.Response(200, json=body)
+        )
         load_query(_make_client(), QUERY_ID, backend="auth")
-        assert non_versioned.called
-        assert not v3.called
+        assert versioned.called
+        assert not legacy.called
 
 
 class TestLoadQueryStrictness:

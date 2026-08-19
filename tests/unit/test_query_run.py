@@ -9,6 +9,7 @@ from picsure._models.query import Query
 from picsure._models.query_type import QueryType
 from picsure._models.resource import Resource
 from picsure._models.session import Session
+from picsure._services._hpds_paths import query_prefix
 from picsure._services.query_run import _resolve_query_type, run_query
 from picsure._transport.client import PicSureClient
 from picsure.errors import (
@@ -20,8 +21,8 @@ from picsure.errors import (
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
 RESOURCE_UUID = "resource-uuid-aaaa-1111"
-QUERY_URL = f"{BASE_URL}/hpds/auth/v3/query/sync"
-OPEN_QUERY_URL = f"{BASE_URL}/hpds/open/query/sync"
+QUERY_URL = f"{BASE_URL}{query_prefix('auth', v3=True)}/query/sync"
+OPEN_QUERY_URL = f"{BASE_URL}{query_prefix('open', v3=True)}/query/sync"
 
 
 def _make_client() -> PicSureClient:
@@ -715,7 +716,7 @@ class TestRunQueryBackendRouting:
     def test_open_path_preserves_body_shape(self):
         # The open endpoint accepts the same body shape as auth; we should
         # not start emitting a different shape just because we're routing
-        # to /hpds/open/query/sync.
+        # to /picsure/hpds/open/v3/query/sync.
         route = respx.post(OPEN_QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"7"),
         )

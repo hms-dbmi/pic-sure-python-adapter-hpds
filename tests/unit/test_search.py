@@ -6,6 +6,8 @@ import respx
 
 from picsure._models.facet import FacetCategory, FacetSet
 from picsure._services.search import (
+    _CONCEPTS_PATH,
+    _FACETS_PATH,
     _MAX_PAGE_SIZE,
     fetch_facets,
     searchDictionary,
@@ -16,8 +18,8 @@ from picsure.errors import PicSureConnectionError, PicSureQueryError
 
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
-CONCEPTS_BASE = f"{BASE_URL}/picsure/proxy/dictionary-api/concepts"
-FACETS_URL = f"{BASE_URL}/picsure/proxy/dictionary-api/facets"
+CONCEPTS_BASE = f"{BASE_URL}{_CONCEPTS_PATH}"
+FACETS_URL = f"{BASE_URL}{_FACETS_PATH}"
 
 
 def _make_client() -> PicSureClient:

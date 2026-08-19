@@ -9,6 +9,9 @@ import picsure
 from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.resource import Resource
 from picsure._models.session import Session
+from picsure._services._hpds_paths import query_prefix
+from picsure._services.query_load import _HPDS_QUERY_METADATA_PATH
+from picsure._services.search import _CONCEPTS_PATH, _FACETS_PATH
 from picsure._transport.client import PicSureClient
 from picsure.errors import PicSureValidationError
 
@@ -265,10 +268,17 @@ def _metadata_envelope(
 
 
 _CONCEPTS_URL = (
-    f"{BASE_URL}/picsure/proxy/dictionary-api/concepts"
-    "?page_number=0&page_size=2147483647"
+    f"{BASE_URL}{_CONCEPTS_PATH}?page_number=0&page_size=2147483647"
 )
-_FACETS_URL = f"{BASE_URL}/picsure/proxy/dictionary-api/facets"
+_FACETS_URL = f"{BASE_URL}{_FACETS_PATH}"
+# The versioned auth HPDS query-lifecycle base (submit/status/result/sync).
+_AUTH_QUERY_BASE = f"{BASE_URL}{query_prefix('auth', v3=True)}/query"
+
+
+def _meta_url(query_id: str, backend: str = "auth") -> str:
+    return f"{BASE_URL}" + _HPDS_QUERY_METADATA_PATH.format(
+        backend=backend, query_id=query_id
+    )
 
 
 class TestSessionSearch:
@@ -433,7 +443,7 @@ class TestSessionShowAllFacets:
 class TestSessionRunQuery:
     @respx.mock
     def test_run_query_count(self):
-        respx.post(f"{BASE_URL}/hpds/auth/v3/query/sync").mock(
+        respx.post(f"{_AUTH_QUERY_BASE}/sync").mock(
             return_value=httpx.Response(200, content=b"42")
         )
         from picsure._models.clause import Clause, PhenotypicFilterType
@@ -451,7 +461,7 @@ class TestSessionRunQuery:
 
     @respx.mock
     def test_run_query_participant(self, participant_response):
-        respx.post(f"{BASE_URL}/hpds/auth/v3/query/sync").mock(
+        respx.post(f"{_AUTH_QUERY_BASE}/sync").mock(
             return_value=httpx.Response(200, content=participant_response)
         )
         from picsure._models.clause import Clause, PhenotypicFilterType
@@ -472,13 +482,13 @@ class TestSessionExport:
         # Session.exportAsPFB drives the async flow:
         # submit -> poll status -> stream result.
         query_id = "session-pfb-1"
-        respx.post(f"{BASE_URL}/hpds/auth/v3/query").mock(
+        respx.post(_AUTH_QUERY_BASE).mock(
             return_value=httpx.Response(200, json={"picsureResultId": query_id})
         )
-        respx.post(f"{BASE_URL}/hpds/auth/v3/query/{query_id}/status").mock(
+        respx.post(f"{_AUTH_QUERY_BASE}/{query_id}/status").mock(
             return_value=httpx.Response(200, json={"status": "AVAILABLE"})
         )
-        respx.post(f"{BASE_URL}/hpds/auth/v3/query/{query_id}/result").mock(
+        respx.post(f"{_AUTH_QUERY_BASE}/{query_id}/result").mock(
             return_value=httpx.Response(200, content=b"pfb_data")
         )
         from unittest.mock import patch
@@ -624,10 +634,10 @@ class TestSessionClose:
 
 class TestSessionLoadQueryByID:
     @respx.mock
-    def test_hits_non_versioned_metadata_endpoint(self):
-        # Query metadata is version-agnostic in the query-service, so
-        # loadQueryByID reads the non-versioned /hpds/{backend}/query/{id}/
-        # metadata route, never the /v3 one.
+    def test_hits_versioned_metadata_endpoint(self):
+        # Query metadata is served under the versioned (/v3) query routes, so
+        # loadQueryByID reads the /picsure/hpds/{backend}/v3/query/{id}/metadata
+        # route, never the retired non-versioned one.
         client = _client()
         session = _session_with_resources(
             client,
@@ -643,15 +653,15 @@ class TestSessionLoadQueryByID:
                 "not": False,
             },
         )
-        legacy = respx.get(f"{BASE_URL}/hpds/auth/query/abc-123/metadata").mock(
+        versioned = respx.get(_meta_url("abc-123")).mock(
             return_value=httpx.Response(200, json=body)
         )
-        v3 = respx.get(f"{BASE_URL}/hpds/auth/v3/query/abc-123/metadata").mock(
-            return_value=httpx.Response(200, json=body)
-        )
+        legacy = respx.get(
+            f"{BASE_URL}/picsure/hpds/auth/query/abc-123/metadata"
+        ).mock(return_value=httpx.Response(200, json=body))
         result = session.loadQueryByID("abc-123")
-        assert legacy.called
-        assert not v3.called
+        assert versioned.called
+        assert not legacy.called
         assert isinstance(result, Clause)
         assert result.type == PhenotypicFilterType.FILTER
 
@@ -670,7 +680,7 @@ class TestSessionLoadQueryByID:
                 "not": False,
             },
         )
-        respx.get(f"{BASE_URL}/hpds/auth/query/abc-123/metadata").mock(
+        respx.get(_meta_url("abc-123")).mock(
             return_value=httpx.Response(200, json=body)
         )
         result = session.loadQueryByID("abc-123")
@@ -699,10 +709,10 @@ class TestSessionRunQueryByID:
                 "not": False,
             },
         )
-        metadata = respx.get(f"{BASE_URL}/hpds/auth/query/abc-123/metadata").mock(
+        metadata = respx.get(_meta_url("abc-123")).mock(
             return_value=httpx.Response(200, json=body)
         )
-        sync = respx.post(f"{BASE_URL}/hpds/auth/v3/query/sync").mock(
+        sync = respx.post(f"{_AUTH_QUERY_BASE}/sync").mock(
             return_value=httpx.Response(200, content=b"42")
         )
 
@@ -730,10 +740,10 @@ class TestSessionRunQueryByID:
                 "not": False,
             },
         )
-        respx.get(f"{BASE_URL}/hpds/auth/query/abc-123/metadata").mock(
+        respx.get(_meta_url("abc-123")).mock(
             return_value=httpx.Response(200, json=body)
         )
-        respx.post(f"{BASE_URL}/hpds/auth/v3/query/sync").mock(
+        respx.post(f"{_AUTH_QUERY_BASE}/sync").mock(
             return_value=httpx.Response(200, content=participant_response)
         )
 

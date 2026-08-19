@@ -7,6 +7,7 @@ import pytest
 import respx
 
 from picsure._models.clause import Clause, PhenotypicFilterType
+from picsure._services._hpds_paths import query_prefix
 from picsure._services.export import export_csv, export_pfb, export_tsv
 from picsure._transport.client import PicSureClient
 from picsure.errors import (
@@ -19,9 +20,9 @@ BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
 QUERY_ID = "abc-123"
 
-SUBMIT_URL = f"{BASE_URL}/hpds/auth/v3/query"
-STATUS_URL = f"{BASE_URL}/hpds/auth/v3/query/{QUERY_ID}/status"
-RESULT_URL = f"{BASE_URL}/hpds/auth/v3/query/{QUERY_ID}/result"
+SUBMIT_URL = f"{BASE_URL}{query_prefix('auth', v3=True)}/query"
+STATUS_URL = f"{BASE_URL}{query_prefix('auth', v3=True)}/query/{QUERY_ID}/status"
+RESULT_URL = f"{BASE_URL}{query_prefix('auth', v3=True)}/query/{QUERY_ID}/result"
 
 
 def _make_client() -> PicSureClient:

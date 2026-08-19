@@ -1,5 +1,6 @@
 import pytest
 
+from picsure._services._hpds_paths import search_values_path
 from picsure._services.genomic_search import search_genomic_values
 from picsure.errors import PicSureQueryError, PicSureValidationError
 
@@ -20,8 +21,8 @@ def test_builds_path_with_encoded_params():
         client, "Gene_with_variant", backend="auth", query="BRCA", page=1, size=50
     )
     assert client.last_path == (
-        "/hpds/auth/search/values"
-        "?genomicConceptPath=Gene_with_variant&query=BRCA&page=1&size=50"
+        search_values_path("auth")
+        + "?genomicConceptPath=Gene_with_variant&query=BRCA&page=1&size=50"
     )
 
 

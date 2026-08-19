@@ -9,6 +9,7 @@ import respx
 
 from picsure._models.session import Session
 from picsure._services.connect import _token_expiration_from_jwt, connect
+from picsure._services.consents import _CONSENTS_KEY, _CONSENTS_PATH
 from picsure.errors import (
     PicSureValidationError,
 )
@@ -115,27 +116,23 @@ class TestConnectValidation:
 
 
 class TestConnectConsents:
-    _TEMPLATE_URL = f"{BASE_URL}/psama/user/me/queryTemplate/"
-    _CONSENT_PAYLOAD = {
-        "queryTemplate": (
-            '{"categoryFilters":{"\\\\_consents\\\\":["phs000007.c1","phs001013.c1"]}}'
-        )
-    }
+    _CONSENTS_URL = f"{BASE_URL}{_CONSENTS_PATH}"
+    _CONSENT_PAYLOAD = {"consents": {_CONSENTS_KEY: ["phs000007.c1", "phs001013.c1"]}}
 
     @respx.mock
     def test_custom_url_skips_consent_fetch_by_default(self):
-        template_route = respx.get(self._TEMPLATE_URL).mock(
+        consents_route = respx.get(self._CONSENTS_URL).mock(
             return_value=httpx.Response(200, json=self._CONSENT_PAYLOAD)
         )
 
         session = connect(platform=BASE_URL, token=TOKEN)
 
-        assert template_route.called is False
+        assert consents_route.called is False
         assert session.consents == []
 
     @respx.mock
     def test_include_consents_kwarg_fetches_consents(self):
-        respx.get(self._TEMPLATE_URL).mock(
+        respx.get(self._CONSENTS_URL).mock(
             return_value=httpx.Response(200, json=self._CONSENT_PAYLOAD)
         )
 
@@ -148,7 +145,7 @@ class TestConnectConsents:
         from picsure._transport.platforms import Platform
 
         prod_url = Platform.BDC_AUTHORIZED.url
-        template_route = respx.get(f"{prod_url}/psama/user/me/queryTemplate/").mock(
+        consents_route = respx.get(f"{prod_url}{_CONSENTS_PATH}").mock(
             return_value=httpx.Response(200, json=self._CONSENT_PAYLOAD)
         )
 
@@ -156,7 +153,7 @@ class TestConnectConsents:
             platform=Platform.BDC_AUTHORIZED, token=TOKEN, include_consents=False
         )
 
-        assert template_route.called is False
+        assert consents_route.called is False
         assert session.consents == []
 
 
@@ -199,8 +196,8 @@ class TestConnectOpenAccess:
 class TestConnectBackendSelection:
     @respx.mock
     def test_bdc_open_uses_open_backend(self):
-        # Open-access (no auth, no consents) routes to /hpds/open and the v1
-        # query lifecycle.
+        # Open-access (no auth, no consents) routes to the /hpds/open backend
+        # (which now also uses the versioned /v3 query lifecycle).
         from picsure._transport.platforms import Platform
 
         session = connect(platform=Platform.BDC_DEV_OPEN)
@@ -212,7 +209,7 @@ class TestConnectBackendSelection:
         from picsure._transport.platforms import Platform
 
         host = Platform.BDC_DEV_AUTHORIZED.url
-        respx.get(f"{host}/psama/user/me/queryTemplate/").mock(
+        respx.get(f"{host}{_CONSENTS_PATH}").mock(
             return_value=httpx.Response(200, json={})
         )
 
@@ -239,7 +236,7 @@ class TestConnectBackendSelection:
     def test_consents_only_keeps_auth_backend(self):
         # If the deployment requires consents (even with auth on), it's an
         # authorized backend — routes to /hpds/auth.
-        respx.get(f"{BASE_URL}/psama/user/me/queryTemplate/").mock(
+        respx.get(f"{BASE_URL}{_CONSENTS_PATH}").mock(
             return_value=httpx.Response(200, json={})
         )
 
@@ -320,12 +317,12 @@ class TestEmailFromJwt:
 
 
 class TestConnectCorrelationHeaders:
-    _TEMPLATE_URL = f"{BASE_URL}/psama/user/me/queryTemplate/"
+    _CONSENTS_URL = f"{BASE_URL}{_CONSENTS_PATH}"
 
     @respx.mock
     def test_connect_sends_session_id_and_default_client_type(self):
         # Drive the consent fetch so there is a request to inspect.
-        respx.get(self._TEMPLATE_URL).mock(return_value=httpx.Response(200, json={}))
+        respx.get(self._CONSENTS_URL).mock(return_value=httpx.Response(200, json={}))
         session = connect(platform=BASE_URL, token=TOKEN, include_consents=True)
 
         # session.session_id is a freshly generated uuid4 string.
@@ -339,7 +336,7 @@ class TestConnectCorrelationHeaders:
 
     @respx.mock
     def test_connect_forwards_client_type_override(self):
-        respx.get(self._TEMPLATE_URL).mock(return_value=httpx.Response(200, json={}))
+        respx.get(self._CONSENTS_URL).mock(return_value=httpx.Response(200, json={}))
         session = connect(
             platform=BASE_URL,
             token=TOKEN,

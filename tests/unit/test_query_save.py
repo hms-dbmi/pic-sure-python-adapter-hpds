@@ -7,7 +7,12 @@ import pytest
 import respx
 
 from picsure._models.clause import Clause, PhenotypicFilterType
-from picsure._services.query_save import save_query_by_name
+from picsure._services._hpds_paths import query_prefix
+from picsure._services.query_save import (
+    _NAMED_DATASET_COLLECTION_PATH,
+    _NAMED_DATASET_ITEM_PATH,
+    save_query_by_name,
+)
 from picsure._transport.client import PicSureClient
 from picsure.errors import (
     PicSureAuthError,
@@ -19,9 +24,9 @@ from picsure.errors import (
 BASE_URL = "https://api.example.com"
 TOKEN = "test-token"
 
-LIST_URL = f"{BASE_URL}/picsure/dataset/named"
-SUBMIT_URL = f"{BASE_URL}/hpds/auth/v3/query"
-SAVE_URL = f"{BASE_URL}/picsure/dataset/named"
+LIST_URL = f"{BASE_URL}{_NAMED_DATASET_COLLECTION_PATH}"
+SUBMIT_URL = f"{BASE_URL}{query_prefix('auth', v3=True)}/query"
+SAVE_URL = f"{BASE_URL}{_NAMED_DATASET_COLLECTION_PATH}"
 
 
 def _client() -> PicSureClient:
@@ -160,7 +165,9 @@ class TestSaveQueryByNameDuplicates:
         respx.post(SUBMIT_URL).mock(
             return_value=httpx.Response(200, json={"picsureResultId": "qid-new"})
         )
-        put = respx.put(f"{BASE_URL}/picsure/dataset/named/nd-old").mock(
+        put = respx.put(
+            f"{BASE_URL}{_NAMED_DATASET_ITEM_PATH.format(named_dataset_id='nd-old')}"
+        ).mock(
             return_value=httpx.Response(
                 200,
                 json={
