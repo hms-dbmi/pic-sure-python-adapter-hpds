@@ -101,7 +101,7 @@ def run_query(
     """
     resolved_type = _resolve_query_type(query_type)
     body = build_query_body(query, resolved_type)
-    path = query_prefix(backend, v3=backend == "auth") + "/query/sync"
+    path = query_prefix(backend, v3=True) + "/query/sync"
 
     try:
         raw = client.post_raw(path, body=body)

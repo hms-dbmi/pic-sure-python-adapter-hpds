@@ -20,8 +20,8 @@ from picsure.errors import (
     PicSureValidationError,
 )
 
-_CONCEPTS_PATH = "/picsure/proxy/dictionary-api/concepts"
-_FACETS_PATH = "/picsure/proxy/dictionary-api/facets"
+_CONCEPTS_PATH = "/picsure/dictionary/concepts"
+_FACETS_PATH = "/picsure/dictionary/facets"
 
 # Page size for the "one big page" dictionary search.  Set to Java
 # ``Integer.MAX_VALUE`` (the backend's int width) so a single request

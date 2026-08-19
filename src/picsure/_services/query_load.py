@@ -176,11 +176,10 @@ def _to_query(
     )
 
 
-# Query metadata is version-agnostic in the query-service (it reads the
-# stored query, not HPDS), so we use the non-versioned metadata route.  The
-# {backend} segment is required for routing but the read does not depend on
-# which backend is named.
-_HPDS_QUERY_METADATA_PATH = "/hpds/{backend}/query/{query_id}/metadata"
+# Query metadata is served under the versioned (/v3) query routes -- the
+# non-versioned route 404s on the current gateway. The {backend} segment is
+# required for routing but the read does not depend on which backend is named.
+_HPDS_QUERY_METADATA_PATH = "/picsure/hpds/{backend}/v3/query/{query_id}/metadata"
 
 
 def load_query(

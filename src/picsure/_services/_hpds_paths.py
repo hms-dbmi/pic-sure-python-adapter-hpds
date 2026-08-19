@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 # The PIC-SURE gateway routes HPDS traffic by URL path, not by a resource
-# UUID in the request body: ``/hpds/auth/**`` reaches the authorized
-# (non-obfuscated) HPDS and ``/hpds/open/**`` the open (aggregate/obfuscated)
-# one.  The backend is a path segment; the version is a ``/v3`` sub-prefix.
+# UUID in the request body: ``/picsure/hpds/auth/**`` reaches the authorized
+# (non-obfuscated) HPDS and ``/picsure/hpds/open/**`` the open
+# (aggregate/obfuscated) one.  The backend is a path segment; the version is a
+# ``/v3`` sub-prefix.  The gateway routes ``/hpds/**`` verbatim (no prefix
+# strip), so the client must include the ``/picsure`` context prefix.
 #
-# The adapter keeps today's split: authorized sessions use the v3 query
-# routes, open sessions the v1 (non-versioned) routes — matching the
-# deployment where open-access traffic is served only on v1 and authorized
-# traffic on v3.
+# Both backends use the versioned (/v3) query routes: the open backend's v1
+# ingress is retired (returns 502), while v3 preserves count obfuscation via
+# AggregateV3Controller.
 
 
 def query_prefix(backend: str, *, v3: bool) -> str:
@@ -24,7 +25,7 @@ def query_prefix(backend: str, *, v3: bool) -> str:
         A path prefix such as ``"/hpds/auth/v3"`` or ``"/hpds/open"``, to
         which a ``/query`` suffix is appended by the caller.
     """
-    return f"/hpds/{backend}/v3" if v3 else f"/hpds/{backend}"
+    return f"/picsure/hpds/{backend}/v3" if v3 else f"/picsure/hpds/{backend}"
 
 
 def search_values_path(backend: str) -> str:
@@ -33,4 +34,4 @@ def search_values_path(backend: str) -> str:
     The registry-era ``{resourceId}`` placeholder segment is gone: the
     well-defined ingress is ``/hpds/{backend}/search/values``.
     """
-    return f"/hpds/{backend}/search/values"
+    return f"/picsure/hpds/{backend}/search/values"

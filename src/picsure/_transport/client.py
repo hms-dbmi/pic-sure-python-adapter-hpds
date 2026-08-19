@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -25,6 +26,32 @@ if TYPE_CHECKING:
 
 _MAX_RETRIES = 1
 _TIMEOUT_SECONDS = 30.0
+
+# Env var controlling TLS certificate verification, used only when the caller
+# does not pass an explicit ``verify`` to connect()/PicSureClient. Accepts a
+# CA-bundle path, or a boolean-ish string ("false"/"0"/"no" disables checking).
+# Disabling verification is for local/self-signed deployments only.
+_SSL_VERIFY_ENV = "PICSURE_SSL_VERIFY"
+
+
+def _resolve_verify(verify: bool | str | None) -> bool | str:
+    """Resolve the httpx ``verify`` argument.
+
+    Precedence: an explicit ``verify`` wins; otherwise fall back to the
+    ``PICSURE_SSL_VERIFY`` env var; otherwise verify (the secure default).
+    A string that is not a boolean keyword is treated as a CA-bundle path.
+    """
+    if verify is not None:
+        return verify
+    raw = os.environ.get(_SSL_VERIFY_ENV)
+    if raw is None or raw == "":
+        return True
+    lowered = raw.strip().lower()
+    if lowered in ("false", "0", "no", "off"):
+        return False
+    if lowered in ("true", "1", "yes", "on"):
+        return True
+    return raw  # a CA-bundle path
 
 # Transport failures where the request provably never reached the server --
 # or never finished being sent -- so re-sending cannot double-execute even a
@@ -146,6 +173,7 @@ class PicSureClient:
         dev_config: DevConfig | None = None,
         session_id: str = "",
         client_type: str = "PYTHON_ADAPTER",
+        verify: bool | str | None = None,
     ) -> None:
         # BDC's API gateway routes auth based on a "request-source" header:
         # "Authorized" when a bearer token is present, "Open" otherwise.
@@ -171,6 +199,7 @@ class PicSureClient:
             base_url=base_url,
             headers=headers,
             timeout=_TIMEOUT_SECONDS,
+            verify=_resolve_verify(verify),
         )
         self._dev_config = dev_config
 

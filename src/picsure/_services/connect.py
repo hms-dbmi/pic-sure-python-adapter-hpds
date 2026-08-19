@@ -33,6 +33,7 @@ def connect(
     supports_genomic: bool | None = None,
     dev_mode: bool | None = None,
     client_type: str = "PYTHON_ADAPTER",
+    verify: bool | str | None = None,
 ) -> Session:
     """Connect to a PIC-SURE instance and return a Session.
 
@@ -71,6 +72,11 @@ def connect(
             log, sent as the ``X-Client-Type`` header on every request.
             Defaults to ``"PYTHON_ADAPTER"``; the R adapter passes
             ``"R_ADAPTER"``.
+        verify: TLS certificate verification, forwarded to the underlying
+            HTTP client. ``None`` (default) verifies, unless the
+            ``PICSURE_SSL_VERIFY`` env var overrides it. Pass ``False`` to
+            skip verification (self-signed / local-dev deployments only) or
+            a path to a CA bundle to trust a private CA.
 
     Returns:
         A Session you can use to search, build queries, and export data.
@@ -131,6 +137,7 @@ def connect(
         dev_config=dev_config,
         session_id=session_id,
         client_type=client_type,
+        verify=verify,
     )
 
     if info.requires_auth:

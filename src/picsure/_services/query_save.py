@@ -18,11 +18,14 @@ from picsure.errors import (
 if TYPE_CHECKING:
     from picsure._transport.client import PicSureClient
 
-# The named-dataset collection lives on the operations service, not HPDS; its
-# path is out of scope for the HPDS ingress migration and still resolves via
-# the gateway's legacy catch-all.
-_NAMED_DATASET_COLLECTION_PATH = "/picsure/dataset/named"
-_NAMED_DATASET_ITEM_PATH = "/picsure/dataset/named/{named_dataset_id}"
+# The named-dataset collection lives on the operations service, not HPDS. The
+# gateway routes ``/operations/**`` there and does not strip the prefix, so the
+# client path is ``/picsure/operations/dataset/named``. There is no gateway
+# catch-all; an unrouted path falls through to the SPA and 404s. The mapping is
+# slash-less server-side, and Spring 6 404s a trailing slash -- so the item
+# path must not gain one.
+_NAMED_DATASET_COLLECTION_PATH = "/picsure/operations/dataset/named"
+_NAMED_DATASET_ITEM_PATH = "/picsure/operations/dataset/named/{named_dataset_id}"
 
 # Mirrors the @Pattern on NamedDatasetRequest.name in pic-sure-api-data.
 _NAME_PATTERN = re.compile(r"\A[\w\d \-\\/?+=\[\]\.():\"']+\Z")
