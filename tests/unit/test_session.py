@@ -267,9 +267,7 @@ def _metadata_envelope(
     }
 
 
-_CONCEPTS_URL = (
-    f"{BASE_URL}{_CONCEPTS_PATH}?page_number=0&page_size=2147483647"
-)
+_CONCEPTS_URL = f"{BASE_URL}{_CONCEPTS_PATH}?page_number=0&page_size=2147483647"
 _FACETS_URL = f"{BASE_URL}{_FACETS_PATH}"
 # The versioned auth HPDS query-lifecycle base (submit/status/result/sync).
 _AUTH_QUERY_BASE = f"{BASE_URL}{query_prefix('auth', v3=True)}/query"
@@ -656,9 +654,9 @@ class TestSessionLoadQueryByID:
         versioned = respx.get(_meta_url("abc-123")).mock(
             return_value=httpx.Response(200, json=body)
         )
-        legacy = respx.get(
-            f"{BASE_URL}/picsure/hpds/auth/query/abc-123/metadata"
-        ).mock(return_value=httpx.Response(200, json=body))
+        legacy = respx.get(f"{BASE_URL}/picsure/hpds/auth/query/abc-123/metadata").mock(
+            return_value=httpx.Response(200, json=body)
+        )
         result = session.loadQueryByID("abc-123")
         assert versioned.called
         assert not legacy.called

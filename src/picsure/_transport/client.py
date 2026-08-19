@@ -53,6 +53,7 @@ def _resolve_verify(verify: bool | str | None) -> bool | str:
         return True
     return raw  # a CA-bundle path
 
+
 # Transport failures where the request provably never reached the server --
 # or never finished being sent -- so re-sending cannot double-execute even a
 # non-idempotent POST:
