@@ -711,6 +711,7 @@ class TestRunQueryBackendRouting:
         assert result.value == 42
         assert auth.call_count == 0
         assert open_route.call_count == 1
+        assert open_route.calls[0].request.headers["Authorization"] == f"Bearer {TOKEN}"
 
     @respx.mock
     def test_open_path_preserves_body_shape(self):
