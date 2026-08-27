@@ -294,6 +294,28 @@ class TestPicSureClientRetryScoping:
         assert route.call_count == 2
 
     @respx.mock
+    def test_saved_result_403_is_terminal(self):
+        route = respx.post(f"{BASE_URL}/query/saved/result").mock(
+            return_value=httpx.Response(
+                403,
+                json={
+                    "errorType": "consent_denied",
+                    "message": "You no longer have consent for this saved result",
+                },
+            )
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+
+        with (
+            pytest.raises(TransportAuthenticationError) as exc_info,
+            client.post_raw_stream("/query/saved/result", body={}),
+        ):
+            pass
+
+        assert exc_info.value.status_code == 403
+        assert route.call_count == 1
+
+    @respx.mock
     def test_post_connect_error_does_retry(self):
         route = respx.post(f"{BASE_URL}/query/sync").mock(
             side_effect=httpx.ConnectError("refused")
