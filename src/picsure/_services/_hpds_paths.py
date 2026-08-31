@@ -7,9 +7,8 @@ from __future__ import annotations
 # ``/v3`` sub-prefix.  The gateway routes ``/hpds/**`` verbatim (no prefix
 # strip), so the client must include the ``/picsure`` context prefix.
 #
-# Both backends use the versioned (/v3) query routes: the open backend's v1
-# ingress is retired (returns 502), while v3 preserves count obfuscation via
-# AggregateV3Controller.
+# Both backends use the versioned (/v3) query routes. The path selects the
+# backend independently of whether the request carries a token.
 
 
 def query_prefix(backend: str, *, v3: bool) -> str:

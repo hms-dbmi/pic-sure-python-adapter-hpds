@@ -73,11 +73,8 @@ def run_query(
         query_type: A :class:`QueryType` member (e.g. ``QueryType.COUNT``)
             or one of the strings ``"count"``, ``"participant"``,
             ``"timestamp"``, ``"cross_count"``.
-        backend: ``"auth"`` or ``"open"`` — selects the HPDS backend by
-            URL path.  ``"open"`` posts to ``/hpds/open/query/sync`` (v1);
-            ``"auth"`` posts to ``/hpds/auth/v3/query/sync``.  This
-            preserves the split where BDC's gateway serves open-access
-            traffic only on v1 and authorized traffic on v3.
+        backend: ``"auth"`` or ``"open"`` selects the HPDS backend by
+            URL path. Both backends use their versioned v3 query route.
 
     Returns:
         - ``count``        → :class:`CountResult`
