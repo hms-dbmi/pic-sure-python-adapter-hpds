@@ -6,6 +6,8 @@ from picsure._transport.client import PicSureClient
 from picsure._transport.errors import (
     TransportAuthenticationError,
     TransportConnectionError,
+    TransportConsentDeniedError,
+    TransportConsentLookupError,
     TransportNotFoundError,
     TransportRateLimitError,
     TransportServerError,
@@ -201,7 +203,46 @@ class TestPicSureClient:
         assert request.headers["request-source"] == "Authorized"
 
 
+class TestPublicExceptionExports:
+    def test_consent_errors_are_exported_from_package(self):
+        from picsure import PicSureConsentDeniedError, PicSureConsentLookupError
+
+        assert PicSureConsentDeniedError.__name__ == "PicSureConsentDeniedError"
+        assert PicSureConsentLookupError.__name__ == "PicSureConsentLookupError"
+
+
 class TestPicSureClient4xxMapping:
+    @respx.mock
+    def test_buffered_consent_denied_raises_typed_error(self):
+        respx.get(f"{BASE_URL}/saved-result").mock(
+            return_value=httpx.Response(
+                403,
+                json={
+                    "errorType": "consent_denied",
+                    "message": "You no longer have consent for this saved result",
+                },
+            )
+        )
+
+        with pytest.raises(TransportConsentDeniedError) as exc_info:
+            PicSureClient(base_url=BASE_URL, token=TOKEN).get_json("/saved-result")
+
+        exc = exc_info.value
+        assert exc.status_code == 403
+        assert exc.error_type == "consent_denied"
+        assert exc.server_message == "You no longer have consent for this saved result"
+
+    @respx.mock
+    def test_generic_403_remains_authentication_error(self):
+        respx.get(f"{BASE_URL}/saved-result").mock(
+            return_value=httpx.Response(403, text="Forbidden")
+        )
+
+        with pytest.raises(TransportAuthenticationError) as exc_info:
+            PicSureClient(base_url=BASE_URL, token=TOKEN).get_json("/saved-result")
+
+        assert exc_info.value.status_code == 403
+
     @respx.mock
     def test_400_raises_validation_error(self):
         respx.get(f"{BASE_URL}/bad").mock(
@@ -294,7 +335,28 @@ class TestPicSureClientRetryScoping:
         assert route.call_count == 2
 
     @respx.mock
-    def test_saved_result_403_is_terminal(self):
+    def test_get_consent_lookup_failed_raises_typed_error_without_retry(self):
+        route = respx.get(f"{BASE_URL}/saved-result").mock(
+            return_value=httpx.Response(
+                502,
+                json={
+                    "errorType": "consent_lookup_failed",
+                    "message": "Unable to resolve caller consents",
+                },
+            )
+        )
+
+        with pytest.raises(TransportConsentLookupError) as exc_info:
+            PicSureClient(base_url=BASE_URL, token=TOKEN).get_json("/saved-result")
+
+        exc = exc_info.value
+        assert exc.status_code == 502
+        assert exc.error_type == "consent_lookup_failed"
+        assert exc.server_message == "Unable to resolve caller consents"
+        assert route.call_count == 1
+
+    @respx.mock
+    def test_streaming_consent_denied_raises_typed_error(self):
         route = respx.post(f"{BASE_URL}/query/saved/result").mock(
             return_value=httpx.Response(
                 403,
@@ -307,12 +369,17 @@ class TestPicSureClientRetryScoping:
         client = PicSureClient(base_url=BASE_URL, token=TOKEN)
 
         with (
-            pytest.raises(TransportAuthenticationError) as exc_info,
+            pytest.raises(TransportConsentDeniedError) as exc_info,
             client.post_raw_stream("/query/saved/result", body={}),
         ):
             pass
 
         assert exc_info.value.status_code == 403
+        assert exc_info.value.error_type == "consent_denied"
+        assert (
+            exc_info.value.server_message
+            == "You no longer have consent for this saved result"
+        )
         assert route.call_count == 1
 
     @respx.mock

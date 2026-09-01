@@ -238,7 +238,12 @@ import respx
 
 from picsure._services.query_load import _HPDS_QUERY_METADATA_PATH, load_query
 from picsure._transport.client import PicSureClient
-from picsure.errors import PicSureAuthError, PicSureConnectionError
+from picsure.errors import (
+    PicSureAuthError,
+    PicSureConnectionError,
+    PicSureConsentDeniedError,
+    PicSureConsentLookupError,
+)
 
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
@@ -517,6 +522,47 @@ class TestLoadQueryErrors:
         respx.get(META_URL).mock(return_value=httpx.Response(401, text="unauthorized"))
         with pytest.raises(PicSureAuthError):
             load_query(_make_client(), QUERY_ID, backend="auth")
+
+    @respx.mock
+    def test_consent_denied_raises_typed_error(self):
+        respx.get(META_URL).mock(
+            return_value=httpx.Response(
+                403,
+                json={
+                    "errorType": "consent_denied",
+                    "message": "You no longer have consent for this saved result",
+                },
+            )
+        )
+
+        with pytest.raises(PicSureConsentDeniedError) as exc_info:
+            load_query(_make_client(), QUERY_ID, backend="auth")
+
+        exc = exc_info.value
+        assert exc.status_code == 403
+        assert exc.error_type == "consent_denied"
+        assert exc.server_message == "You no longer have consent for this saved result"
+
+    @respx.mock
+    def test_consent_lookup_failure_raises_typed_error_without_retry(self):
+        route = respx.get(META_URL).mock(
+            return_value=httpx.Response(
+                502,
+                json={
+                    "errorType": "consent_lookup_failed",
+                    "message": "Unable to resolve caller consents",
+                },
+            )
+        )
+
+        with pytest.raises(PicSureConsentLookupError) as exc_info:
+            load_query(_make_client(), QUERY_ID, backend="auth")
+
+        exc = exc_info.value
+        assert exc.status_code == 502
+        assert exc.error_type == "consent_lookup_failed"
+        assert exc.server_message == "Unable to resolve caller consents"
+        assert route.call_count == 1
 
     @respx.mock
     def test_5xx_raises_connection_error(self):
