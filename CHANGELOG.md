@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Changed
+- `connect()` now sources the user's consent list from PSAMA's `/psama/user/me/consents` instead of `/psama/user/me/queryTemplate/`. The consent endpoint returns the identifiers directly, so the adapter no longer parses a doubly-encoded query template. The resulting `Session.consents` value is unchanged. Requires a backend that serves `/user/me/consents`.
+
 ## [2.0.0] - 2026-06-15
 
 ### Changed

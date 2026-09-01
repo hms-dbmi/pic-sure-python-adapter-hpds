@@ -12,9 +12,11 @@ from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure._models.dictionary import coerce_float
 from picsure._models.genomic_filter import GenomicFilter, is_variant_spec
 from picsure._models.query import Query
-from picsure._services._errors import rate_limit_message
+from picsure._services._errors import rate_limit_message, translate_stage_error
 from picsure._transport.errors import (
     TransportAuthenticationError,
+    TransportConsentDeniedError,
+    TransportConsentLookupError,
     TransportError,
     TransportNotFoundError,
     TransportRateLimitError,
@@ -176,25 +178,29 @@ def _to_query(
     )
 
 
-# Always use the legacy /picsure/query/{id}/metadata path.  The v3
-# /picsure/v3/query/{id}/metadata endpoint has a known issue on BDC, so
-# we pin reads to legacy regardless of how the session was connected.
-_PICSURE_QUERY_METADATA_PATH = "/picsure/query/{query_id}/metadata"
+# Query metadata is served under the versioned (/v3) query routes -- the
+# non-versioned route 404s on the current gateway. The {backend} segment is
+# required for routing but the read does not depend on which backend is named.
+_HPDS_QUERY_METADATA_PATH = "/picsure/hpds/{backend}/v3/query/{query_id}/metadata"
 
 
 def load_query(
     client: PicSureClient,
     query_id: str,
+    *,
+    backend: str,
 ) -> Query | Clause | ClauseGroup:
     """Load a previously-saved query by ID and rebuild it as a Query.
 
-    Always uses ``/picsure/query/{id}/metadata`` (legacy) — the v3
-    metadata endpoint is currently broken on BDC, so we read via legacy
-    for every deployment.
+    Reads ``/hpds/{backend}/query/{id}/metadata``.  Query metadata is
+    version-agnostic in the query-service (it reads the stored query row,
+    not HPDS), so the non-versioned route is used for every session.
 
     Args:
         client: Authenticated HTTP client.
         query_id: The UUID string of a previous query.
+        backend: ``"auth"`` or ``"open"`` — the HPDS backend segment for
+            the metadata route (does not affect the metadata read itself).
 
     Returns:
         A :class:`Clause` or :class:`ClauseGroup` that can be passed
@@ -213,10 +219,12 @@ def load_query(
         raise PicSureValidationError(
             "A non-empty query ID is required to load a saved query."
         )
-    path = _PICSURE_QUERY_METADATA_PATH.format(query_id=query_id.strip())
+    path = _HPDS_QUERY_METADATA_PATH.format(backend=backend, query_id=query_id.strip())
 
     try:
         response = client.get_json(path)
+    except (TransportConsentDeniedError, TransportConsentLookupError) as exc:
+        raise translate_stage_error(exc, service="saved query", stage="load") from exc
     except TransportNotFoundError as exc:
         raise PicSureValidationError(
             f"No saved query found with ID '{query_id}' (HTTP {exc.status_code})."

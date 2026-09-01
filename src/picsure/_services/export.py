@@ -11,6 +11,7 @@ from picsure._models.clause import Clause
 from picsure._models.clause_group import ClauseGroup
 from picsure._models.query import Query
 from picsure._services._errors import translate_stage_error
+from picsure._services._hpds_paths import query_prefix
 from picsure._services.query_run import build_query_body
 from picsure._transport.client import PicSureClient
 from picsure._transport.errors import TransportError
@@ -18,10 +19,6 @@ from picsure.errors import (
     PicSureConnectionError,
     PicSureQueryError,
 )
-
-_QUERY_SUBMIT_PATH = "/picsure/v3/query"
-_STATUS_PATH_TEMPLATE = "/picsure/v3/query/{query_id}/status"
-_RESULT_PATH_TEMPLATE = "/picsure/v3/query/{query_id}/result"
 
 # Terminal status values returned by PIC-SURE's ``PicSureStatus`` enum.
 # Only AVAILABLE (success) and ERROR (failure) are terminal; every other
@@ -41,20 +38,21 @@ _TOTAL_TIMEOUT_SECONDS = 600.0
 
 def export_pfb(
     client: PicSureClient,
-    resource_uuid: str,
     query: Query | Clause | ClauseGroup,
     path: str | Path,
+    *,
+    backend: str,
 ) -> None:
     """Execute a query and stream the PFB result to disk.
 
-    Uses PIC-SURE's async flow (v3):
+    Uses PIC-SURE's async flow on the authorized v3 routes:
 
-    1. ``POST /picsure/v3/query`` — submit the query, receive a query id.
-    2. ``POST /picsure/v3/query/{id}/status`` — poll with exponential
+    1. ``POST /hpds/auth/v3/query`` — submit the query, receive a query id.
+    2. ``POST /hpds/auth/v3/query/{id}/status`` — poll with exponential
        backoff (1s, 2s, 4s, ..., capped at 60s per poll) until the
        server reports ``AVAILABLE``.  Total elapsed time is bounded at
        10 minutes.
-    3. ``POST /picsure/v3/query/{id}/result`` — stream the Avro-binary
+    3. ``POST /hpds/auth/v3/query/{id}/result`` — stream the Avro-binary
        PFB bytes straight to disk.
 
     The output file is written atomically: bytes land at
@@ -64,10 +62,11 @@ def export_pfb(
 
     Args:
         client: Authenticated HTTP client.
-        resource_uuid: The resource to query.
         query: A Clause or ClauseGroup.
         path: File path to write the PFB data to.  Accepts ``str`` or
             :class:`pathlib.Path`.
+        backend: ``"auth"`` — PFB export is only supported on authorized
+            sessions (the caller rejects ``"open"`` before reaching here).
 
     Raises:
         PicSureValidationError: If the server rejects the request
@@ -83,25 +82,27 @@ def export_pfb(
     target = Path(path)
     part_path = target.with_suffix(target.suffix + ".part")
 
-    body = build_query_body(query, resource_uuid, "DATAFRAME_PFB")
+    base = query_prefix(backend, v3=True)
+    body = build_query_body(query, "DATAFRAME_PFB")
 
     # 1. Submit the query.
-    submit_response = _submit_query(client, body)
+    submit_response = _submit_query(client, base, body)
     query_id = _extract_query_id(submit_response)
 
     # 2. Poll until AVAILABLE (or timeout / error).
-    _poll_until_available(client, query_id, body)
+    _poll_until_available(client, base, query_id, body)
 
     # 3. Stream the result to disk atomically.
-    _download_result(client, query_id, body, target, part_path)
+    _download_result(client, base, query_id, body, target, part_path)
 
 
 def _submit_query(
     client: PicSureClient,
+    base: str,
     body: dict[str, object],
 ) -> dict[str, object]:
     try:
-        return client.post_json(_QUERY_SUBMIT_PATH, body=body)
+        return client.post_json(f"{base}/query", body=body)
     except TransportError as exc:
         raise translate_stage_error(exc, service="PFB", stage="submit") from exc
 
@@ -126,10 +127,11 @@ def _extract_query_id(response: dict[str, object]) -> str:
 
 def _poll_until_available(
     client: PicSureClient,
+    base: str,
     query_id: str,
     body: dict[str, object],
 ) -> None:
-    status_path = _STATUS_PATH_TEMPLATE.format(query_id=query_id)
+    status_path = f"{base}/query/{query_id}/status"
 
     interval = _INITIAL_POLL_INTERVAL_SECONDS
     start = time.monotonic()
@@ -179,12 +181,13 @@ def _extract_status(response: dict[str, object]) -> str:
 
 def _download_result(
     client: PicSureClient,
+    base: str,
     query_id: str,
     body: dict[str, object],
     target: Path,
     part_path: Path,
 ) -> None:
-    result_path = _RESULT_PATH_TEMPLATE.format(query_id=query_id)
+    result_path = f"{base}/query/{query_id}/result"
 
     try:
         with client.post_raw_stream(result_path, body=body) as response:

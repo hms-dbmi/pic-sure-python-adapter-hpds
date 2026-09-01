@@ -6,18 +6,24 @@ import respx
 
 from picsure._models.facet import FacetCategory, FacetSet
 from picsure._services.search import (
+    _CONCEPTS_PATH,
+    _FACETS_PATH,
     _MAX_PAGE_SIZE,
     fetch_facets,
     searchDictionary,
     show_all_facets,
 )
 from picsure._transport.client import PicSureClient
-from picsure.errors import PicSureConnectionError, PicSureQueryError
+from picsure.errors import (
+    PicSureConnectionError,
+    PicSureConsentDeniedError,
+    PicSureQueryError,
+)
 
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
-CONCEPTS_BASE = f"{BASE_URL}/picsure/proxy/dictionary-api/concepts"
-FACETS_URL = f"{BASE_URL}/picsure/proxy/dictionary-api/facets"
+CONCEPTS_BASE = f"{BASE_URL}{_CONCEPTS_PATH}"
+FACETS_URL = f"{BASE_URL}{_FACETS_PATH}"
 
 
 def _make_client() -> PicSureClient:
@@ -29,6 +35,26 @@ def _concepts_url(page_size: int) -> str:
 
 
 class TestSearch:
+    @respx.mock
+    def test_consent_denied_raises_typed_error(self):
+        respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
+            return_value=httpx.Response(
+                403,
+                json={
+                    "errorType": "consent_denied",
+                    "message": "You no longer have consent for this saved result",
+                },
+            )
+        )
+
+        with pytest.raises(PicSureConsentDeniedError) as exc_info:
+            searchDictionary(_make_client(), term="test")
+
+        exc = exc_info.value
+        assert exc.status_code == 403
+        assert exc.error_type == "consent_denied"
+        assert exc.server_message == "You no longer have consent for this saved result"
+
     @respx.mock
     def test_returns_dataframe(self, search_response):
         respx.post(_concepts_url(_MAX_PAGE_SIZE)).mock(
@@ -309,6 +335,26 @@ class TestSearch:
 
 
 class TestFetchFacets:
+    @respx.mock
+    def test_consent_denied_raises_typed_error(self):
+        respx.post(FACETS_URL).mock(
+            return_value=httpx.Response(
+                403,
+                json={
+                    "errorType": "consent_denied",
+                    "message": "You no longer have consent for this saved result",
+                },
+            )
+        )
+
+        with pytest.raises(PicSureConsentDeniedError) as exc_info:
+            fetch_facets(_make_client())
+
+        exc = exc_info.value
+        assert exc.status_code == 403
+        assert exc.error_type == "consent_denied"
+        assert exc.server_message == "You no longer have consent for this saved result"
+
     @respx.mock
     def test_returns_facet_categories(self, facets_response):
         respx.post(FACETS_URL).mock(

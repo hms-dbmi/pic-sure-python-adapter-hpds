@@ -7,6 +7,7 @@ from picsure._models.clause import Clause
 from picsure._models.clause_group import ClauseGroup
 from picsure._models.query import Query
 from picsure._services._errors import translate_stage_error
+from picsure._services._hpds_paths import query_prefix
 from picsure._services.query_run import build_query_body
 from picsure._transport.errors import TransportError
 from picsure.errors import (
@@ -17,9 +18,14 @@ from picsure.errors import (
 if TYPE_CHECKING:
     from picsure._transport.client import PicSureClient
 
-_QUERY_SUBMIT_PATH = "/picsure/v3/query"
-_NAMED_DATASET_COLLECTION_PATH = "/picsure/dataset/named"
-_NAMED_DATASET_ITEM_PATH = "/picsure/dataset/named/{named_dataset_id}"
+# The named-dataset collection lives on the operations service, not HPDS. The
+# gateway routes ``/operations/**`` there and does not strip the prefix, so the
+# client path is ``/picsure/operations/dataset/named``. There is no gateway
+# catch-all; an unrouted path falls through to the SPA and 404s. The mapping is
+# slash-less server-side, and Spring 6 404s a trailing slash -- so the item
+# path must not gain one.
+_NAMED_DATASET_COLLECTION_PATH = "/picsure/operations/dataset/named"
+_NAMED_DATASET_ITEM_PATH = "/picsure/operations/dataset/named/{named_dataset_id}"
 
 # Mirrors the @Pattern on NamedDatasetRequest.name in pic-sure-api-data.
 _NAME_PATTERN = re.compile(r"\A[\w\d \-\\/?+=\[\]\.():\"']+\Z")
@@ -28,11 +34,10 @@ _NAME_MAX_LEN = 255
 
 def save_query_by_name(
     client: PicSureClient,
-    resource_uuid: str,
     query: Query | Clause | ClauseGroup,
     name: str,
     *,
-    use_legacy_query_path: bool,
+    backend: str,
     overwrite: bool = False,
 ) -> str:
     """Submit a query, then save it to the user's profile under ``name``.
@@ -48,7 +53,7 @@ def save_query_by_name(
     Open-access deployments are not supported: the ``/dataset/named/``
     endpoint requires an authenticated principal.
     """
-    if use_legacy_query_path:
+    if backend == "open":
         raise PicSureValidationError(
             "saveQueryByName is not supported on open-access platforms. "
             "Connect with an authorized platform (e.g. Platform.BDC_AUTHORIZED) "
@@ -63,8 +68,9 @@ def save_query_by_name(
             "Pass overwrite=True to repoint it at the new query."
         )
 
-    body = build_query_body(query, resource_uuid, "COUNT")
-    query_id = _submit_and_extract_id(client, body)
+    body = build_query_body(query, "COUNT")
+    submit_path = query_prefix(backend, v3=True) + "/query"
+    query_id = _submit_and_extract_id(client, submit_path, body)
 
     if existing is None:
         _create_named_dataset(client, query_id=query_id, name=name)
@@ -171,9 +177,11 @@ def _validate_name(name: str) -> None:
         )
 
 
-def _submit_and_extract_id(client: PicSureClient, body: dict[str, object]) -> str:
+def _submit_and_extract_id(
+    client: PicSureClient, submit_path: str, body: dict[str, object]
+) -> str:
     try:
-        response = client.post_json(_QUERY_SUBMIT_PATH, body=body)
+        response = client.post_json(submit_path, body=body)
     except TransportError as exc:
         raise translate_stage_error(
             exc, service="saveQueryByName", stage="submit"

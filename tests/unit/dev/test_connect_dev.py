@@ -87,7 +87,10 @@ def test_dev_mode_records_connect_event():
     assert len(connect_rows) == 1
     assert connect_rows.iloc[0]["name"] == "connect"
     md = connect_rows.iloc[0]["metadata"]
-    assert md["resources"] == 1
+    # The resource registry was removed, so the connect event no longer
+    # carries a "resources" count; it still records consents + auth.
+    assert "resources" not in md
+    assert md["consents"] == 0
     assert md["requires_auth"] is True
 
 

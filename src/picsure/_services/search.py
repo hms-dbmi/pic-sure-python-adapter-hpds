@@ -6,9 +6,11 @@ import pandas as pd
 
 from picsure._models.dictionary import DictionaryEntry
 from picsure._models.facet import FacetCategory, FacetSet
-from picsure._services._errors import rate_limit_message
+from picsure._services._errors import rate_limit_message, translate_stage_error
 from picsure._transport.client import PicSureClient
 from picsure._transport.errors import (
+    TransportConsentDeniedError,
+    TransportConsentLookupError,
     TransportError,
     TransportNotFoundError,
     TransportRateLimitError,
@@ -20,8 +22,8 @@ from picsure.errors import (
     PicSureValidationError,
 )
 
-_CONCEPTS_PATH = "/picsure/proxy/dictionary-api/concepts"
-_FACETS_PATH = "/picsure/proxy/dictionary-api/facets"
+_CONCEPTS_PATH = "/picsure/dictionary/concepts"
+_FACETS_PATH = "/picsure/dictionary/facets"
 
 # Page size for the "one big page" dictionary search.  Set to Java
 # ``Integer.MAX_VALUE`` (the backend's int width) so a single request
@@ -109,6 +111,8 @@ def searchDictionary(  # noqa: N802
 
     try:
         data = client.post_json(url, body=body)
+    except (TransportConsentDeniedError, TransportConsentLookupError) as exc:
+        raise translate_stage_error(exc, service="dictionary", stage="search") from exc
     except (TransportValidationError, TransportNotFoundError) as exc:
         raise _translate_dictionary_4xx(exc, "complete search") from exc
     except TransportRateLimitError as exc:
@@ -180,6 +184,10 @@ def fetch_facets(
 
     try:
         data = client.post_json(_FACETS_PATH, body=body)
+    except (TransportConsentDeniedError, TransportConsentLookupError) as exc:
+        raise translate_stage_error(
+            exc, service="dictionary", stage="fetch facets"
+        ) from exc
     except (TransportValidationError, TransportNotFoundError) as exc:
         raise _translate_dictionary_4xx(exc, "fetch facets") from exc
     except TransportRateLimitError as exc:

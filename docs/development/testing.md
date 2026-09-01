@@ -52,7 +52,7 @@ import respx
 from picsure._services.query_run import run_query
 
 BASE_URL = "https://test.example.com"
-QUERY_URL = f"{BASE_URL}/picsure/v3/query/sync"
+QUERY_URL = f"{BASE_URL}/hpds/auth/v3/query/sync"
 
 
 class TestRunQueryCount:
@@ -62,7 +62,7 @@ class TestRunQueryCount:
             return_value=httpx.Response(200, content=b"1234")
         )
         client = _make_client()
-        result = run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+        result = run_query(client, _simple_clause(), "count", backend="auth")
         assert result.value == 1234
 ```
 

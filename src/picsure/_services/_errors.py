@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from picsure._transport.errors import (
     TransportAuthenticationError,
+    TransportConsentDeniedError,
+    TransportConsentLookupError,
     TransportError,
     TransportNotFoundError,
     TransportRateLimitError,
@@ -10,6 +12,8 @@ from picsure._transport.errors import (
 from picsure.errors import (
     PicSureAuthError,
     PicSureConnectionError,
+    PicSureConsentDeniedError,
+    PicSureConsentLookupError,
     PicSureError,
     PicSureQueryError,
     PicSureValidationError,
@@ -46,6 +50,25 @@ def translate_stage_error(
     ``"{service} {stage}"`` (e.g. ``"PFB submit"``).
     """
     label = f"{service} {stage}"
+    if isinstance(exc, TransportConsentDeniedError):
+        return PicSureConsentDeniedError(
+            exc.status_code,
+            exc.body,
+            exc.error_type,
+            exc.server_message,
+            f"Consent was denied for {label} (HTTP {exc.status_code}), but your "
+            f"session is still valid: {exc.server_message}",
+        )
+    if isinstance(exc, TransportConsentLookupError):
+        return PicSureConsentLookupError(
+            exc.status_code,
+            exc.body,
+            exc.error_type,
+            exc.server_message,
+            f"The server could not resolve consent permissions for {label} "
+            f"(HTTP {exc.status_code}). This is a server-side "
+            f"permission-resolution problem: {exc.server_message}",
+        )
     if isinstance(exc, TransportValidationError):
         return PicSureValidationError(
             f"Server rejected the {label} request "

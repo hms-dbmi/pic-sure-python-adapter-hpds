@@ -23,12 +23,14 @@ typical session flows:
 3. **Run.** `session.runQuery(query, type=...)` calls the query-run
    service, which splits the `Query` (or bare `Clause` / `ClauseGroup`)
    into a phenotypic filter tree and the output `select` — the filter's own
-   variables folded together with any `includeConcepts` — serializes to v3
-   wire format, POSTs to `/picsure/v3/query/sync`, and parses the response
+   variables folded together with any `includeConcepts` — serializes to the
+   query wire format, POSTs to `/hpds/auth/v3/query/sync` (or
+   `/hpds/open/query/sync` on open sessions), and parses the response
    into a `CountResult`, a `dict[str, CountResult]`, or a
-   `DataFrame`.
+   `DataFrame`. The gateway selects the HPDS backend by path (`auth` vs
+   `open`), so no `resourceUUID` is sent in the body.
 4. **Export.** `session.exportAsPFB(...)` uses the async flow
-   (`/picsure/v3/query` → poll status → fetch result), streaming the
+   (`/hpds/auth/v3/query` → poll status → fetch result), streaming the
    bytes to disk; `session.exportCSV` / `exportTSV` write a DataFrame
    in memory to disk.
 
@@ -42,14 +44,14 @@ picsure._models.session.Session.runQuery
   │  (decorated with @timed for dev-mode events)
   ▼
 picsure._services.query_run.run_query
-  │  build_query_body(query, resource_uuid, query_type)
+  │  build_query_body(query, query_type)
   │      ├─ Clause.to_query_json()  /  ClauseGroup.to_query_json()
-  │      └─ wraps in v3 envelope { query: { ... }, resourceUUID }
+  │      └─ wraps in envelope { query: { ... } }  (no resourceUUID)
   │
-  │  client.post_json(_PICSURE_QUERY_SYNC_PATH, body)
+  │  client.post_raw(query_prefix(backend, v3=...) + "/query/sync", body)
   ▼
 picsure._transport.client.PicSureClient._request
-  │  httpx.Client.request("POST", "/picsure/v3/query/sync", ...)
+  │  httpx.Client.request("POST", "/hpds/auth/v3/query/sync", ...)
   │  4xx → _raise_for_status → TransportAuthenticationError /
   │        TransportValidationError / TransportNotFoundError /
   │        TransportRateLimitError
@@ -87,7 +89,7 @@ src/picsure/
 | Module             | What it owns                                                                 |
 |--------------------|------------------------------------------------------------------------------|
 | `session.py`       | `Session` class. Holds the HTTP client, resource list, consents, dictionary size, and the dev-mode config. Public methods (`searchDictionary`, `runQuery`, `runQueryByID`, `loadQueryByID`, `saveQueryByName`, `exportAsPFB`, `exportCSV`, `exportTSV`, `setResourceID`, `setResourceIDByName`, `getResourceID`, `facets`, `showAllFacets`, …) delegate to `_services/*`. |
-| `resource.py`      | `Resource` dataclass (`uuid`, `name`, `description`) with a `from_dict` constructor for `/picsure/info/resources` payloads. |
+| `resource.py`      | `Resource` dataclass (`uuid`, `name`, `description`) with a `from_dict` constructor. Retained for the `getResourceID` / `setResourceIDByName` surface; the resource registry it used to be populated from has been removed. |
 | `clause.py`        | `Clause` dataclass + `PhenotypicFilterType` enum (`FILTER`, `ANYRECORD`, `REQUIRE`). Each `Clause.to_query_json()` emits the v3 `PhenotypicClause` shape. |
 | `clause_group.py`  | `ClauseGroup` dataclass + `GroupOperator` enum (`AND`, `OR`). Recursively serializes to a v3 `PhenotypicSubquery`. |
 | `query.py`         | `Query` dataclass: a `phenotypicFilter` (`Clause | ClauseGroup | None`) plus `includeConcepts` (output concept paths). `runQuery` also accepts a bare `Clause` / `ClauseGroup` (filter; its variables are returned as output columns). `concept_paths()` on each collects the filter's variables to fold into `select`. |
@@ -100,15 +102,16 @@ src/picsure/
 
 | Module           | What it owns                                                                 |
 |------------------|------------------------------------------------------------------------------|
-| `connect.py`     | `connect(platform, token, …)`. Resolves the platform, fetches resources and (on authorized deployments) consents, and constructs the `Session`. Reads the display email and expiry straight from the JWT — no `/psama/user/me` round trip. Also handles the dev-mode toggle and the success/expiration banner. |
+| `connect.py`     | `connect(platform, token, …)`. Resolves the platform, fetches consents on consent-gated deployments, and constructs the `Session` with its HPDS `backend` (`auth`/`open`). There is no resource-registry round trip — the gateway routes by path. Reads the display email and expiry straight from the JWT — no `/psama/user/me` round trip. Also handles the dev-mode toggle and the success/expiration banner. |
 | `search.py`      | `searchDictionary`, `fetch_facets`, `show_all_facets`, plus the smaller helpers that build dictionary-api request bodies, dedupe entries, and turn results into DataFrames. Dictionary searches use a single max-int page (`_MAX_PAGE_SIZE`) so one request returns every concept. |
 | `query_build.py` | `buildClause`, `buildClauseGroup`, and `buildQuery` — the public constructors for `Clause`, `ClauseGroup`, and `Query` with input validation (rejects mutually-exclusive arguments before they reach the wire). |
 | `query_edit.py`  | `removeSubQuery(query, target)` and `replaceClause(query, target, replacement)`. Pure local tree edits — no network calls. Matching is structural (frozen-dataclass equality). Removals that empty a `ClauseGroup` prune the parent; removing the whole tree raises `PicSureValidationError`. |
-| `query_run.py`   | `run_query(client, resource_uuid, query, type)`. Serializes via `build_query_body`, posts to the v3 sync endpoint (or the legacy path on open-only deployments), and parses each response shape. Also `parse_count_string` for the obfuscated-count regexes. |
-| `query_load.py`  | `load_query(client, query_id)`. Hits the saved-query endpoint and reconstructs a `Clause` / `ClauseGroup` from the response so it can be re-run via `runQueryByID`. |
-| `query_save.py`  | `save_query_by_name(client, resource_uuid, query, name, *, use_legacy_query_path, overwrite)`. Submits the query via `POST /picsure/v3/query`, then `POST`s a new record to `/dataset/named/` (or `PUT`-updates an existing one when `overwrite=True`). Validates `name` against the backend `NamedDataset` pattern client-side. Refused on open-access deployments. |
+| `query_run.py`   | `run_query(client, query, type, *, backend)`. Serializes via `build_query_body`, posts to `/hpds/{backend}[/v3]/query/sync` (`auth` uses v3, `open` uses v1), and parses each response shape. Also `parse_count_string` for the obfuscated-count regexes. HPDS route helpers live in `_hpds_paths.py`. |
+| `query_load.py`  | `load_query(client, query_id, *, backend)`. Hits `/hpds/{backend}/query/{id}/metadata` (version-agnostic) and reconstructs a `Clause` / `ClauseGroup` from the response so it can be re-run via `runQueryByID`. |
+| `query_save.py`  | `save_query_by_name(client, query, name, *, backend, overwrite)`. Submits the query via `POST /hpds/auth/v3/query`, then `POST`s a new record to `/dataset/named/` (or `PUT`-updates an existing one when `overwrite=True`). Validates `name` against the backend `NamedDataset` pattern client-side. Refused on open-access (`open` backend) deployments. |
+| `_hpds_paths.py` | `query_prefix(backend, *, v3)` and `search_values_path(backend)` — the single place the `/hpds/{auth,open}[/v3]/…` route shape (and the ignored search `{resourceId}` placeholder) is built. |
 | `export.py`      | `export_pfb` — the async PFB flow (submit → poll with exponential backoff capped at 60s, 10-minute total deadline → stream result to a `.part` file → atomic rename). Plus `export_csv` and `export_tsv` for in-memory DataFrames. |
-| `consents.py`    | `fetch_consents(client)`. Reads `/psama/user/me/queryTemplate/`, parses the doubly-encoded JSON, and pulls the `\\_consents\\` study-consent list used by dictionary-api requests on authorized deployments. |
+| `consents.py`    | `fetch_consents(client)`. Reads `/psama/user/me/consents` and pulls the `\\_consents\\` study-consent list used by dictionary-api requests on authorized deployments. |
 
 ### `_transport/` — HTTP
 
@@ -210,19 +213,23 @@ small:
   knows the base URL and token).
 - `_user_email`, `_token_expiration` — surfaced in the connect
   banner; `_user_email == "anonymous"` on open-access deployments.
-- `_resources` — `list[Resource]` from `/picsure/info/resources`.
-- `_resource_uuid` — the currently active resource. Defaulted from
-  the `Platform` member at connect time, or required to be set
-  manually for custom URLs.
+- `_resources` — `list[Resource]`, empty now that the resource
+  registry is gone (retained for the `getResourceID` /
+  `setResourceIDByName` surface).
+- `_resource_uuid` — a UUID stored via `setResourceID` /
+  `connect(resource_uuid=…)`. Retained for backwards compatibility; it
+  no longer selects a backend or appears in query bodies.
 - `_consents` — `list[str]` of study-consent identifiers. Empty on
   open-access; required in dictionary-api request bodies on
   authorized deployments.
 - `_dev_config` — opt-in `DevConfig` (off by default).
-- `_use_legacy_query_path` — set during connect when the platform is
-  open-only and must use `/picsure/query/sync` (BDC's API gateway
-  rejects open traffic on the v3 endpoint with HTTP 401).
+- `_backend` — `"auth"` or `"open"`, set during connect. Selects the
+  HPDS backend by URL path (`/hpds/auth` vs `/hpds/open`) and, with it,
+  the v3-vs-v1 query lifecycle. Open-only deployments use `/hpds/open`
+  (v1) because BDC's gateway rejects open traffic on the v3 endpoint.
 
-Resources are resolved by UUID by default. Two name-based helpers
+The resource-selection methods are retained for source compatibility
+but no longer drive routing. Two name-based helpers
 exist for ergonomics: `setResourceIDByName(name)` looks up by the
 backend's `name` field on `Resource`. Platform labels like
 `BDC Authorized` and `BDC Open` are display-only (printed on connect,

@@ -9,22 +9,13 @@ from uuid import uuid4
 
 from picsure._dev.config import DevConfig
 from picsure._dev.events import Event
-from picsure._models.resource import Resource
 from picsure._models.session import Session
 from picsure._services.consents import fetch_consents
 from picsure._transport.client import PicSureClient
-from picsure._transport.errors import (
-    TransportAuthenticationError,
-    TransportError,
-)
 from picsure._transport.platforms import Platform, resolve_platform
 from picsure.errors import (
-    PicSureAuthError,
-    PicSureConnectionError,
     PicSureValidationError,
 )
-
-_PICSURE_RESOURCES_PATH = "/picsure/info/resources"
 
 _ANONYMOUS_EMAIL = "anonymous"
 _ANONYMOUS_EXPIRATION = "N/A"
@@ -42,6 +33,7 @@ def connect(
     supports_genomic: bool | None = None,
     dev_mode: bool | None = None,
     client_type: str = "PYTHON_ADAPTER",
+    verify: bool | str | None = None,
 ) -> Session:
     """Connect to a PIC-SURE instance and return a Session.
 
@@ -52,10 +44,12 @@ def connect(
         token: Your PIC-SURE API token.  Leave empty for open-access
             platforms (e.g. ``Platform.BDC_OPEN``) that don't require
             authentication.
-        resource_uuid: Optional resource UUID to use. Overrides the
-            default UUID from the Platform enum. Required for custom
-            URLs — if omitted, call ``session.setResourceID(uuid)``
-            after reviewing ``session.getResourceID()``.
+        resource_uuid: Deprecated and no longer used for routing. The
+            gateway now selects the HPDS backend by URL path
+            (``/hpds/auth`` vs ``/hpds/open``), derived from the
+            platform, so a resource UUID no longer chooses a backend.
+            Accepted for backwards compatibility and stored on the
+            session, but it does not affect which data is queried.
         include_consents: Override the platform's consent policy.  For
             known Platform members this defaults to the member's own
             flag; for custom URLs it defaults to ``False``.  Pass
@@ -78,6 +72,11 @@ def connect(
             log, sent as the ``X-Client-Type`` header on every request.
             Defaults to ``"PYTHON_ADAPTER"``; the R adapter passes
             ``"R_ADAPTER"``.
+        verify: TLS certificate verification, forwarded to the underlying
+            HTTP client. ``None`` (default) verifies, unless the
+            ``PICSURE_SSL_VERIFY`` env var overrides it. Pass ``False`` to
+            skip verification (self-signed / local-dev deployments only) or
+            a path to a CA bundle to trust a private CA.
 
     Returns:
         A Session you can use to search, build queries, and export data.
@@ -138,6 +137,7 @@ def connect(
         dev_config=dev_config,
         session_id=session_id,
         client_type=client_type,
+        verify=verify,
     )
 
     if info.requires_auth:
@@ -150,26 +150,16 @@ def connect(
         email = _ANONYMOUS_EMAIL
         expiration = _ANONYMOUS_EXPIRATION
 
-    resources = _fetch_resources(client, display_name, info.url, info.requires_auth)
+    # The resource registry (/info/resources) is gone: the gateway routes
+    # by URL path, not by a resource UUID discovered from a registry, so
+    # there is no discovery round-trip on connect.
     consents = fetch_consents(client) if info.include_consents else []
-
-    # Explicit resource_uuid wins, then Platform default, then None.
-    effective_uuid = resource_uuid if resource_uuid is not None else info.resource_uuid
 
     if info.requires_auth:
         print(f"You're successfully connected to {display_name} as user {email}!")
         print(f"Your token expires on {expiration}.")
     else:
         print(f"You're successfully connected to {display_name} (open access).")
-
-    if effective_uuid is None and resources:
-        print("\nAvailable resources:")
-        for r in resources:
-            print(f"  {r.uuid}  {r.name}")
-        print(
-            "\nNo resource selected. Use session.setResourceID(uuid) "
-            "to choose a resource before searching or querying."
-        )
 
     if dev_config.enabled:
         dev_config.emit(
@@ -184,29 +174,25 @@ def connect(
                 retry=0,
                 error=None,
                 metadata={
-                    "resources": len(resources),
                     "consents": len(consents),
                     "requires_auth": info.requires_auth,
                 },
             )
         )
 
-    # BDC's API gateway gates the v3 sync query endpoint as
-    # authorized-only.  Open-only deployments (no auth, no consents)
-    # must hit the legacy /picsure/query/sync path or every runQuery
-    # call will 401.  Authorized and consent-gated deployments stay on
-    # v3 since that's where their backend exposes the query API.
-    use_legacy_query_path = not info.requires_auth and not info.include_consents
+    # HPDS backend is chosen by URL path, not a resource UUID: open-access
+    # deployments (no auth, no consents) route to /hpds/open; authorized and
+    # consent-gated deployments route to /hpds/auth. Both use v3 queries.
+    backend = "open" if not info.requires_auth and not info.include_consents else "auth"
 
     return Session(
         client=client,
         user_email=email,
         token_expiration=expiration,
-        resources=resources,
-        resource_uuid=effective_uuid,
+        resource_uuid=resource_uuid,
         consents=consents,
         dev_config=dev_config,
-        use_legacy_query_path=use_legacy_query_path,
+        backend=backend,
         supports_genomic=info.supports_genomic,
         session_id=session_id,
     )
@@ -290,43 +276,3 @@ def _install_default_handler() -> None:
     handler.setFormatter(logging.Formatter("%(name)s %(message)s"))
     logger.addHandler(handler)
     logger.setLevel(logging.DEBUG)
-
-
-def _fetch_resources(
-    client: PicSureClient, display_name: str, base_url: str, requires_auth: bool
-) -> list[Resource]:
-    try:
-        data = client.get_json(_PICSURE_RESOURCES_PATH)
-    except TransportAuthenticationError as exc:
-        # Open-access deployments may gate /info/resources behind auth
-        # even though the dictionary-api is public.  Silently degrade
-        # to no resources so search/facets still work.
-        if not requires_auth:
-            return []
-        # On auth deployments this is the first authenticated call, so
-        # it owns the friendly "your token is bad" message that the
-        # /psama/user/me handshake used to surface.
-        raise PicSureAuthError(
-            "Your token is invalid or expired. Generate a new one at "
-            f"{base_url} and pass it to picsure.connect()."
-        ) from exc
-    except TransportError as exc:
-        raise PicSureConnectionError(
-            f"Connected to {display_name} but could not fetch resources. "
-            "The server may be temporarily unavailable."
-        ) from exc
-
-    if isinstance(data, dict):
-        return [
-            Resource(uuid=uuid, name=str(name), description="")
-            for uuid, name in data.items()
-        ]
-
-    if not isinstance(data, list):
-        raise PicSureConnectionError(
-            f"Connected to {display_name} but received an unexpected "
-            "resources response from the server. The server may be "
-            "misconfigured or temporarily unavailable."
-        )
-
-    return [Resource.from_dict(r) for r in data if isinstance(r, dict)]

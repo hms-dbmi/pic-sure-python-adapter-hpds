@@ -12,9 +12,13 @@ from picsure._models.count_result import CountResult
 from picsure._models.genomic_filter import GenomicFilter
 from picsure._models.query import Query
 from picsure._models.query_type import QueryType
-from picsure._services._errors import rate_limit_message
+from picsure._services._errors import rate_limit_message, translate_stage_error
+from picsure._services._hpds_paths import query_prefix
 from picsure._transport.client import PicSureClient
 from picsure._transport.errors import (
+    TransportAuthenticationError,
+    TransportConsentDeniedError,
+    TransportConsentLookupError,
     TransportError,
     TransportNotFoundError,
     TransportRateLimitError,
@@ -26,12 +30,6 @@ from picsure.errors import (
     PicSureQueryError,
     PicSureValidationError,
 )
-
-_PICSURE_QUERY_SYNC_PATH = "/picsure/v3/query/sync"
-# BDC's API gateway gates the v3 sync endpoint as authorized-only and
-# rejects open-access requests with 401 even when "request-source: Open"
-# is set.  Open-only deployments must use the legacy path instead.
-_PICSURE_QUERY_SYNC_PATH_LEGACY = "/picsure/query/sync"
 
 _VALID_QUERY_TYPES: dict[str, str] = {
     "count": "COUNT",
@@ -64,27 +62,22 @@ _COUNT_SUPPRESSED = re.compile(r"^<\s*(\d+)$")
 
 def run_query(
     client: PicSureClient,
-    resource_uuid: str,
     query: Query | Clause | ClauseGroup,
     query_type: QueryType | str,
     *,
-    use_legacy_query_path: bool = False,
+    backend: str,
 ) -> CountResult | dict[str, CountResult] | pd.DataFrame | list[str]:
     """Execute a query against PIC-SURE and return the result.
 
     Args:
         client: Authenticated HTTP client.
-        resource_uuid: The resource to query.
         query: A Query, Clause, or ClauseGroup built with
             buildQuery/buildClause/buildClauseGroup.
         query_type: A :class:`QueryType` member (e.g. ``QueryType.COUNT``)
             or one of the strings ``"count"``, ``"participant"``,
             ``"timestamp"``, ``"cross_count"``.
-        use_legacy_query_path: When ``True``, send the request to the
-            legacy ``/picsure/query/sync`` endpoint instead of the v3
-            path.  Open-only deployments (no auth, no consents) must
-            use the legacy path because the BDC API gateway rejects
-            open-access traffic on the v3 endpoint with HTTP 401.
+        backend: ``"auth"`` or ``"open"`` selects the HPDS backend by
+            URL path. Both backends use their versioned v3 query route.
 
     Returns:
         - ``count``        → :class:`CountResult`
@@ -107,15 +100,15 @@ def run_query(
         PicSureQueryError: If the server response cannot be parsed.
     """
     resolved_type = _resolve_query_type(query_type)
-    body = build_query_body(query, resource_uuid, resolved_type)
-    path = (
-        _PICSURE_QUERY_SYNC_PATH_LEGACY
-        if use_legacy_query_path
-        else _PICSURE_QUERY_SYNC_PATH
-    )
+    body = build_query_body(query, resolved_type)
+    path = query_prefix(backend, v3=True) + "/query/sync"
 
     try:
         raw = client.post_raw(path, body=body)
+    except (TransportConsentDeniedError, TransportConsentLookupError) as exc:
+        raise translate_stage_error(exc, service="query", stage="execute") from exc
+    except TransportAuthenticationError as exc:
+        raise translate_stage_error(exc, service="query", stage="execute") from exc
     except TransportValidationError as exc:
         raise PicSureValidationError(
             f"Server rejected the query (HTTP {exc.status_code}): {exc.body[:200]}"
@@ -155,16 +148,19 @@ def run_query(
 
 def build_query_body(
     query: Query | Clause | ClauseGroup,
-    resource_uuid: str,
     expected_result_type: str,
 ) -> dict[str, object]:
-    """Assemble the v3 ``/picsure/v3/query/sync`` request body.
+    """Assemble the ``/hpds/{auth,open}[/v3]/query`` request body.
 
     Normalizes the query into a phenotypic filter tree and a list of
     ``includeConcepts``; the tree becomes ``phenotypicClause`` and the
     concept paths become the top-level ``select`` array.
 
     Notes:
+        No ``resourceUUID`` is sent: the gateway selects the HPDS backend
+        by URL path (``/hpds/auth`` vs ``/hpds/open``), not by a
+        resource-selection UUID in the body.
+
         ``authorizationFilters`` is intentionally omitted from the body.
         PSAMA populates it server-side from the user's token; sending a
         client-asserted list (especially with a long-term token) is
@@ -181,7 +177,6 @@ def build_query_body(
             "picsureId": None,
             "id": None,
         },
-        "resourceUUID": resource_uuid,
     }
 
 
