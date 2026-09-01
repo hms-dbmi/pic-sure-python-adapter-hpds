@@ -28,6 +28,8 @@ from picsure._transport.platforms import Platform
 from picsure.errors import (
     PicSureAuthError,
     PicSureConnectionError,
+    PicSureConsentDeniedError,
+    PicSureConsentLookupError,
     PicSureError,
     PicSureQueryError,
     PicSureValidationError,
@@ -66,6 +68,8 @@ __all__ = [
     "PhenotypicFilterType",
     "PicSureAuthError",
     "PicSureConnectionError",
+    "PicSureConsentDeniedError",
+    "PicSureConsentLookupError",
     "PicSureError",
     "PicSureQueryError",
     "PicSureValidationError",

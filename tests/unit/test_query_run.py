@@ -13,7 +13,10 @@ from picsure._services._hpds_paths import query_prefix
 from picsure._services.query_run import _resolve_query_type, run_query
 from picsure._transport.client import PicSureClient
 from picsure.errors import (
+    PicSureAuthError,
     PicSureConnectionError,
+    PicSureConsentDeniedError,
+    PicSureConsentLookupError,
     PicSureQueryError,
     PicSureValidationError,
 )
@@ -574,6 +577,56 @@ class TestRunQueryValidation:
 
 
 class TestRunQueryErrors:
+    @respx.mock
+    def test_consent_denied_raises_typed_error(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(
+                403,
+                json={
+                    "errorType": "consent_denied",
+                    "message": "You no longer have consent for this saved result",
+                },
+            )
+        )
+
+        with pytest.raises(PicSureConsentDeniedError) as exc_info:
+            run_query(_make_client(), _simple_clause(), "count", backend="auth")
+
+        exc = exc_info.value
+        assert exc.status_code == 403
+        assert exc.error_type == "consent_denied"
+        assert exc.server_message == "You no longer have consent for this saved result"
+
+    @respx.mock
+    def test_variant_consent_lookup_failure_is_not_unsupported(self):
+        route = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(
+                502,
+                json={
+                    "errorType": "consent_lookup_failed",
+                    "message": "Unable to resolve caller consents",
+                },
+            )
+        )
+
+        with pytest.raises(PicSureConsentLookupError) as exc_info:
+            run_query(_make_client(), _simple_clause(), "variant_count", backend="auth")
+
+        exc = exc_info.value
+        assert exc.status_code == 502
+        assert exc.error_type == "consent_lookup_failed"
+        assert exc.server_message == "Unable to resolve caller consents"
+        assert route.call_count == 1
+
+    @respx.mock
+    def test_401_raises_auth_error(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(401, text="Unauthorized")
+        )
+
+        with pytest.raises(PicSureAuthError):
+            run_query(_make_client(), _simple_clause(), "count", backend="auth")
+
     @respx.mock
     def test_server_error_raises_connection_error(self):
         respx.post(QUERY_URL).mock(

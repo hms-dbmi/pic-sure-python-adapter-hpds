@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import time
 from collections.abc import Iterator
@@ -14,6 +15,8 @@ from picsure._dev.redaction import body_is_sensitive
 from picsure._transport.errors import (
     TransportAuthenticationError,
     TransportConnectionError,
+    TransportConsentDeniedError,
+    TransportConsentLookupError,
     TransportError,
     TransportNotFoundError,
     TransportRateLimitError,
@@ -282,6 +285,9 @@ class PicSureClient:
                 if 400 <= status < 500:
                     _raise_for_status(status, body_text, response)
                 # POST /stream is non-idempotent; do not retry on 5xx.
+                structured_error = _structured_transport_error(status, body_text)
+                if structured_error is not None:
+                    raise structured_error
                 raise TransportServerError(status, body_text)
 
             # Happy path: hand the live response to the caller.  A transport
@@ -337,6 +343,12 @@ class PicSureClient:
                     raise
 
             if status >= 500:
+                structured_error = _structured_transport_error(status, response.text)
+                if structured_error is not None:
+                    self._emit_error(
+                        method, path, attempt, start, type(structured_error).__name__
+                    )
+                    raise _mark_emitted(structured_error)
                 # POST is non-idempotent: a 5xx after the request reached
                 # the server may have partially executed.  Only retry GETs.
                 if method == "GET" and attempt < _MAX_RETRIES:
@@ -433,6 +445,9 @@ def _raise_for_status(status: int, body: str, response: httpx.Response) -> None:
     responsible for handling 5xx themselves (the retry policy differs
     between GET and POST).
     """
+    structured_error = _structured_transport_error(status, body)
+    if structured_error is not None:
+        raise structured_error
     if status in (401, 403):
         raise TransportAuthenticationError(status, body)
     if status == 404:
@@ -444,6 +459,27 @@ def _raise_for_status(status: int, body: str, response: httpx.Response) -> None:
     if 400 <= status < 500:
         # 400, 422, and any other 4xx fall into the validation bucket.
         raise TransportValidationError(status, body)
+
+
+def _structured_transport_error(
+    status: int, body: str
+) -> TransportConsentDeniedError | TransportConsentLookupError | None:
+    """Return the typed consent error encoded in an HTTP error body, if any."""
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    error_type = payload.get("errorType")
+    server_message = payload.get("message")
+    if not isinstance(error_type, str) or not isinstance(server_message, str):
+        return None
+    if error_type == "consent_denied":
+        return TransportConsentDeniedError(status, body, error_type, server_message)
+    if error_type == "consent_lookup_failed":
+        return TransportConsentLookupError(status, body, error_type, server_message)
+    return None
 
 
 def _parse_retry_after(response: httpx.Response) -> int | None:

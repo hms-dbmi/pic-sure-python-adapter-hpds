@@ -12,10 +12,13 @@ from picsure._models.count_result import CountResult
 from picsure._models.genomic_filter import GenomicFilter
 from picsure._models.query import Query
 from picsure._models.query_type import QueryType
-from picsure._services._errors import rate_limit_message
+from picsure._services._errors import rate_limit_message, translate_stage_error
 from picsure._services._hpds_paths import query_prefix
 from picsure._transport.client import PicSureClient
 from picsure._transport.errors import (
+    TransportAuthenticationError,
+    TransportConsentDeniedError,
+    TransportConsentLookupError,
     TransportError,
     TransportNotFoundError,
     TransportRateLimitError,
@@ -102,6 +105,10 @@ def run_query(
 
     try:
         raw = client.post_raw(path, body=body)
+    except (TransportConsentDeniedError, TransportConsentLookupError) as exc:
+        raise translate_stage_error(exc, service="query", stage="execute") from exc
+    except TransportAuthenticationError as exc:
+        raise translate_stage_error(exc, service="query", stage="execute") from exc
     except TransportValidationError as exc:
         raise PicSureValidationError(
             f"Server rejected the query (HTTP {exc.status_code}): {exc.body[:200]}"

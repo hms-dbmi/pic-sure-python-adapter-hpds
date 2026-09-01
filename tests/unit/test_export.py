@@ -12,6 +12,7 @@ from picsure._services.export import export_csv, export_pfb, export_tsv
 from picsure._transport.client import PicSureClient
 from picsure.errors import (
     PicSureConnectionError,
+    PicSureConsentDeniedError,
     PicSureQueryError,
     PicSureValidationError,
 )
@@ -219,6 +220,31 @@ class TestExportPFBTimeout:
 
 
 class TestExportPFB4xx:
+    @respx.mock
+    def test_result_consent_denied_raises_typed_error_without_output(self, tmp_path):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        respx.post(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+        respx.post(RESULT_URL).mock(
+            return_value=httpx.Response(
+                403,
+                json={
+                    "errorType": "consent_denied",
+                    "message": "You no longer have consent for this saved result",
+                },
+            )
+        )
+
+        output = tmp_path / "out.pfb"
+        with pytest.raises(PicSureConsentDeniedError) as exc_info:
+            export_pfb(_make_client(), _simple_clause(), output, backend="auth")
+
+        exc = exc_info.value
+        assert exc.status_code == 403
+        assert exc.error_type == "consent_denied"
+        assert exc.server_message == "You no longer have consent for this saved result"
+        assert not output.exists()
+        assert not (tmp_path / "out.pfb.part").exists()
+
     @respx.mock
     def test_submit_400_raises_validation_error(self, tmp_path):
         respx.post(SUBMIT_URL).mock(

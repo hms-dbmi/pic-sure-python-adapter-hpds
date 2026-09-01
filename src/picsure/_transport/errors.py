@@ -23,6 +23,31 @@ class TransportServerError(TransportError):
         super().__init__(f"HTTP {status_code}: {body[:200]}")
 
 
+class _TransportStructuredError(TransportError):
+    """Base class for server responses with a documented error payload."""
+
+    def __init__(
+        self,
+        status_code: int,
+        body: str,
+        error_type: str,
+        server_message: str,
+    ) -> None:
+        self.status_code = status_code
+        self.body = body
+        self.error_type = error_type
+        self.server_message = server_message
+        super().__init__(f"HTTP {status_code} {error_type}: {server_message}")
+
+
+class TransportConsentDeniedError(_TransportStructuredError):
+    """The request was denied because the caller no longer has consent."""
+
+
+class TransportConsentLookupError(_TransportStructuredError):
+    """The server could not resolve the caller's consent permissions."""
+
+
 class TransportConnectionError(TransportError):
     """Network-level failure: DNS, timeout, connection refused."""
 
