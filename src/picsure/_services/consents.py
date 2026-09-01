@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+from picsure._services._errors import translate_stage_error
 from picsure._transport.client import PicSureClient
-from picsure._transport.errors import TransportError
+from picsure._transport.errors import (
+    TransportConsentDeniedError,
+    TransportConsentLookupError,
+    TransportError,
+)
 from picsure.errors import PicSureConnectionError
 
 _CONSENTS_PATH = "/psama/user/me/consents"
@@ -32,6 +37,10 @@ def fetch_consents(client: PicSureClient) -> list[str]:
     """
     try:
         response = client.get_json(_CONSENTS_PATH)
+    except (TransportConsentDeniedError, TransportConsentLookupError) as exc:
+        raise translate_stage_error(
+            exc, service="PSAMA", stage="fetch consents"
+        ) from exc
     except TransportError as exc:
         raise PicSureConnectionError(
             "Could not fetch your consent list from PSAMA. "

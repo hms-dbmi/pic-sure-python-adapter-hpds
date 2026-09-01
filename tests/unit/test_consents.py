@@ -4,7 +4,7 @@ import respx
 
 from picsure._services.consents import fetch_consents
 from picsure._transport.client import PicSureClient
-from picsure.errors import PicSureConnectionError
+from picsure.errors import PicSureConnectionError, PicSureConsentDeniedError
 
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
@@ -25,6 +25,26 @@ def _wrap_consents(consents: object) -> dict:
 
 
 class TestFetchConsents:
+    @respx.mock
+    def test_consent_denied_raises_typed_error(self):
+        respx.get(CONSENTS_URL).mock(
+            return_value=httpx.Response(
+                403,
+                json={
+                    "errorType": "consent_denied",
+                    "message": "You no longer have consent for this saved result",
+                },
+            )
+        )
+
+        with pytest.raises(PicSureConsentDeniedError) as exc_info:
+            fetch_consents(_make_client())
+
+        exc = exc_info.value
+        assert exc.status_code == 403
+        assert exc.error_type == "consent_denied"
+        assert exc.server_message == "You no longer have consent for this saved result"
+
     @respx.mock
     def test_returns_consents_list(self):
         respx.get(CONSENTS_URL).mock(
