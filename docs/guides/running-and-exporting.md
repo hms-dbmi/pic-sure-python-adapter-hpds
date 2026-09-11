@@ -132,7 +132,8 @@ Constraints (validated client-side, mirrored from the backend
 
 !!! note
     `saveQueryByName` is not supported on open-access deployments —
-    the `/dataset/named/` endpoint requires an authenticated principal.
+    the `/picsure/operations/dataset/named` endpoint requires an
+    authenticated principal.
 
 ## Simple Queries
 
