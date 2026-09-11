@@ -9,7 +9,9 @@ from picsure._models.genomic_filter import (
     GenomicFilter,
     GenomicFilterKey,
     is_variant_spec,
+    known_impacts,
     known_severities,
+    normalize_impact,
     severity_consequences,
 )
 from picsure._models.query import Query
@@ -229,25 +231,36 @@ def buildGenomicFilter(  # noqa: N802
         key: The genomic annotation to filter on. Pass a
             :class:`GenomicFilterKey` member (preferred) or the equivalent
             string — an unrecognized string raises an error listing the valid
-            keys. ``GenomicFilterKey.VARIANT_SEVERITY`` is a *virtual* key: the
-            backend has no ``Variant_severity`` filter, so this builder expands
-            the requested :class:`VariantSeverity` buckets into the matching
-            ``Variant_consequence_calculated`` values. Variant-spec (SNP) keys —
-            an rsID or a ``chr,pos,ref,alt`` spec — are not supported and are
-            rejected.
+            keys. Variant-spec (SNP) keys — an rsID or a ``chr,pos,ref,alt``
+            spec — are not supported and are rejected.
         values: One value or a sequence of values that must match.
             :class:`VariantFrequency` / :class:`VariantSeverity` members are
             accepted and coerced to their string value.
 
     Returns:
         A :class:`GenomicFilter` to pass to ``buildQuery(genomicFilters=...)``.
-        For ``VARIANT_SEVERITY`` the returned filter's ``key`` is
-        ``"Variant_consequence_calculated"``.
+
+    Note:
+        ``GenomicFilterKey.VARIANT_SEVERITY`` accepts two vocabularies, and a
+        single filter must not mix them:
+
+        - the backend's own impact values — ``HIGH``, ``MODERATE``, ``LOW``,
+          ``MODIFIER`` (:func:`known_impacts`), exactly what
+          ``searchGenomicValues("Variant_severity")`` returns — are sent on
+          the ``Variant_severity`` key unchanged;
+        - this adapter's :class:`VariantSeverity` buckets (e.g.
+          ``"High Severity"``) are expanded into the matching
+          ``Variant_consequence_calculated`` values, so the returned filter's
+          ``key`` is ``"Variant_consequence_calculated"``.
+
+        On observed data the two routes select the same patients, but only the
+        impact values can express ``MODIFIER``, which no bucket covers.
 
     Raises:
         PicSureValidationError: If ``key`` is empty, unrecognized, or a
             variant-spec (SNP) key; if ``values`` is empty or contains blank
-            strings; or if a ``VARIANT_SEVERITY`` value is not a valid severity.
+            strings; or if a ``VARIANT_SEVERITY`` value is neither an impact
+            value nor a severity bucket, or mixes the two.
 
     Example:
         >>> from picsure import buildGenomicFilter, GenomicFilterKey, VariantSeverity
@@ -256,6 +269,9 @@ def buildGenomicFilter(  # noqa: N802
         ... )
         >>> severe = buildGenomicFilter(
         ...     GenomicFilterKey.VARIANT_SEVERITY, values=VariantSeverity.HIGH
+        ... )
+        >>> high_impact = buildGenomicFilter(
+        ...     GenomicFilterKey.VARIANT_SEVERITY, values="HIGH"
         ... )
     """
     if isinstance(key, GenomicFilterKey):
@@ -294,21 +310,73 @@ def buildGenomicFilter(  # noqa: N802
         )
 
     if resolved is GenomicFilterKey.VARIANT_SEVERITY:
-        expanded: list[str] = []
-        for severity in normalized:
-            try:
-                expanded.extend(severity_consequences(severity))
-            except KeyError:
-                valid_severities = ", ".join(known_severities())
-                raise PicSureValidationError(
-                    f"{severity!r} is not a valid variant severity. Valid "
-                    f"severities: {valid_severities}. Pass a VariantSeverity "
-                    "member or one of these strings."
-                ) from None
-        effective_key = GenomicFilterKey.VARIANT_CONSEQUENCE_CALCULATED.value
-        effective_values = tuple(dict.fromkeys(expanded))
-    else:
-        effective_key = resolved.value
-        effective_values = normalized
+        return _build_severity_filter(normalized)
 
-    return GenomicFilter(key=effective_key, values=effective_values)
+    return GenomicFilter(key=resolved.value, values=normalized)
+
+
+def _build_severity_filter(values: tuple[str, ...]) -> GenomicFilter:
+    """Build the effective filter for a ``Variant_severity`` request.
+
+    Impact values pass through on the ``Variant_severity`` key; severity
+    buckets expand into ``Variant_consequence_calculated`` values. The two
+    vocabularies describe the same thing through different keys, so one
+    filter cannot carry both.
+
+    Args:
+        values: The already-normalized requested severity values.
+
+    Returns:
+        The :class:`GenomicFilter` to send.
+
+    Raises:
+        PicSureValidationError: If a value belongs to neither vocabulary, or
+            the request mixes the two.
+    """
+    impacts: list[str] = []
+    buckets: list[str] = []
+    for value in values:
+        impact = normalize_impact(value)
+        if impact is not None:
+            impacts.append(impact)
+        elif value in known_severities():
+            buckets.append(value)
+        else:
+            raise PicSureValidationError(_severity_value_message(value))
+
+    if impacts and buckets:
+        raise PicSureValidationError(
+            "buildGenomicFilter cannot mix Variant_severity vocabularies in "
+            f"one filter: {', '.join(repr(i) for i in impacts)} are backend "
+            "impact values sent on the 'Variant_severity' key, while "
+            f"{', '.join(repr(b) for b in buckets)} are severity buckets "
+            "expanded into 'Variant_consequence_calculated' values. Build one "
+            "filter per vocabulary and pass both to buildQuery."
+        )
+
+    if impacts:
+        return GenomicFilter(
+            key=GenomicFilterKey.VARIANT_SEVERITY.value,
+            values=tuple(dict.fromkeys(impacts)),
+        )
+
+    expanded: list[str] = []
+    for bucket in buckets:
+        expanded.extend(severity_consequences(bucket))
+    return GenomicFilter(
+        key=GenomicFilterKey.VARIANT_CONSEQUENCE_CALCULATED.value,
+        values=tuple(dict.fromkeys(expanded)),
+    )
+
+
+def _severity_value_message(value: str) -> str:
+    """Explain both accepted ``Variant_severity`` vocabularies for a bad value."""
+    return (
+        f"{value!r} is not a valid variant severity. Pass either a backend "
+        f"impact value ({', '.join(known_impacts())}) — what "
+        "searchGenomicValues('Variant_severity') returns, sent on the "
+        "'Variant_severity' key as-is — or a severity bucket "
+        f"({', '.join(known_severities())}), which is expanded into the "
+        "matching 'Variant_consequence_calculated' values. A single filter "
+        "cannot mix the two."
+    )
