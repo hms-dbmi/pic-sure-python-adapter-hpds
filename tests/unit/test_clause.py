@@ -1,3 +1,5 @@
+import dataclasses
+
 import pytest
 
 from picsure._models.clause import Clause, PhenotypicFilterType
@@ -25,9 +27,9 @@ class TestClause:
             type=PhenotypicFilterType.FILTER,
             categories=["Male"],
         )
-        assert clause.keys == ["\\phs1\\sex\\"]
+        assert clause.keys == ("\\phs1\\sex\\",)
         assert clause.type == PhenotypicFilterType.FILTER
-        assert clause.categories == ["Male"]
+        assert clause.categories == ("Male",)
         assert clause.min is None
         assert clause.max is None
 
@@ -161,7 +163,7 @@ class TestClauseConceptPaths:
         clause = Clause(keys=["\\p\\"], type=PhenotypicFilterType.REQUIRE)
         paths = clause.concept_paths()
         paths.append("\\extra\\")
-        assert clause.keys == ["\\p\\"]
+        assert clause.keys == ("\\p\\",)
 
 
 class TestBuildClauseDefensiveCopies:
@@ -169,7 +171,7 @@ class TestBuildClauseDefensiveCopies:
         keys = ["\\p1\\", "\\p2\\"]
         clause = buildClause(keys, type=PhenotypicFilterType.ANYRECORD)
         keys.append("\\p3\\")
-        assert clause.keys == ["\\p1\\", "\\p2\\"]
+        assert clause.keys == ("\\p1\\", "\\p2\\")
 
     def test_mutating_categories_list_after_construction_does_not_affect_clause(self):
         categories = ["Male", "Female"]
@@ -179,4 +181,61 @@ class TestBuildClauseDefensiveCopies:
             categories=categories,
         )
         categories.append("Other")
-        assert clause.categories == ["Male", "Female"]
+        assert clause.categories == ("Male", "Female")
+
+
+class TestClauseImmutability:
+    """``frozen=True`` is only real if the fields are immutable too."""
+
+    def test_stores_a_list_argument_as_a_tuple(self):
+        clause = Clause(keys=["\\p1\\"], type=PhenotypicFilterType.REQUIRE)
+
+        assert isinstance(clause.keys, tuple)
+
+    def test_stores_a_categories_list_as_a_tuple(self):
+        clause = Clause(
+            keys=("\\p\\",),
+            type=PhenotypicFilterType.FILTER,
+            categories=["Male"],
+        )
+
+        assert isinstance(clause.categories, tuple)
+
+    def test_a_bare_string_key_becomes_one_element_not_characters(self):
+        clause = Clause(keys="\\p\\", type=PhenotypicFilterType.REQUIRE)
+
+        assert clause.keys == ("\\p\\",)
+
+    def test_is_hashable(self):
+        clause = buildClause("\\p\\", type=PhenotypicFilterType.REQUIRE)
+
+        assert isinstance(hash(clause), int)
+
+    def test_works_as_a_dict_key(self):
+        a = buildClause("\\p1\\", type=PhenotypicFilterType.REQUIRE)
+        b = buildClause("\\p2\\", type=PhenotypicFilterType.REQUIRE)
+
+        counts = {a: 1, b: 2}
+
+        assert counts[a] == 1
+        assert counts[b] == 2
+
+    def test_equal_clauses_share_a_hash_and_collapse_in_a_set(self):
+        a = buildClause("\\p\\", type=PhenotypicFilterType.FILTER, categories="Male")
+        b = buildClause("\\p\\", type=PhenotypicFilterType.FILTER, categories="Male")
+
+        assert a == b
+        assert hash(a) == hash(b)
+        assert len({a, b}) == 1
+
+    def test_attribute_assignment_is_refused(self):
+        clause = buildClause("\\p\\", type=PhenotypicFilterType.REQUIRE)
+
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            clause.keys = ("\\other\\",)
+
+    def test_keys_cannot_be_appended_to(self):
+        clause = buildClause("\\p\\", type=PhenotypicFilterType.REQUIRE)
+
+        with pytest.raises(AttributeError):
+            clause.keys.append("\\other\\")

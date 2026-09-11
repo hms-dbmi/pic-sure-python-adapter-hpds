@@ -36,7 +36,7 @@ class TestRemoveSubQuery:
         pruned = removeSubQuery(q, a)
 
         assert isinstance(pruned, ClauseGroup)
-        assert pruned.clauses == [b]
+        assert pruned.clauses == (b,)
         assert pruned.operator == GroupOperator.AND
 
     def test_removes_match_nested_keeping_siblings(self):
@@ -53,7 +53,7 @@ class TestRemoveSubQuery:
         assert len(pruned.clauses) == 2
         first = pruned.clauses[0]
         assert isinstance(first, ClauseGroup)
-        assert first.clauses == [b]
+        assert first.clauses == (b,)
         assert first.operator == GroupOperator.OR
         assert pruned.clauses[1] == c
 
@@ -66,7 +66,7 @@ class TestRemoveSubQuery:
         pruned = removeSubQuery(outer, a)
 
         assert isinstance(pruned, ClauseGroup)
-        assert pruned.clauses == [c]
+        assert pruned.clauses == (c,)
 
     def test_removing_entire_query_raises(self):
         a = _clause("\\a\\", "x")
@@ -89,15 +89,48 @@ class TestRemoveSubQuery:
         with pytest.raises(PicSureValidationError, match="entire query"):
             removeSubQuery(outer, a)
 
-    def test_no_op_when_target_absent(self):
+    def test_absent_target_raises_naming_the_clause(self):
         a = _clause("\\a\\", "x")
         b = _clause("\\b\\", "y")
         missing = _clause("\\zz\\", "q")
         q = buildClauseGroup([a, b], operator=GroupOperator.AND)
 
-        pruned = removeSubQuery(q, missing)
+        with pytest.raises(PicSureValidationError) as info:
+            removeSubQuery(q, missing)
 
-        assert pruned == q
+        message = str(info.value)
+        assert "removeSubQuery" in message
+        assert "\\zz\\" in message
+
+    def test_target_matching_only_the_path_raises(self):
+        # Structural matching means a same-path clause with different
+        # categories is a different clause, which is the mistake the
+        # not-found message has to explain.
+        a = _clause("\\a\\", "x")
+        b = _clause("\\b\\", "y")
+        q = buildClauseGroup([a, b], operator=GroupOperator.AND)
+
+        with pytest.raises(PicSureValidationError, match="structural"):
+            removeSubQuery(q, _clause("\\a\\", "different"))
+
+    def test_pathless_target_is_still_named(self):
+        # buildClause/buildClauseGroup both reject empty collections, so a
+        # clause with no concept paths can only arrive by direct
+        # construction -- the message still has to say something.
+        q = buildClauseGroup([_clause("\\a\\", "x")], operator=GroupOperator.AND)
+        pathless = Clause(keys=(), type=PhenotypicFilterType.REQUIRE)
+
+        with pytest.raises(PicSureValidationError, match="that clause"):
+            removeSubQuery(q, pathless)
+
+    def test_absent_group_target_is_named_as_a_group(self):
+        a = _clause("\\a\\", "x")
+        b = _clause("\\b\\", "y")
+        q = buildClauseGroup([a, b], operator=GroupOperator.AND)
+        missing = buildClauseGroup([_clause("\\zz\\", "q")], operator=GroupOperator.OR)
+
+        with pytest.raises(PicSureValidationError, match="clause group on"):
+            removeSubQuery(q, missing)
 
     def test_rejects_non_query_target(self):
         a = _clause("\\a\\", "x")
@@ -133,16 +166,34 @@ class TestReplaceClause:
 
         assert replaced == c
 
-    def test_no_op_when_target_absent(self):
+    def test_absent_target_raises_naming_the_clause(self):
         a = _clause("\\a\\", "x")
         b = _clause("\\b\\", "y")
         missing = _clause("\\zz\\", "q")
         replacement = _clause("\\rr\\", "r")
         q = buildClauseGroup([a, b], operator=GroupOperator.AND)
 
-        replaced = replaceClause(q, missing, replacement)
+        with pytest.raises(PicSureValidationError) as info:
+            replaceClause(q, missing, replacement)
 
-        assert replaced == q
+        message = str(info.value)
+        assert "replaceClause" in message
+        assert "\\zz\\" in message
+
+    def test_absent_target_on_a_bare_clause_raises(self):
+        a = _clause("\\a\\", "x")
+
+        with pytest.raises(PicSureValidationError, match="replaceClause"):
+            replaceClause(a, _clause("\\zz\\", "q"), _clause("\\rr\\", "r"))
+
+    def test_absent_target_inside_a_query_raises(self):
+        q = buildQuery(
+            phenotypicFilter=_clause("\\a\\", "x"),
+            includeConcepts=["\\keep\\"],
+        )
+
+        with pytest.raises(PicSureValidationError, match="replaceClause"):
+            replaceClause(q, _clause("\\zz\\", "q"), _clause("\\rr\\", "r"))
 
     def test_replace_preserves_operator_and_structure(self):
         a = _clause("\\a\\", "x")
@@ -154,7 +205,7 @@ class TestReplaceClause:
 
         assert isinstance(replaced, ClauseGroup)
         assert replaced.operator == GroupOperator.OR
-        assert replaced.clauses == [c, b]
+        assert replaced.clauses == (c, b)
 
     def test_replacement_can_be_a_group(self):
         a = _clause("\\a\\", "x")
@@ -190,7 +241,7 @@ class TestEditQueryContainer:
         assert isinstance(pruned, Query)
         assert pruned.includeConcepts == ("\\out\\",)
         assert isinstance(pruned.phenotypicFilter, ClauseGroup)
-        assert pruned.phenotypicFilter.clauses == [b]
+        assert pruned.phenotypicFilter.clauses == (b,)
 
     def test_replace_unwraps_and_preserves_include_concepts(self):
         a = _clause("\\a\\", "x")
@@ -204,7 +255,7 @@ class TestEditQueryContainer:
         assert isinstance(replaced, Query)
         assert replaced.includeConcepts == ("\\out\\",)
         assert isinstance(replaced.phenotypicFilter, ClauseGroup)
-        assert replaced.phenotypicFilter.clauses == [c, b]
+        assert replaced.phenotypicFilter.clauses == (c, b)
 
     def test_remove_on_include_only_query_raises(self):
         a = _clause("\\a\\", "x")

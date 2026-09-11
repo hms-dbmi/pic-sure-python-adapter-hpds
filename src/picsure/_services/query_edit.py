@@ -29,9 +29,10 @@ def removeSubQuery(  # noqa: N802
     ``phenotypicFilter`` tree and the ``includeConcepts`` are preserved.
 
     Raises:
-        PicSureValidationError: if the whole filter would be removed
-            (nothing left), if ``target`` is not a Clause/ClauseGroup, or
-            if ``query`` is an include-only Query (no filter to edit).
+        PicSureValidationError: if ``target`` does not occur in ``query``,
+            if the whole filter would be removed (nothing left), if
+            ``target`` is not a Clause/ClauseGroup, or if ``query`` is an
+            include-only Query (no filter to edit).
     """
     filter_tree, rewrap = _unwrap(query)
     _check_is_filter(target, "target")
@@ -40,6 +41,9 @@ def removeSubQuery(  # noqa: N802
         raise PicSureValidationError(
             "removeSubQuery would remove the entire query; no clauses would remain."
         )
+
+    if not _contains(filter_tree, target):
+        raise PicSureValidationError(_no_match_message("removeSubQuery", target))
 
     pruned = _prune(filter_tree, target)
     if pruned is None:
@@ -63,13 +67,16 @@ def replaceClause(  # noqa: N802
     ``phenotypicFilter`` tree and the ``includeConcepts`` are preserved.
 
     Raises:
-        PicSureValidationError: if ``target`` / ``replacement`` are not
-            Clause/ClauseGroup, or if ``query`` is an include-only Query
-            (no filter to edit).
+        PicSureValidationError: if ``target`` does not occur in ``query``,
+            if ``target`` / ``replacement`` are not Clause/ClauseGroup, or
+            if ``query`` is an include-only Query (no filter to edit).
     """
     filter_tree, rewrap = _unwrap(query)
     _check_is_filter(target, "target")
     _check_is_filter(replacement, "replacement")
+
+    if not _contains(filter_tree, target):
+        raise PicSureValidationError(_no_match_message("replaceClause", target))
 
     return rewrap(_replace(filter_tree, target, replacement))
 
@@ -109,6 +116,41 @@ def _check_is_filter(value: object, name: str) -> None:
         )
 
 
+def _contains(node: Clause | ClauseGroup, target: Clause | ClauseGroup) -> bool:
+    """Whether ``target`` occurs anywhere in ``node``, matched structurally.
+
+    Checked before an edit so a target that is not in the tree is refused
+    rather than producing an unchanged copy: an edit that quietly does
+    nothing reads as success, and the caller goes on to run a query that
+    still carries the clause they meant to drop or swap.
+    """
+    if node == target:
+        return True
+    if isinstance(node, Clause):
+        return False
+    return any(_contains(child, target) for child in node.clauses)
+
+
+def _describe(node: Clause | ClauseGroup) -> str:
+    """Name a clause or group by the concept paths it references."""
+    kind = "clause" if isinstance(node, Clause) else "clause group"
+    paths = node.concept_paths()
+    if not paths:
+        return f"that {kind}"
+    return f"the {kind} on {', '.join(repr(path) for path in paths)}"
+
+
+def _no_match_message(function: str, target: Clause | ClauseGroup) -> str:
+    """Explain a target that is not in the tree, and why it may not match."""
+    return (
+        f"{function} found no match for {_describe(target)} in this query, so "
+        f"there is nothing to edit. Matching is structural: the type, "
+        f"categories, min and max must all be equal, not just the concept "
+        f"path. Compare the target against the query's own clauses, or build "
+        f"it from the same values."
+    )
+
+
 def _prune(
     node: Clause | ClauseGroup, target: Clause | ClauseGroup
 ) -> Clause | ClauseGroup | None:
@@ -125,7 +167,7 @@ def _prune(
             kept.append(pruned)
     if not kept:
         return None
-    return ClauseGroup(clauses=kept, operator=node.operator)
+    return ClauseGroup(clauses=tuple(kept), operator=node.operator)
 
 
 def _replace(
@@ -137,7 +179,5 @@ def _replace(
         return replacement
     if isinstance(node, Clause):
         return node
-    new_children: list[Clause | ClauseGroup] = [
-        _replace(c, target, replacement) for c in node.clauses
-    ]
+    new_children = tuple(_replace(c, target, replacement) for c in node.clauses)
     return ClauseGroup(clauses=new_children, operator=node.operator)

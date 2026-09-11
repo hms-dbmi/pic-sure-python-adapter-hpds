@@ -275,7 +275,9 @@ class TestSaveQueryByNameNameValidation:
         ],
     )
     def test_rejects_bad_characters(self, bad_name):
-        with pytest.raises(PicSureValidationError, match="unsupported characters"):
+        with pytest.raises(
+            PicSureValidationError, match="characters the server rejects"
+        ):
             save_query_by_name(
                 _client(),
                 _clause(),
@@ -291,13 +293,60 @@ class TestSaveQueryByNameNameValidation:
         ],
     )
     def test_rejects_trailing_newline(self, bad_name):
-        with pytest.raises(PicSureValidationError, match="unsupported characters"):
+        with pytest.raises(
+            PicSureValidationError, match="characters the server rejects"
+        ):
             save_query_by_name(
                 _client(),
                 _clause(),
                 bad_name,
                 backend="auth",
             )
+
+    @pytest.mark.parametrize(
+        "bad_name",
+        [
+            "café",
+            "查询",
+            "Ünïcode cohort",
+            "naïve-2026",
+            "Ω",
+            "emoji \U0001f600",
+        ],
+    )
+    def test_rejects_non_ascii_names(self, bad_name):
+        # The server's @Pattern uses Java's ASCII-only \w. Python's \w is
+        # Unicode-aware, so these used to pass client-side and only fail
+        # after the query had already been submitted.
+        with pytest.raises(PicSureValidationError, match="non-Latin"):
+            save_query_by_name(
+                _client(),
+                _clause(),
+                bad_name,
+                backend="auth",
+            )
+
+    def test_non_ascii_name_rejected_before_any_request(self):
+        # No respx mock is installed: if validation let this through, the
+        # listing GET or the submit POST would raise something else.
+        with pytest.raises(
+            PicSureValidationError, match="characters the server rejects"
+        ):
+            save_query_by_name(_client(), _clause(), "café", backend="auth")
+
+    def test_error_names_the_offending_characters(self):
+        with pytest.raises(PicSureValidationError) as excinfo:
+            save_query_by_name(_client(), _clause(), "café <x>", backend="auth")
+        message = str(excinfo.value)
+        assert "'é'" in message
+        assert "'<'" in message
+        assert "'>'" in message
+        assert "no query was submitted" in message
+
+    def test_error_states_what_is_allowed(self):
+        with pytest.raises(PicSureValidationError) as excinfo:
+            save_query_by_name(_client(), _clause(), "bad|name", backend="auth")
+        assert "ASCII letters, digits, underscore, space" in str(excinfo.value)
 
     def test_rejects_empty_name(self):
         with pytest.raises(PicSureValidationError, match="non-empty"):

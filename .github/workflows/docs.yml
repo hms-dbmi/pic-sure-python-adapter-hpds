@@ -1,10 +1,19 @@
 name: Docs
 
+# Build on every pull request and every branch push (except the generated
+# docs branch); deploy only from the default branch and published releases.
 on:
-  push:
-    branches: [main]
   pull_request:
-    branches: [main]
+  push:
+    branches-ignore:
+      - gh-pages
+  release:
+    types: [published]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -23,8 +32,12 @@ jobs:
       - name: Build docs (strict mode catches broken references)
         run: uv run mkdocs build --strict
 
+      # Deploying from any branch that happens to build would let a feature
+      # push overwrite the published site. Compare against the repository's
+      # own default branch so the guard cannot go stale if that branch is
+      # renamed or repointed.
       - name: Deploy to GitHub Pages
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'release' || (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch)
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}

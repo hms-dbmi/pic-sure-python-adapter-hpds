@@ -26,13 +26,22 @@ class ClauseGroup:
     deep nesting.
 
     **Wire format.** :meth:`to_query_json` emits a v3
-    ``PhenotypicSubquery`` (``operator`` / ``phenotypicClauses``) per
-    the ``/hpds/{auth,open}[/v3]/query`` contract. The previous wire format
-    is not supported.
+    ``PhenotypicSubquery`` (``operator`` / ``phenotypicClauses``) per the
+    ``/picsure/hpds/{auth,open}/v3/query`` contract. The previous wire
+    format is not supported.
+
+    **Immutability.** Frozen with a tuple of children, so a group is
+    hashable and usable as a dict key or set member. ``clauses`` accepts
+    any iterable of :class:`Clause` / :class:`ClauseGroup` and stores a
+    tuple.
     """
 
-    clauses: list[Clause | ClauseGroup]
+    clauses: tuple[Clause | ClauseGroup, ...]
     operator: GroupOperator
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.clauses, tuple):
+            object.__setattr__(self, "clauses", tuple(self.clauses))
 
     def concept_paths(self) -> list[str]:
         """All concept paths referenced anywhere in this group, depth-first.

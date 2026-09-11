@@ -21,8 +21,11 @@ def query_prefix(backend: str, *, v3: bool) -> str:
             v1 (non-versioned) routes.
 
     Returns:
-        A path prefix such as ``"/hpds/auth/v3"`` or ``"/hpds/open"``, to
-        which a ``/query`` suffix is appended by the caller.
+        A path prefix such as ``"/picsure/hpds/auth/v3"`` or
+        ``"/picsure/hpds/open"``, to which a ``/query`` suffix is appended
+        by the caller. The ``/picsure`` context prefix is part of the
+        returned path: the gateway routes ``/hpds/**`` verbatim without
+        stripping it.
     """
     return f"/picsure/hpds/{backend}/v3" if v3 else f"/picsure/hpds/{backend}"
 
@@ -31,6 +34,6 @@ def search_values_path(backend: str) -> str:
     """Return the HPDS search-values path for a backend.
 
     The registry-era ``{resourceId}`` placeholder segment is gone: the
-    well-defined ingress is ``/hpds/{backend}/search/values``.
+    well-defined ingress is ``/picsure/hpds/{backend}/search/values``.
     """
     return f"/picsure/hpds/{backend}/search/values"

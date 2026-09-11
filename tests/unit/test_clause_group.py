@@ -1,3 +1,5 @@
+import dataclasses
+
 import pytest
 
 from picsure._models.clause import Clause, PhenotypicFilterType
@@ -177,3 +179,45 @@ class TestClauseGroupToQueryJson:
         assert children[1]["operator"] == "AND"  # type: ignore[index]
         grandchildren = children[1]["phenotypicClauses"]  # type: ignore[index]
         assert grandchildren[1]["operator"] == "OR"
+
+
+class TestClauseGroupImmutability:
+    def test_stores_a_list_argument_as_a_tuple(self):
+        group = ClauseGroup(clauses=[_sex_clause()], operator=GroupOperator.AND)
+
+        assert isinstance(group.clauses, tuple)
+
+    def test_is_hashable(self):
+        group = ClauseGroup(clauses=(_sex_clause(),), operator=GroupOperator.AND)
+
+        assert isinstance(hash(group), int)
+
+    def test_nested_group_is_hashable(self):
+        inner = ClauseGroup(clauses=(_sex_clause(),), operator=GroupOperator.OR)
+        outer = ClauseGroup(clauses=(_sex_clause(), inner), operator=GroupOperator.AND)
+
+        assert isinstance(hash(outer), int)
+
+    def test_works_as_a_dict_key(self):
+        group = ClauseGroup(clauses=(_sex_clause(),), operator=GroupOperator.AND)
+
+        assert {group: "seen"}[group] == "seen"
+
+    def test_equal_groups_collapse_in_a_set(self):
+        a = ClauseGroup(clauses=(_sex_clause(),), operator=GroupOperator.AND)
+        b = ClauseGroup(clauses=(_sex_clause(),), operator=GroupOperator.AND)
+
+        assert hash(a) == hash(b)
+        assert len({a, b}) == 1
+
+    def test_attribute_assignment_is_refused(self):
+        group = ClauseGroup(clauses=(_sex_clause(),), operator=GroupOperator.AND)
+
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            group.operator = GroupOperator.OR
+
+    def test_clauses_cannot_be_appended_to(self):
+        group = ClauseGroup(clauses=(_sex_clause(),), operator=GroupOperator.AND)
+
+        with pytest.raises(AttributeError):
+            group.clauses.append(_sex_clause())

@@ -1,10 +1,20 @@
 name: CI
 
+# Every pull request regardless of its base, and every branch push except the
+# generated docs branch: a `branches: [main]` allow-list silently leaves new
+# branches unchecked until someone remembers to add them.
 on:
-  push:
-    branches: [main]
   pull_request:
-    branches: [main]
+  push:
+    branches-ignore:
+      - gh-pages
+  workflow_dispatch:
+
+# A push and its open pull request are the same commit, so collapse them into
+# one group rather than running the matrix twice.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   lint:
