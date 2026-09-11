@@ -29,7 +29,7 @@ class TestGenomicQueryLive:
         from picsure import CountResult
 
         session = picsure.connect(
-            platform=test_platform, token=test_token, supports_genomic=True
+            platform=test_platform, token=test_token.reveal(), supports_genomic=True
         )
         gf = buildGenomicFilter("Gene_with_variant", values=[test_gene])
         result = session.runQuery(buildQuery(genomicFilters=gf), type="count")
@@ -46,7 +46,7 @@ class TestGenomicQueryLive:
         from picsure import CountResult
 
         session = picsure.connect(
-            platform=test_platform, token=test_token, supports_genomic=True
+            platform=test_platform, token=test_token.reveal(), supports_genomic=True
         )
         gf = buildGenomicFilter("Gene_with_variant", values=[test_gene])
         try:
@@ -62,7 +62,7 @@ class TestGenomicQueryLive:
 
     def test_variant_list_returns_list(self, test_token, test_platform, test_gene):
         session = picsure.connect(
-            platform=test_platform, token=test_token, supports_genomic=True
+            platform=test_platform, token=test_token.reveal(), supports_genomic=True
         )
         gf = buildGenomicFilter("Gene_with_variant", values=[test_gene])
         try:
@@ -84,7 +84,7 @@ class TestGenomicQueryLive:
         self, test_token, test_platform, test_gene
     ):
         session = picsure.connect(
-            platform=test_platform, token=test_token, supports_genomic=True
+            platform=test_platform, token=test_token.reveal(), supports_genomic=True
         )
         df = session.searchGenomicValues("Gene_with_variant", query=test_gene, size=20)
         assert "value" in df.columns

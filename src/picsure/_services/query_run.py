@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import replace
 from io import BytesIO, StringIO
 from typing import NoReturn
 
@@ -99,11 +100,11 @@ def run_query(
         _raise_query_error(exc, resolved_type)
 
     if resolved_type == "COUNT":
-        return _parse_count(raw)
+        return _parse_count(raw, context=_describe_filters(body))
     if resolved_type == "CROSS_COUNT":
         return _parse_cross_count(raw)
     if resolved_type == "VARIANT_COUNT_FOR_QUERY":
-        return _parse_variant_count(raw)
+        return _parse_variant_count(raw, context=_describe_filters(body))
     if resolved_type == "VARIANT_LIST_FOR_QUERY":
         return _parse_variant_list(raw)
     if resolved_type in ("VCF_EXCERPT", "AGGREGATE_VCF_EXCERPT"):
@@ -131,7 +132,7 @@ def build_query_body(
     query: Query | Clause | ClauseGroup,
     expected_result_type: str,
 ) -> dict[str, object]:
-    """Assemble the ``/hpds/{auth,open}[/v3]/query`` request body.
+    """Assemble the ``/picsure/hpds/{auth,open}/v3/query`` request body.
 
     Normalizes the query into a phenotypic filter tree and a list of
     ``includeConcepts``; the tree becomes ``phenotypicClause`` and the
@@ -139,8 +140,8 @@ def build_query_body(
 
     Notes:
         No ``resourceUUID`` is sent: the gateway selects the HPDS backend
-        by URL path (``/hpds/auth`` vs ``/hpds/open``), not by a
-        resource-selection UUID in the body.
+        by URL path (``/picsure/hpds/auth`` vs ``/picsure/hpds/open``), not
+        by a resource-selection UUID in the body.
 
         ``authorizationFilters`` is intentionally omitted from the body.
         PSAMA populates it server-side from the user's token; sending a
@@ -241,9 +242,84 @@ def _parse_count_string(s: str) -> CountResult:
     )
 
 
-def _parse_count(raw: bytes) -> CountResult:
-    """Decode and parse a bytes count response."""
-    return _parse_count_string(raw.decode("utf-8"))
+def _parse_count(raw: bytes, *, context: str = "") -> CountResult:
+    """Decode and parse a bytes count response.
+
+    Args:
+        raw: The response body.
+        context: A description of the query's filters, used to make the
+            empty-body message actionable.
+    """
+    text = raw.decode("utf-8")
+    if not text.strip():
+        raise PicSureQueryError(_empty_count_message(context))
+    return _parse_count_string(text)
+
+
+def _empty_count_message(context: str) -> str:
+    """Explain an empty body where a count was expected.
+
+    The server answers HTTP 200 with no body when it cannot apply a filter,
+    so the likeliest cause is a filter the query could not run with — most
+    often a filter whose shape does not match its concept's type (a numeric
+    ``min``/``max`` on a categorical concept, or ``categories`` on a
+    continuous one).
+    """
+    detail = f" {context}" if context else ""
+    return (
+        "The server returned an empty response where a count was expected, "
+        "which usually means the query was not run — most often because a "
+        f"filter could not be applied to the concept it names.{detail} Check "
+        "that each filter's shape matches its concept's type: min/max applies "
+        "to a continuous concept and categories to a categorical one. "
+        "searchDictionary() reports a concept's type."
+    )
+
+
+def _clause_concept_paths(clause: object) -> list[str]:
+    """Collect ``conceptPath`` values from a serialized phenotypic clause tree."""
+    if not isinstance(clause, dict):
+        return []
+    path = clause.get("conceptPath")
+    if isinstance(path, str):
+        return [path]
+    children = clause.get("phenotypicClauses")
+    if not isinstance(children, list):
+        return []
+    paths: list[str] = []
+    for child in children:
+        paths.extend(_clause_concept_paths(child))
+    return paths
+
+
+def _describe_filters(body: dict[str, object]) -> str:
+    """Name the filters a request body carries, for use in error messages.
+
+    Returns an empty string if the body is not shaped as expected, so a
+    diagnostic message never depends on the body's structure.
+    """
+    query = body.get("query")
+    if not isinstance(query, dict):
+        return ""
+    concepts = dict.fromkeys(_clause_concept_paths(query.get("phenotypicClause")))
+    raw_genomic = query.get("genomicFilters")
+    genomic_keys: list[str] = []
+    if isinstance(raw_genomic, list):
+        genomic_keys = [
+            str(g["key"])
+            for g in raw_genomic
+            if isinstance(g, dict) and isinstance(g.get("key"), str)
+        ]
+    genomic = dict.fromkeys(genomic_keys)
+
+    parts = []
+    if concepts:
+        parts.append("phenotypic filters on " + ", ".join(f"'{c}'" for c in concepts))
+    if genomic:
+        parts.append("genomic filter keys " + ", ".join(f"'{g}'" for g in genomic))
+    if not parts:
+        return "The query carried no filters."
+    return "This query used " + " and ".join(parts) + "."
 
 
 def _parse_cross_count(raw: bytes) -> dict[str, CountResult]:
@@ -297,6 +373,7 @@ def _parse_dataframe(raw: bytes) -> pd.DataFrame:
 
 _QUERY_TYPE_NOT_ALLOWED = "query type not allowed"
 _NO_VARIANTS_FOUND = "No Variants Found"
+_NO_VARIANT_FILTERS = "No variant filters were supplied"
 _VARIANT_RESULT_UNSUPPORTED = (
     "The variant result types (variant_count, variant_list, vcf_excerpt, "
     "aggregate_vcf_excerpt) are not available on this PIC-SURE deployment "
@@ -305,13 +382,28 @@ _VARIANT_RESULT_UNSUPPORTED = (
 )
 
 
-def _parse_variant_count(raw: bytes) -> CountResult:
+def _parse_variant_count(raw: bytes, *, context: str = "") -> CountResult:
     """Parse a VARIANT_COUNT_FOR_QUERY response into a :class:`CountResult`.
 
-    The count of distinct matching variants is parsed with the same logic as
-    patient counts, so an obfuscated response (``"11309 ±3"`` noisy or
-    ``"< 10"`` suppressed) is represented faithfully rather than raising. An
-    exact count comes back as ``CountResult(value=N)``.
+    The server answers with a JSON object — ``{"count": 1, "message": "Query
+    ran successfully"}`` — whose ``count`` is either a number or a count
+    string. A bare count string is still accepted for deployments that send
+    one. Either way the count is parsed with the same logic as patient
+    counts, so an obfuscated response (``"11309 ±3"`` noisy or ``"< 10"``
+    suppressed) is represented faithfully rather than raising.
+
+    ``CountResult.raw`` keeps the whole response body, so the server's
+    ``message`` is preserved without a field of its own.
+
+    Args:
+        raw: The response body.
+        context: A description of the query's filters, used to make the
+            empty-body message actionable.
+
+    Raises:
+        PicSureQueryError: If the body is empty, reports the result type as
+            disallowed, says no variant filters were supplied, or carries no
+            usable count.
     """
     text = raw.decode("utf-8").strip()
     if not text:
@@ -321,7 +413,60 @@ def _parse_variant_count(raw: bytes) -> CountResult:
             f"The server rejected the variant-count query: '{text[:200]}'. "
             "This result type may be disabled on this deployment."
         )
-    return _parse_count_string(text)
+    payload = _variant_count_payload(text)
+    if payload is None:
+        return _parse_count_string(text)
+    return _variant_count_from_payload(payload, text, context)
+
+
+def _variant_count_payload(text: str) -> dict[str, object] | None:
+    """Return the response as a JSON object, or ``None`` if it is not one.
+
+    A bare count such as ``"42"`` is valid JSON but not an object, so it
+    falls through to the count-string parser.
+    """
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _variant_count_from_payload(
+    payload: dict[str, object],
+    text: str,
+    context: str,
+) -> CountResult:
+    """Read the count out of a variant-count JSON object.
+
+    ``raw`` is set to the whole body rather than just the count, so the
+    server's ``message`` survives on the returned :class:`CountResult`.
+    """
+    message = payload.get("message")
+    if isinstance(message, str) and _NO_VARIANT_FILTERS in message:
+        detail = f" {context}" if context else ""
+        raise PicSureQueryError(
+            "A variant count needs at least one genomic filter, and the "
+            f"server reports that none were supplied: '{message[:200]}'.{detail} "
+            "Add a filter with buildGenomicFilter() and pass it to "
+            "buildQuery(genomicFilters=...) — a phenotypic filter alone "
+            "cannot select variants."
+        )
+
+    count = payload.get("count")
+    if isinstance(count, bool) or count is None:
+        raise PicSureQueryError(
+            "Expected a variant-count response with a 'count' field, but "
+            f"got: '{text[:200]}'"
+        )
+    if isinstance(count, int):
+        return CountResult(value=count, margin=None, cap=None, raw=text)
+    if isinstance(count, str):
+        return replace(_parse_count_string(count), raw=text)
+    raise PicSureQueryError(
+        "Expected a variant-count 'count' to be a number or a count string, "
+        f"but got: '{text[:200]}'"
+    )
 
 
 def _parse_variant_list(raw: bytes) -> list[str]:
