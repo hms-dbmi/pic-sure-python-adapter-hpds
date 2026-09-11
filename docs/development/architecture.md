@@ -12,9 +12,9 @@ typical session flows:
 
 1. **Connect.** `picsure.connect(platform, token)` resolves a
    :class:`Platform` (or custom URL) to connection details, builds an
-   authenticated `PicSureClient`, fetches the user profile, the
-   resource list, optional consents, and the dictionary size — then
-   returns a :class:`Session`.
+   authenticated `PicSureClient`, reads the display email and expiry
+   from the token, and fetches the consent list on consent-gated
+   deployments — then returns a :class:`Session`.
 2. **Search / build.** `session.searchDictionary(...)` and
    `session.facets(...)` go through the search service; users build
    filters with the standalone helpers `picsure.buildClause(...)` and
@@ -90,8 +90,7 @@ src/picsure/
 
 | Module             | What it owns                                                                 |
 |--------------------|------------------------------------------------------------------------------|
-| `session.py`       | `Session` class. Holds the HTTP client, resource list, consents, dictionary size, and the dev-mode config. Public methods (`searchDictionary`, `runQuery`, `runQueryByID`, `loadQueryByID`, `saveQueryByName`, `exportAsPFB`, `exportCSV`, `exportTSV`, `setResourceID`, `setResourceIDByName`, `getResourceID`, `facets`, `showAllFacets`, …) delegate to `_services/*`. |
-| `resource.py`      | `Resource` dataclass (`uuid`, `name`, `description`) with a `from_dict` constructor. Retained for the `getResourceID` / `setResourceIDByName` surface; the resource registry it used to be populated from has been removed. |
+| `session.py`       | `Session` class. Holds the HTTP client, the consent list, the HPDS backend selection, and the dev-mode config. Public methods (`searchDictionary`, `runQuery`, `runQueryByID`, `loadQueryByID`, `saveQueryByName`, `exportAsPFB`, `exportCSV`, `exportTSV`, `facets`, `showAllFacets`, …) delegate to `_services/*`. |
 | `clause.py`        | `Clause` dataclass + `PhenotypicFilterType` enum (`FILTER`, `ANYRECORD`, `REQUIRE`). Each `Clause.to_query_json()` emits the v3 `PhenotypicClause` shape. |
 | `clause_group.py`  | `ClauseGroup` dataclass + `GroupOperator` enum (`AND`, `OR`). Recursively serializes to a v3 `PhenotypicSubquery`. |
 | `query.py`         | `Query` dataclass: a `phenotypicFilter` (`Clause | ClauseGroup | None`), `includeConcepts` (output concept paths), and `genomicFilters` (a `tuple[GenomicFilter, ...]`, applied conjunctively alongside the phenotypic filter). `runQuery` also accepts a bare `Clause` / `ClauseGroup` (filter; its variables are returned as output columns). `concept_paths()` on each collects the filter's variables to fold into `select`. |
@@ -105,7 +104,7 @@ src/picsure/
 
 | Module           | What it owns                                                                 |
 |------------------|------------------------------------------------------------------------------|
-| `connect.py`     | `connect(platform, token, …)`. Resolves the platform, fetches consents on consent-gated deployments, and constructs the `Session` with its HPDS `backend` (`auth`/`open`). There is no resource-registry round trip — the gateway routes by path. Reads the display email and expiry straight from the JWT — no `/psama/user/me` round trip. Also handles the dev-mode toggle and the success/expiration banner. |
+| `connect.py`     | `connect(platform, token, …)`. Resolves the platform, fetches consents on consent-gated deployments, and constructs the `Session` with its HPDS `backend` (`auth`/`open`). There is no resource-registry round trip — the gateway routes by path. Reads the token expiry from the JWT's `exp` claim, and with `validate=True` (the default) sends one `GET /psama/user/me` to prove the server accepts the token — the email that request returns wins over the JWT's own claim, because it names the account requests will actually run as. Also handles the dev-mode toggle and the success/expiration banner. |
 | `search.py`      | `searchDictionary`, `fetch_facets`, `show_all_facets`, plus the smaller helpers that build dictionary request bodies, dedupe entries, and turn results into DataFrames. Dictionary searches page in bounded chunks of `_DEFAULT_PAGE_SIZE` (500). An unpaged call walks pages until the server says there are no more and never returns more than `_MAX_UNPAGED_ROWS` (100,000) rows: it raises when the server reports a larger match count and truncates the final page when the server reports none. `Session.searchDictionary` forwards `page` and `page_size`. `_SERVER_MAX_PAGE_SIZE` (Java `Integer.MAX_VALUE`) is only the validation ceiling on a caller-supplied `page_size`. It is never the size actually requested. |
 | `query_build.py` | `buildClause`, `buildClauseGroup`, and `buildQuery` — the public constructors for `Clause`, `ClauseGroup`, and `Query` with input validation (rejects mutually-exclusive arguments before they reach the wire). |
 | `query_edit.py`  | `removeSubQuery(query, target)` and `replaceClause(query, target, replacement)`. Pure local tree edits — no network calls. Matching is structural (frozen-dataclass equality). Removals that empty a `ClauseGroup` prune the parent; removing the whole tree raises `PicSureValidationError`. |
@@ -122,9 +121,9 @@ src/picsure/
 
 | Module         | What it owns                                                                  |
 |----------------|-------------------------------------------------------------------------------|
-| `client.py`    | `PicSureClient`. Wraps `httpx.Client` with Bearer-token auth, the `request-source: Authorized|Open` gateway header, a 30s timeout, one retry on connection errors and 5xx for GETs (POSTs are not retried on 5xx because they are non-idempotent), and a streaming variant `post_raw_stream` for binary payloads, `post_raw_to_file` to stream a response into a `.part` staging file promoted by `os.replace`, plus `put_json` for the `saveQueryByName` overwrite path. `_raise_for_status` translates 4xx into the `Transport*Error` set. |
+| `client.py`    | `PicSureClient`. Wraps `httpx.Client` with Bearer-token auth, the `request-source: Authorized|Open` gateway header, a ten-minute default request timeout (`DATA_TIMEOUT_SECONDS`, overridable via `connect(timeout=...)`) alongside the short `VALIDATION_TIMEOUT_SECONDS` the connect-time credential check uses, one retry on connection errors and 5xx for GETs (POSTs are not retried on 5xx because they are non-idempotent), and a streaming variant `post_raw_stream` for binary payloads, `post_raw_to_file` to stream a response into a `.part` staging file promoted by `os.replace`, plus `put_json` for the `saveQueryByName` overwrite path. `_raise_for_status` translates 4xx into the `Transport*Error` set. |
 | `errors.py`    | Internal `TransportError` hierarchy: `TransportAuthenticationError` (401/403), `TransportValidationError` (400/422/other 4xx), `TransportNotFoundError` (404), `TransportRateLimitError` (429, parses `Retry-After`), `TransportServerError` (5xx), `TransportConnectionError` (DNS / timeout / refused). |
-| `platforms.py` | `Platform` enum (`BDC_AUTHORIZED`, `BDC_OPEN`, `BDC_DEV_*`, `BDC_PREDEV_*`, `NHANES_AUTHORIZED`, `NHANES_OPEN`) and `resolve_platform()`. A `Platform` member carries URL, default resource UUID, whether dictionary calls need consents, and whether the platform requires a token; `resolve_platform` also accepts a raw `http(s)://` URL for unlisted deployments. |
+| `platforms.py` | `Platform` enum (`BDC_AUTHORIZED`, `BDC_OPEN`, `BDC_DEV_*`, `BDC_PREDEV_*`, `NHANES_AUTHORIZED`, `NHANES_OPEN`) and `resolve_platform()`. A `Platform` member carries URL, display label, whether dictionary calls need consents, whether the platform requires a token, and whether it serves genomic data; `resolve_platform` also accepts a raw `http(s)://` URL for unlisted deployments. |
 
 ### `errors.py` (top level)
 
@@ -201,7 +200,7 @@ The mapping for `_transport/errors.py`:
 |---------------------------|----------------------------------|------------------------------------|
 | 401, 403                  | `TransportAuthenticationError`   | `PicSureAuthError`                 |
 | 400, 422, other 4xx       | `TransportValidationError`       | `PicSureQueryError` or `PicSureValidationError` depending on whose input was wrong |
-| 404                       | `TransportNotFoundError`         | usually `PicSureQueryError` (resource/path missing) |
+| 404                       | `TransportNotFoundError`         | usually `PicSureQueryError` (path missing) |
 | 429                       | `TransportRateLimitError`        | `PicSureConnectionError` with a `retry_after` note  |
 | 5xx (after one retry)     | `TransportServerError`           | `PicSureConnectionError`           |
 | DNS / timeout / refused   | `TransportConnectionError`       | `PicSureConnectionError`           |
@@ -209,7 +208,7 @@ The mapping for `_transport/errors.py`:
 `_transport/client.py::_raise_for_status` is the single 4xx mapper
 shared by `_request` and `post_raw_stream`, so both code paths agree.
 
-## Session and Resource resolution
+## What a Session carries
 
 `Session` is the user-facing handle, but the data it carries is
 small:
@@ -217,28 +216,26 @@ small:
 - `_client` — the authenticated `PicSureClient` (the only thing that
   knows the base URL and token).
 - `_user_email`, `_token_expiration` — surfaced in the connect
-  banner; `_user_email == "anonymous"` on open-access deployments.
-- `_resources` — `list[Resource]`, empty now that the resource
-  registry is gone (retained for the `getResourceID` /
-  `setResourceIDByName` surface).
-- `_resource_uuid` — a UUID stored via `setResourceID` /
-  `connect(resource_uuid=…)`. Retained for backwards compatibility; it
-  no longer selects a backend or appears in query bodies.
-- `_consents` — `list[str]` of study-consent identifiers. Empty on
-  open-access; required in dictionary-api request bodies on
-  authorized deployments.
+  banner and readable as the `Session.user_email` /
+  `Session.token_expiration` properties; `"anonymous"` and `"N/A"`
+  respectively on open-access deployments. Neither exposes the token.
+- `_consents` — `list[str]` of study-consent identifiers, readable as
+  the `Session.consents` property. Empty on open-access; required in
+  `/picsure/dictionary/*` request bodies on authorized deployments.
 - `_dev_config` — opt-in `DevConfig` (off by default).
 - `_backend` — `"auth"` or `"open"`, set during connect. Selects the
-  HPDS backend by URL path (`/hpds/auth` vs `/hpds/open`) and, with it,
-  the v3-vs-v1 query lifecycle. Open-only deployments use `/hpds/open`
-  (v1) because BDC's gateway rejects open traffic on the v3 endpoint.
+  HPDS backend by URL path (`/picsure/hpds/auth` vs
+  `/picsure/hpds/open`). Both
+  backends use the v3 query routes; the path, not the token and not a
+  resource UUID, decides which HPDS answers.
 
-The resource-selection methods are retained for source compatibility
-but no longer drive routing. Two name-based helpers
-exist for ergonomics: `setResourceIDByName(name)` looks up by the
-backend's `name` field on `Resource`. Platform labels like
-`BDC Authorized` and `BDC Open` are display-only (printed on connect,
-returned by `Platform.label`); `resolve_platform` accepts **only** a
+There is no resource-ID surface. The registry endpoint that used to
+populate one was removed with the v3 rewrite, and routing is now
+entirely path-based — see the changelog entry for the removal of
+`connect(resource_uuid=…)` and the `Session` resource methods.
+
+Platform labels like `BDC Authorized` and `BDC Open` are display-only
+(printed on connect, returned by `Platform.label`); `resolve_platform` accepts **only** a
 `Platform` enum member or a full `http(s)` URL. Passing a label string
 raises `PicSureValidationError` whose message lists the valid
 `Platform.<NAME>` access forms — so connect examples must use enum

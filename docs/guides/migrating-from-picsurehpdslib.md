@@ -27,7 +27,7 @@ One package replaces both the client and the adapter.
 |---|---|
 | `PicSureClient.Client(url, token)` | `picsure.connect(platform, token)` |
 | `PicSureHpdsLib.Adapter(conn)` | *(not needed — `connect` returns a Session directly)* |
-| `adapter.useResource(uuid)` | `session.setResourceID(uuid)` |
+| `adapter.useResource(uuid)` | *(not needed — see [Resource IDs are gone](#resource-ids-are-gone))* |
 | `resource.dictionary().find("sex")` | `session.searchDictionary("sex")` |
 | `resource.query()` | `picsure.buildClause(...)` |
 | `query.filter().add(path, values)` | `picsure.buildClause(path, type=PhenotypicFilterType.FILTER, categories=values)` |
@@ -37,6 +37,32 @@ One package replaces both the client and the adapter.
 | `query.getCount()` | `session.runQuery(query, type="count")` |
 | `query.getResults()` | `session.runQuery(query, type="participant")` |
 | `query.getResultsDataFrame()` | `session.runQuery(query, type="participant")` |
+
+### Resource IDs are gone
+
+There is no equivalent of `adapter.useResource(uuid)`, and nothing to
+pass a resource UUID to. If you are porting a notebook, delete the
+`useResource` line — do not look for a replacement.
+
+The old library discovered a list of resources from the API and made you
+pick one by UUID before you could query anything. PIC-SURE v3 routes by
+URL path instead: `picsure.connect(platform=...)` resolves the platform
+to the `/picsure/hpds/auth` or `/picsure/hpds/open` route, and that
+choice alone decides
+which HPDS answers. The registry endpoint the UUIDs came from no longer
+exists.
+
+`connect()` briefly accepted a `resource_uuid` argument that was stored
+and ignored; it has been removed, along with `Session.getResourceID()`,
+`setResourceID()`, and `setResourceIDByName()`. `resource_uuid` was the
+third positional parameter, so
+
+```python
+picsure.connect(platform, token, resource_uuid)  # raises TypeError
+```
+
+now fails loudly rather than quietly binding the UUID to something else.
+Drop the third argument.
 
 ### Return-type changes
 
@@ -57,7 +83,7 @@ import PicSureHpdsLib
 
 conn = PicSureClient.Client(url="https://picsure.biodatacatalyst.nhlbi.nih.gov/picsure/", token=my_token)
 adapter = PicSureHpdsLib.Adapter(conn)
-resource = adapter.useResource(resource_uuid)
+resource = adapter.useResource(resource_uuid)  # no longer has an equivalent
 ```
 
 **New:**
@@ -149,8 +175,13 @@ session.exportAsPFB(query, "output.pfb")
 
 ### Removed
 
-- **Consents handling** — now managed by the backend as part of advanced
-  filtering. No adapter-side consent logic needed.
+- **Manual consent filter clauses** — you no longer build a
+  `\\_consents\\` clause yourself. `connect()` reads the account's
+  consent list from `/psama/user/me/consents` and the session sends it in
+  `/picsure/dictionary/*` request bodies for you, so dictionary results
+  are scoped to the studies you are entitled to. Read it back with
+  `session.consents`. This is adapter-side work — it is done for you, not
+  gone.
 - **BypassAdapter** — direct HPDS connections are no longer supported.
   All connections go through PIC-SURE.
 - **Two-package install** — the client and adapter are merged into one
