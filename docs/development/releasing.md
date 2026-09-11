@@ -163,21 +163,27 @@ and cut the next patch version.
 
 ## Publishing the docs
 
-`docs.yml` handles the docs site automatically. On every push to
-`main`, it builds with `uv run mkdocs build --strict` and deploys
-the `site/` output to the `gh-pages` branch via
-`peaceiris/actions-gh-pages`. The site URL follows GitHub Pages'
-default for the repo (`mkdocs.yml` does not set a `site_url`;
-confirm the published location with maintainers if it isn't visible
-under the repo's Pages settings).
+`docs.yml` builds the site with `uv run mkdocs build --strict` on
+every pull request and every branch push, and **deploys** only from a
+published release or a push to the repository's default branch. The
+guard compares against `github.event.repository.default_branch`
+rather than a hard-coded name, so it cannot go stale if the default
+branch is renamed — but it also means the deploy follows whatever
+GitHub says the default branch is, not whichever branch the team
+treats as mainline.
 
-Two practical notes:
+Three practical notes:
 
-- A docs-only release does not need a version bump. Pushing to
-  `main` republishes.
-- Because `docs.yml` runs `mkdocs build --strict`, a broken link in
-  a new doc fails CI on the PR that introduces it. Fix relative
-  paths before merging; don't expect to fix them after.
+- A docs-only change needs no version bump: a push to the default
+  branch republishes.
+- Because `docs.yml` runs `mkdocs build --strict`, a broken link
+  fails the check on the PR that introduces it. Fix relative paths
+  before merging; don't expect to fix them after.
+- The deploy writes the `gh-pages` branch via
+  `peaceiris/actions-gh-pages`, but GitHub Pages is **not currently
+  enabled for this repository** (`has_pages` is false), so nothing is
+  served from it yet. `mkdocs.yml` sets no `site_url`. Enabling Pages
+  and pointing it at `gh-pages` is a repository-settings change.
 
 ## Post-release
 
