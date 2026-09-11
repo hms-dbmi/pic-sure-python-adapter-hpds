@@ -143,6 +143,65 @@ class TestSession:
         assert session.consents == ["phs000007.c1"]
 
 
+class TestSessionIdentity:
+    """The connected account and the token deadline, without the token."""
+
+    def test_user_email_is_readable(self):
+        session = _make_session(email="researcher@university.edu")
+
+        assert session.user_email == "researcher@university.edu"
+
+    def test_token_expiration_is_readable(self):
+        session = _make_session(expiration="2026-06-15T00:00:00Z")
+
+        assert session.token_expiration == "2026-06-15T00:00:00Z"
+
+    def test_anonymous_session_reports_no_expiry(self):
+        session = _make_session(email="anonymous", expiration="N/A")
+
+        assert session.user_email == "anonymous"
+        assert session.token_expiration == "N/A"
+
+    def test_user_email_is_read_only(self):
+        session = _make_session()
+
+        with pytest.raises(AttributeError):
+            session.user_email = "someone@else.example"
+
+    def test_token_expiration_is_read_only(self):
+        session = _make_session()
+
+        with pytest.raises(AttributeError):
+            session.token_expiration = "2099-01-01T00:00:00Z"
+
+    def test_neither_property_exposes_the_token(self):
+        token = "header.payload.signature"
+        client = PicSureClient(base_url=BASE_URL, token=token)
+        session = Session(
+            client=client,
+            user_email="researcher@university.edu",
+            token_expiration="2026-06-15T00:00:00Z",
+        )
+
+        assert token not in session.user_email
+        assert token not in session.token_expiration
+        assert "signature" not in session.token_expiration
+
+    def test_no_public_attribute_returns_the_token(self):
+        token = "header.payload.signature"
+        client = PicSureClient(base_url=BASE_URL, token=token)
+        session = Session(
+            client=client,
+            user_email="researcher@university.edu",
+            token_expiration="2026-06-15T00:00:00Z",
+        )
+
+        public = [
+            getattr(session, name) for name in dir(session) if not name.startswith("_")
+        ]
+        assert not any(value == token for value in public if isinstance(value, str))
+
+
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
 
@@ -661,3 +720,31 @@ class TestSessionRunQueryByID:
         session = _make_live_session()
         with pytest.raises(PicSureValidationError, match="non-empty query ID"):
             session.runQueryByID("   ", type="count")
+
+
+class TestSessionBackendIsValidated:
+    """PL-13: the backend string is interpolated into every HPDS path."""
+
+    def test_unknown_backend_raises(self):
+        from picsure._transport.client import PicSureClient
+        from picsure.errors import PicSureValidationError
+
+        with pytest.raises(PicSureValidationError, match="backend must be one of"):
+            Session(
+                client=PicSureClient(base_url=BASE_URL),
+                user_email="u@example.com",
+                token_expiration="N/A",
+                backend="aut",
+            )
+
+    def test_both_real_backends_are_accepted(self):
+        from picsure._transport.client import PicSureClient
+
+        for backend in ("auth", "open"):
+            session = Session(
+                client=PicSureClient(base_url=BASE_URL),
+                user_email="u@example.com",
+                token_expiration="N/A",
+                backend=backend,
+            )
+            assert session._backend == backend

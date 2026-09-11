@@ -42,7 +42,11 @@ class TestResolvePlatform:
         assert resolve_platform(Platform.BDC_OPEN).include_consents is False
 
     def test_known_platform_include_consents_override(self):
-        info = resolve_platform(Platform.BDC_OPEN, include_consents=True)
+        # BDC_OPEN needs no auth, so consent scoping has to be turned on
+        # together with it -- see TestContradictoryFlags.
+        info = resolve_platform(
+            Platform.BDC_OPEN, include_consents=True, requires_auth=True
+        )
         assert info.include_consents is True
 
     def test_bdc_open_resolves_to_same_url(self):
@@ -67,7 +71,12 @@ class TestResolvePlatform:
         assert resolve_platform(Platform.BDC_OPEN).requires_auth is False
 
     def test_known_platform_requires_auth_override(self):
-        info = resolve_platform(Platform.BDC_AUTHORIZED, requires_auth=False)
+        # BDC_AUTHORIZED carries include_consents=True, so dropping auth
+        # alone is the contradiction; drop both to describe an open
+        # deployment at that URL.
+        info = resolve_platform(
+            Platform.BDC_AUTHORIZED, requires_auth=False, include_consents=False
+        )
         assert info.requires_auth is False
 
     def test_custom_url_defaults_to_requires_auth(self):
@@ -137,3 +146,72 @@ def test_resolve_platform_custom_url_override_true():
 def test_resolve_platform_member_override_false():
     info = resolve_platform(Platform.BDC_AUTHORIZED, supports_genomic=False)
     assert info.supports_genomic is False
+
+
+class TestBackendIsOneValue:
+    """PL-13: routing and the connect banner read a single derived value."""
+
+    def test_authorized_platform_is_the_auth_backend(self):
+        assert resolve_platform(Platform.BDC_AUTHORIZED).backend == "auth"
+
+    def test_open_platform_is_the_open_backend(self):
+        assert resolve_platform(Platform.BDC_OPEN).backend == "open"
+
+    def test_custom_url_defaults_to_the_auth_backend(self):
+        assert resolve_platform("https://my-picsure.example.com").backend == "auth"
+
+    def test_custom_url_without_auth_is_the_open_backend(self):
+        info = resolve_platform("https://my-picsure.example.com", requires_auth=False)
+        assert info.backend == "open"
+
+    def test_consent_scoping_never_lands_on_the_open_backend(self):
+        # The combination that used to print "open access" while routing
+        # to /hpds/auth is now unrepresentable, so the two cannot drift.
+        for platform in (Platform.BDC_AUTHORIZED, "https://my-picsure.example.com"):
+            info = resolve_platform(platform, include_consents=True)
+            assert info.include_consents is True
+            assert info.backend == "auth"
+
+
+class TestContradictoryFlags:
+    """PL-13: consent scoping on an unauthenticated connection is rejected."""
+
+    def test_custom_url_consents_without_auth_raises(self):
+        with pytest.raises(PicSureValidationError, match="include_consents=True"):
+            resolve_platform(
+                "https://my-picsure.example.com",
+                include_consents=True,
+                requires_auth=False,
+            )
+
+    def test_known_platform_consents_without_auth_raises(self):
+        # BDC_AUTHORIZED's own include_consents=True survives the
+        # requires_auth=False override, so this is the same contradiction
+        # reached without naming include_consents at all.
+        with pytest.raises(PicSureValidationError, match="include_consents=True"):
+            resolve_platform(Platform.BDC_AUTHORIZED, requires_auth=False)
+
+    def test_message_names_both_escape_hatches(self):
+        with pytest.raises(PicSureValidationError) as exc_info:
+            resolve_platform(Platform.BDC_AUTHORIZED, requires_auth=False)
+        message = str(exc_info.value)
+        assert "include_consents=False" in message
+        assert "Platform.BDC_OPEN" in message
+
+    def test_direct_construction_is_validated_too(self):
+        with pytest.raises(PicSureValidationError):
+            PlatformInfo(
+                url="https://my-picsure.example.com",
+                include_consents=True,
+                requires_auth=False,
+            )
+
+
+class TestCustomUrlMarker:
+    """PL-08: connect() needs to know the flags were guessed, not recorded."""
+
+    def test_custom_url_is_marked(self):
+        assert resolve_platform("https://my-picsure.example.com").is_custom_url is True
+
+    def test_known_platform_is_not_marked(self):
+        assert resolve_platform(Platform.BDC_AUTHORIZED).is_custom_url is False

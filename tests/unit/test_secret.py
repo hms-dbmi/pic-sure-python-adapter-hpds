@@ -16,9 +16,13 @@ import pickle
 import httpx
 import pytest
 import respx
+from _pytest._code import ExceptionInfo
 
+from picsure._services import connect as connect_module
+from picsure._services.connect import connect
 from picsure._transport.client import PicSureClient
 from picsure._transport.secret import SecretToken, as_secret_token
+from picsure.errors import PicSureValidationError
 
 BASE_URL = "https://secret.example.com"
 
@@ -57,6 +61,27 @@ def longest_token_run(haystack: str) -> int:
             length += 1
         best = max(best, length - 1)
     return best
+
+
+def render_traceback(excinfo: ExceptionInfo, *, showlocals: bool) -> str:
+    """Render ``excinfo`` the way pytest renders a failing test."""
+    return str(
+        excinfo.getrepr(
+            funcargs=True,
+            showlocals=showlocals,
+            style="long",
+            tbfilter=False,
+            truncate_locals=False,
+        )
+    )
+
+
+def frame_locals_by_function(excinfo: ExceptionInfo) -> dict[str, dict[str, object]]:
+    """Map each function name on the traceback to its frame locals."""
+    return {
+        entry.frame.code.raw.co_name: dict(entry.frame.f_locals)
+        for entry in excinfo.traceback
+    }
 
 
 class TestSecretTokenRendering:
@@ -214,3 +239,137 @@ class TestWireFormatIsUnchanged:
         request = route.calls[0].request
         assert "authorization" not in request.headers
         assert request.headers["request-source"] == "Open"
+
+
+class TestConnectDoesNotLeakTheTokenIntoTracebacks:
+    """The regression: a crash inside connect() published the token.
+
+    ``verify`` naming an absent CA bundle is the realistic trigger -- it
+    raises inside ``PicSureClient.__init__`` after the Authorization
+    header has been built, so both frames the defect covered are on the
+    traceback at once.
+    """
+
+    @staticmethod
+    def _failing_connect() -> ExceptionInfo:
+        try:
+            connect(
+                BASE_URL,
+                SECRET_VALUE,
+                verify="/nonexistent/ca-bundle-for-this-test.pem",
+            )
+        except PicSureValidationError:
+            return ExceptionInfo.from_current()
+        raise AssertionError("connect() was expected to raise")
+
+    def test_both_frames_are_on_the_traceback(self):
+        # Guards the test itself: if neither frame were present, the
+        # measurements below would pass without proving anything.
+        frames = frame_locals_by_function(self._failing_connect())
+
+        assert "connect" in frames
+        assert "__init__" in frames
+
+    @pytest.mark.parametrize("showlocals", [False, True])
+    def test_the_rendered_traceback_carries_no_token_material(self, showlocals):
+        rendered = render_traceback(self._failing_connect(), showlocals=showlocals)
+
+        assert longest_token_run(rendered) <= MAX_INCIDENTAL_RUN
+
+    def test_the_token_parameter_is_gone_from_connects_frame(self):
+        # Pins the ``del``: the parameter must not merely be rebound.
+        frames = frame_locals_by_function(self._failing_connect())
+
+        assert "token" not in frames["connect"]
+        assert "token" not in frames["__init__"]
+
+    def test_no_frame_local_holds_the_token_as_a_plain_str(self):
+        for name, frame_locals in frame_locals_by_function(
+            self._failing_connect()
+        ).items():
+            for local_name, value in frame_locals.items():
+                assert not (isinstance(value, str) and SECRET_VALUE[:16] in value), (
+                    f"{name}.{local_name} holds token material"
+                )
+
+    def test_the_headers_local_does_not_hold_the_bearer_value(self):
+        # The Authorization entry is built into the mapping handed to
+        # httpx, never into this local, which --showlocals would print.
+        headers = frame_locals_by_function(self._failing_connect())["__init__"][
+            "headers"
+        ]
+
+        assert "Authorization" not in headers
+
+
+def _fail(*args: object, **kwargs: object) -> None:
+    """Raise, holding nothing.
+
+    ``del`` clears the double's own frame first: a double that keeps the
+    arguments it was handed would put the token back on the traceback and
+    the measurement would be of the double, not of the adapter.
+    """
+    del args, kwargs
+    raise RuntimeError("forced failure")
+
+
+def _crash_inside_token_check(monkeypatch) -> ExceptionInfo:
+    """Force a failure while ``_reject_unusable_token``'s frame is live.
+
+    ``_decode_jwt_payload`` is the call it makes after counting segments,
+    so replacing it puts the frame on a traceback at the point where the
+    pre-fix code still held ``token``, ``stripped`` and ``segments``.
+    """
+    monkeypatch.setattr(connect_module, "_decode_jwt_payload", _fail)
+    try:
+        connect_module._reject_unusable_token(SECRET_VALUE, None)
+    except RuntimeError:
+        return ExceptionInfo.from_current()
+    raise AssertionError("expected the forced failure")
+
+
+class TestTokenHelpersDoNotLeakIntoTracebacks:
+    def test_the_check_frame_is_on_the_traceback(self):
+        # Guards the measurements below against silently testing nothing.
+        with pytest.MonkeyPatch.context() as monkeypatch:
+            frames = frame_locals_by_function(_crash_inside_token_check(monkeypatch))
+
+        assert "_reject_unusable_token" in frames
+
+    @pytest.mark.parametrize("showlocals", [False, True])
+    def test_a_crash_while_checking_the_token_carries_no_token_material(
+        self, showlocals, monkeypatch
+    ):
+        rendered = render_traceback(
+            _crash_inside_token_check(monkeypatch), showlocals=showlocals
+        )
+
+        assert longest_token_run(rendered) <= MAX_INCIDENTAL_RUN
+
+    def test_the_check_frame_keeps_no_token_derived_local(self, monkeypatch):
+        # The segment list is the token in three pieces; it now lives only
+        # in _jwt_segment_count, whose frame has returned by this point.
+        frame = frame_locals_by_function(_crash_inside_token_check(monkeypatch))[
+            "_reject_unusable_token"
+        ]
+
+        assert "token" not in frame
+        assert "stripped" not in frame
+        assert "segments" not in frame
+
+    @pytest.mark.parametrize("showlocals", [False, True])
+    def test_a_crash_while_decoding_the_payload_carries_no_token_material(
+        self, showlocals, monkeypatch
+    ):
+        # The encoded payload segment is a long contiguous run of the
+        # token, so this pins the helper that keeps it out of the frame.
+        monkeypatch.setattr(connect_module.base64, "urlsafe_b64decode", _fail)
+        try:
+            connect_module._decode_jwt_payload(SECRET_VALUE)
+        except RuntimeError:
+            excinfo = ExceptionInfo.from_current()
+        else:
+            raise AssertionError("expected the forced failure")
+
+        rendered = render_traceback(excinfo, showlocals=showlocals)
+        assert longest_token_run(rendered) <= MAX_INCIDENTAL_RUN

@@ -7,7 +7,6 @@ from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure._models.count_result import CountResult
 from picsure._models.query import Query
 from picsure._models.query_type import QueryType
-from picsure._models.resource import Resource
 from picsure._models.session import Session
 from picsure._services._hpds_paths import query_prefix
 from picsure._services.query_run import _resolve_query_type, run_query
@@ -23,7 +22,6 @@ from picsure.errors import (
 
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
-RESOURCE_UUID = "resource-uuid-aaaa-1111"
 QUERY_URL = f"{BASE_URL}{query_prefix('auth', v3=True)}/query/sync"
 OPEN_QUERY_URL = f"{BASE_URL}{query_prefix('open', v3=True)}/query/sync"
 
@@ -716,10 +714,6 @@ class TestSessionRunQueryWithMember:
             client=client,
             user_email="test@example.com",
             token_expiration="N/A",
-            resources=[
-                Resource(uuid=RESOURCE_UUID, name="R", description="d"),
-            ],
-            resource_uuid=RESOURCE_UUID,
         )
 
         result = session.runQuery(_simple_clause(), type=QueryType.COUNT)
@@ -800,10 +794,6 @@ class TestRunQueryBackendRouting:
             client=client,
             user_email="anonymous",
             token_expiration="N/A",
-            resources=[
-                Resource(uuid=RESOURCE_UUID, name="R", description="d"),
-            ],
-            resource_uuid=RESOURCE_UUID,
             backend="open",
         )
 
@@ -827,10 +817,6 @@ class TestRunQueryBackendRouting:
             client=client,
             user_email="test@example.com",
             token_expiration="N/A",
-            resources=[
-                Resource(uuid=RESOURCE_UUID, name="R", description="d"),
-            ],
-            resource_uuid=RESOURCE_UUID,
         )
 
         result = session.runQuery(_simple_clause(), type=QueryType.COUNT)
