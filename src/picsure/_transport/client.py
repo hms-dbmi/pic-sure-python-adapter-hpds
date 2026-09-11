@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
+import ssl
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 import httpx
 
@@ -21,14 +23,47 @@ from picsure._transport.errors import (
     TransportNotFoundError,
     TransportRateLimitError,
     TransportServerError,
+    TransportTLSError,
     TransportValidationError,
 )
+from picsure._transport.secret import SecretToken, as_secret_token
+from picsure.errors import PicSureQueryError, PicSureValidationError
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from picsure._dev.config import DevConfig
 
+# A JSON request body. Always an object: no PIC-SURE route takes a bare
+# array or scalar.
+RequestBody: TypeAlias = dict[str, Any]
+
+# A decoded JSON response body. Most routes answer with an object, but
+# ``/picsure/dictionary/facets`` and ``/picsure/operations/dataset/named``
+# both answer with a top-level array, so ``dict`` is not the return type of
+# a general JSON accessor.
+JsonObject: TypeAlias = dict[str, Any]
+JsonArray: TypeAlias = list[Any]
+JsonBody: TypeAlias = JsonObject | JsonArray
+
 _MAX_RETRIES = 1
-_TIMEOUT_SECONDS = 30.0
+
+# Two deadlines, deliberately separate.
+#
+# DATA_TIMEOUT_SECONDS is the per-request deadline for real work: a count, a
+# participant download, an export poll.  30s was too tight -- a large dataset
+# legitimately takes minutes to assemble server-side -- so the default is ten
+# minutes.  Override it per session with ``picsure.connect(timeout=...)``.
+#
+# VALIDATION_TIMEOUT_SECONDS is the deadline for the single connect-time
+# request that proves the deployment is reachable and the token is good.  It
+# stays short on purpose: a mistyped hostname that accepts TCP but never
+# answers must fail in seconds, not sit on the ten-minute data deadline.
+DATA_TIMEOUT_SECONDS = 600.0
+VALIDATION_TIMEOUT_SECONDS = 15.0
+
+# Read size for streamed downloads.
+_CHUNK_BYTES = 64 * 1024
 
 # Env var controlling TLS certificate verification, used only when the caller
 # does not pass an explicit ``verify`` to connect()/PicSureClient. Accepts a
@@ -37,13 +72,24 @@ _TIMEOUT_SECONDS = 30.0
 _SSL_VERIFY_ENV = "PICSURE_SSL_VERIFY"
 
 
-def _resolve_verify(verify: bool | str | None) -> bool | str:
+def _resolve_verify(verify: bool | str | None) -> bool | ssl.SSLContext:
     """Resolve the httpx ``verify`` argument.
 
     Precedence: an explicit ``verify`` wins; otherwise fall back to the
     ``PICSURE_SSL_VERIFY`` env var; otherwise verify (the secure default).
-    A string that is not a boolean keyword is treated as a CA-bundle path.
+    A string that is not a boolean keyword is treated as a CA-bundle path
+    and must exist, so a typo fails naming the path instead of surfacing
+    httpx's bare ``FileNotFoundError``.
+
+    A path is turned into an :class:`ssl.SSLContext` here rather than
+    passed through, because httpx 0.28 deprecates ``verify=<str>``.  What
+    the caller may pass is unchanged.
+
+    Raises:
+        PicSureValidationError: If a CA-bundle path does not exist.
     """
+    if isinstance(verify, str):
+        return _ca_bundle_context(verify, source=f"verify={verify!r}")
     if verify is not None:
         return verify
     raw = os.environ.get(_SSL_VERIFY_ENV)
@@ -54,7 +100,33 @@ def _resolve_verify(verify: bool | str | None) -> bool | str:
         return False
     if lowered in ("true", "1", "yes", "on"):
         return True
-    return raw  # a CA-bundle path
+    return _ca_bundle_context(raw, source=f"{_SSL_VERIFY_ENV}={raw!r}")
+
+
+def _ca_bundle_context(path: str, *, source: str) -> ssl.SSLContext:
+    """Build an SSL context trusting the CA bundle at ``path``.
+
+    ``source`` names where the value came from -- the ``verify`` argument
+    or the env var -- so the reader knows which one to fix.  A directory
+    is accepted: OpenSSL takes a hashed CA directory as well as a file.
+
+    Raises:
+        PicSureValidationError: If the path does not exist.
+        ssl.SSLError: If it exists but holds no certificate OpenSSL can
+            read, which is the same failure httpx used to raise when it
+            loaded the path itself.
+    """
+    if not os.path.exists(path):
+        raise PicSureValidationError(
+            f"The CA bundle {path!r} does not exist, so TLS verification "
+            f"cannot be configured (from {source}). Point it at a PEM file "
+            f"(or an OpenSSL CA directory) that this machine can read, pass "
+            f"verify=True to use the system trust store, or verify=False to "
+            f"skip verification on a self-signed deployment."
+        )
+    if os.path.isdir(path):
+        return ssl.create_default_context(capath=path)
+    return ssl.create_default_context(cafile=path)
 
 
 # Transport failures where the request provably never reached the server --
@@ -96,13 +168,48 @@ def _server_disconnected_before_response(exc: httpx.RemoteProtocolError) -> bool
     return str(exc).startswith("Server disconnected")
 
 
+def _certificate_verification_failure(
+    exc: BaseException,
+) -> ssl.SSLCertVerificationError | None:
+    """Return the certificate-verification error underlying ``exc``, if any.
+
+    httpx does not expose TLS failures as a distinct exception type: an
+    untrusted certificate arrives as an ``httpx.ConnectError`` wrapping an
+    ``ssl.SSLCertVerificationError``.  Walk the ``__cause__`` /
+    ``__context__`` chain to find it, guarding against a cycle.
+    """
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, ssl.SSLCertVerificationError):
+            return current
+        current = current.__cause__ or current.__context__
+    return None
+
+
+def _tls_failure_message(host: str, reason: ssl.SSLCertVerificationError) -> str:
+    """Explain a certificate rejection and how to get past it."""
+    return (
+        f"TLS certificate verification failed for {host}: {reason}. The server's "
+        "certificate is not trusted by this machine, so no request was sent. If "
+        "this is a local or self-signed deployment, pass verify=False to "
+        "picsure.connect() (or set PICSURE_SSL_VERIFY=false). To trust a private "
+        'CA, pass verify="/path/to/ca-bundle.pem" (or set PICSURE_SSL_VERIFY to '
+        "that path)."
+    )
+
+
 def _should_retry(method: str, exc: httpx.TransportError) -> bool:
     """Whether a failed request is safe to send again.
 
     Safe for every method when the request provably never reached the
     server; otherwise only for idempotent GETs (the server may already
-    have processed the request).
+    have processed the request).  A rejected certificate is deterministic
+    and never retried.
     """
+    if _certificate_verification_failure(exc) is not None:
+        return False
     if isinstance(exc, _NO_RETRY_FAILURES):
         return False
     if isinstance(exc, _PRE_SEND_FAILURES):
@@ -136,6 +243,14 @@ def _connection_failure_message(exc: httpx.TransportError) -> str:
     return str(exc) or type(exc).__name__
 
 
+def _connection_error(exc: httpx.TransportError, host: str) -> TransportConnectionError:
+    """Build the transport error for a request that got no response."""
+    certificate_failure = _certificate_verification_failure(exc)
+    if certificate_failure is not None:
+        return TransportTLSError(_tls_failure_message(host, certificate_failure))
+    return TransportConnectionError(_connection_failure_message(exc))
+
+
 def _package_version() -> str:
     """Return the installed ``picsure`` version, or ``"unknown"``."""
     from importlib.metadata import PackageNotFoundError, version
@@ -156,6 +271,46 @@ def _user_agent(client_type: str) -> str:
     return f"picsure-{product}/{_package_version()}"
 
 
+def _decode_json(response: httpx.Response, path: str) -> JsonBody:
+    """Decode a response body as a JSON object or array.
+
+    ``httpx.Response.json`` is typed ``Any``, so a ``dict`` return
+    annotation on the accessors above was unenforced -- and wrong, since
+    two PIC-SURE routes answer with a top-level array.  Narrowing here
+    makes the union the accessors advertise a checked fact rather than a
+    claim, and turns a scalar or ``null`` top level into a stated failure
+    instead of an ``AttributeError`` in whichever service indexed it.
+
+    Raises:
+        ValueError: If the body decodes to something other than an object
+            or an array.  ``response.json()`` already raises ``ValueError``
+            for a body that is not JSON at all, so callers have one
+            exception type to handle for "unusable payload".
+    """
+    payload = response.json()
+    if isinstance(payload, (dict, list)):
+        return payload
+    raise ValueError(
+        f"{path} returned a JSON {type(payload).__name__} at the top level; "
+        f"expected an object or an array."
+    )
+
+
+def json_object(payload: JsonBody, *, path: str) -> JsonObject:
+    """Narrow a decoded JSON body to an object, or say what arrived instead.
+
+    For the routes whose contract is a single object.  Raising
+    :class:`~picsure.errors.PicSureQueryError` keeps an unexpected array
+    inside the public hierarchy, so a caller wrapping the call in
+    ``except PicSureError`` still catches it.
+    """
+    if isinstance(payload, dict):
+        return payload
+    raise PicSureQueryError(
+        f"{path} returned a JSON array at the top level; expected an object."
+    )
+
+
 def _mark_emitted(exc: BaseException) -> BaseException:
     # Tag exceptions whose failure has already been recorded as a dev-mode
     # error event so @timed wrappers higher up the stack don't double-emit.
@@ -173,20 +328,42 @@ class PicSureClient:
     def __init__(
         self,
         base_url: str,
-        token: str = "",
+        token: str | SecretToken = "",
         dev_config: DevConfig | None = None,
         session_id: str = "",
         client_type: str = "PYTHON_ADAPTER",
         verify: bool | str | None = None,
+        timeout: float | None = None,
     ) -> None:
+        """Build the client and its one long-lived httpx.Client.
+
+        ``token`` is wrapped in a :class:`SecretToken`, which renders as
+        a placeholder, and the original binding is then deleted so the
+        parameter drops out of any rendered frame.  This matters here
+        because ``_resolve_verify`` below raises on a CA-bundle path
+        that does not exist, putting this frame on a traceback the user
+        sees.
+
+        Args:
+            base_url: Deployment root the paths are resolved against.
+            token: PIC-SURE API token, as a ``str`` or an already-wrapped
+                :class:`SecretToken`.  Empty for open-access use.
+            dev_config: Developer-mode event sink, or ``None``.
+            session_id: Correlation id sent as ``X-Session-Id``.
+            client_type: Calling adapter, sent as ``X-Client-Type``.
+            verify: TLS verification, resolved by :func:`_resolve_verify`.
+            timeout: Per-request deadline for data operations.
+        """
+        secret = as_secret_token(token)
+        del token
+
         # BDC's API gateway routes auth based on a "request-source" header:
         # "Authorized" when a bearer token is present, "Open" otherwise.
         # Without it, authorized endpoints (e.g. /hpds/auth/v3/query/sync) can
         # reject tokens that are otherwise valid on PSAMA or the data-dictionary.
-        token = token.strip()
         headers = {
             "Content-Type": "application/json",
-            "request-source": "Authorized" if token else "Open",
+            "request-source": "Authorized" if secret else "Open",
             # Correlation headers consumed by the backend's AuditLoggingFilter:
             # X-Client-Type identifies the calling adapter; User-Agent carries
             # the same information in the standard slot. X-Session-Id ties every
@@ -195,34 +372,71 @@ class PicSureClient:
             "X-Client-Type": client_type,
             "User-Agent": _user_agent(client_type),
         }
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
         if session_id:
             headers["X-Session-Id"] = session_id
+        self._timeout = DATA_TIMEOUT_SECONDS if timeout is None else timeout
+        # The Authorization entry is built into the mapping handed to
+        # httpx rather than added to `headers` first: `headers` is a
+        # frame local, so a real Bearer value placed in it would be
+        # rendered by any traceback showing this frame.  httpx.Headers
+        # redacts `authorization` in its own repr, so the value is safe
+        # once it is inside the client.
         self._http = httpx.Client(
             base_url=base_url,
-            headers=headers,
-            timeout=_TIMEOUT_SECONDS,
+            headers=(
+                {**headers, "Authorization": f"Bearer {secret.reveal()}"}
+                if secret
+                else headers
+            ),
+            timeout=self._timeout,
             verify=_resolve_verify(verify),
         )
+        self._host = self._http.base_url.host
         self._dev_config = dev_config
 
-    def get_json(self, path: str) -> dict:  # type: ignore[type-arg]
-        """Send GET request and return parsed JSON."""
-        response = self._request("GET", path)
-        return response.json()  # type: ignore[no-any-return]
+    def get_json(
+        self,
+        path: str,
+        *,
+        timeout: float | None = None,
+    ) -> JsonBody:
+        """Send GET request and return the parsed JSON object or array.
 
-    def post_json(self, path: str, body: dict | None = None) -> dict:  # type: ignore[type-arg]
-        """Send POST request with JSON body and return parsed JSON."""
+        Args:
+            path: Request path, relative to the client's base URL.
+            timeout: Per-request deadline in seconds, overriding the
+                session-wide one.  Used by the connect-time validation
+                call, which must fail fast on an unreachable host rather
+                than wait out the long data deadline.
+
+        Returns:
+            The decoded body.  Callers that require an object should pass
+            it through :func:`json_object` rather than assume the shape.
+
+        Raises:
+            ValueError: If the body is not JSON, or decodes to something
+                other than an object or an array.
+        """
+        response = self._request("GET", path, **_timeout_kwargs(timeout))
+        return _decode_json(response, path)
+
+    def post_json(self, path: str, body: RequestBody | None = None) -> JsonBody:
+        """Send POST request with JSON body and return parsed JSON.
+
+        See :meth:`get_json` for the return contract.
+        """
         response = self._request("POST", path, json=body)
-        return response.json()  # type: ignore[no-any-return]
+        return _decode_json(response, path)
 
-    def put_json(self, path: str, body: dict | None = None) -> dict:  # type: ignore[type-arg]
-        """Send PUT request with JSON body and return parsed JSON."""
+    def put_json(self, path: str, body: RequestBody | None = None) -> JsonBody:
+        """Send PUT request with JSON body and return parsed JSON.
+
+        See :meth:`get_json` for the return contract.
+        """
         response = self._request("PUT", path, json=body)
-        return response.json()  # type: ignore[no-any-return]
+        return _decode_json(response, path)
 
-    def post_raw(self, path: str, body: dict | None = None) -> bytes:  # type: ignore[type-arg]
+    def post_raw(self, path: str, body: RequestBody | None = None) -> bytes:
         """Send POST request with JSON body and return raw response bytes.
 
         Use this for endpoints that return non-JSON data (CSV, PFB, etc.).
@@ -234,7 +448,7 @@ class PicSureClient:
     def post_raw_stream(
         self,
         path: str,
-        body: dict | None = None,  # type: ignore[type-arg]
+        body: RequestBody | None = None,
     ) -> Iterator[httpx.Response]:
         """POST JSON body and stream the response without buffering it.
 
@@ -264,9 +478,7 @@ class PicSureClient:
                 # _should_retry).
                 if _should_retry("POST", exc) and attempt < _MAX_RETRIES:
                     continue
-                raise TransportConnectionError(
-                    _connection_failure_message(exc)
-                ) from exc
+                raise _connection_error(exc, self._host) from exc
 
             status = response.status_code
 
@@ -307,6 +519,61 @@ class PicSureClient:
 
         raise TransportConnectionError("Request failed after retries") from last_exc
 
+    def post_raw_to_file(
+        self,
+        path: str,
+        target: Path,
+        body: RequestBody | None = None,
+    ) -> None:
+        """POST a JSON body and stream the response to ``target`` on disk.
+
+        The buffered counterpart, :meth:`post_raw`, holds the whole
+        response in memory; with a ten-minute deadline a participant
+        download can be large enough that buffering it kills the kernel
+        with no error at all.  This method never holds more than one
+        chunk: bytes go to ``<target>.part`` as they arrive and
+        :func:`os.replace` promotes that to ``target`` only once the body
+        is complete, so a failed download never leaves a truncated file
+        at the real path.
+
+        Args:
+            path: Request path, relative to the client's base URL.
+            target: Final path to write.  Its parent must exist.
+            body: JSON request body.
+
+        Emits the same developer-mode ``http`` event the buffered helpers
+        do, so turning on dev mode still accounts for a download that
+        went to disk.  The size is the byte count actually written rather
+        than ``len(response.content)``, which is both unavailable on a
+        streamed response and would undo the streaming.
+
+        Raises:
+            TransportError: Same mapping as :meth:`post_raw_stream`.
+            OSError: If the staging file cannot be written or promoted.
+        """
+        part_path = target.with_suffix(target.suffix + ".part")
+        start = time.monotonic()
+        try:
+            with (
+                self.post_raw_stream(path, body=body) as response,
+                open(part_path, "wb") as out,
+            ):
+                written = 0
+                for chunk in response.iter_bytes(chunk_size=_CHUNK_BYTES):
+                    if chunk:
+                        written += out.write(chunk)
+                self._emit_download(path, body, response, written, start)
+        except BaseException as exc:
+            self._emit_error("POST", path, 0, start, type(exc).__name__)
+            _remove_partial(part_path)
+            raise
+
+        try:
+            os.replace(part_path, target)
+        except OSError:
+            _remove_partial(part_path)
+            raise
+
     def _request(self, method: str, path: str, **kwargs: object) -> httpx.Response:
         last_exc: Exception | None = None
         raw_body = kwargs.get("json")
@@ -326,9 +593,7 @@ class PicSureClient:
                 # _should_retry for the per-exception classification.
                 if _should_retry(method, exc) and attempt < _MAX_RETRIES:
                     continue
-                raise _mark_emitted(
-                    TransportConnectionError(_connection_failure_message(exc))
-                ) from exc
+                raise _mark_emitted(_connection_error(exc, self._host)) from exc
 
             self._emit_http(method, path, body, response, attempt, start)
 
@@ -372,7 +637,7 @@ class PicSureClient:
         self,
         method: str,
         path: str,
-        body: dict | None,  # type: ignore[type-arg]
+        body: RequestBody | None,
         response: httpx.Response,
         attempt: int,
         start: float,
@@ -382,12 +647,12 @@ class PicSureClient:
             return
 
         duration_ms = (time.monotonic() - start) * 1000.0
-        bytes_in = (
+        bytes_sent = (
             len(response.request.content or b"")
             if response.request
             else _estimate_bytes(body)
         )
-        bytes_out = len(response.content or b"")
+        bytes_received = len(response.content or b"")
         metadata: dict[str, object] = {}
 
         if body_is_sensitive(path, method, body):
@@ -399,10 +664,52 @@ class PicSureClient:
                 kind="http",
                 name=path,
                 duration_ms=duration_ms,
-                bytes_in=bytes_in,
-                bytes_out=bytes_out,
+                bytes_sent=bytes_sent,
+                bytes_received=bytes_received,
                 status=response.status_code,
                 retry=attempt,
+                error=None,
+                metadata=metadata,
+            )
+        )
+
+    def _emit_download(
+        self,
+        path: str,
+        body: RequestBody | None,
+        response: httpx.Response,
+        bytes_written: int,
+        start: float,
+    ) -> None:
+        """Record a completed streamed download as an ``http`` event.
+
+        The buffered path uses :meth:`_emit_http`, which sizes the
+        response with ``len(response.content)``.  A streamed response has
+        no ``content`` to read -- and reading it would defeat the point --
+        so the size comes from what was written to disk.
+        """
+        cfg = self._dev_config
+        if cfg is None or not cfg.enabled:
+            return
+
+        metadata: dict[str, object] = {}
+        if body_is_sensitive(path, "POST", body):
+            metadata["redacted"] = "participant"
+
+        cfg.emit(
+            Event(
+                timestamp=datetime.now(timezone.utc),
+                kind="http",
+                name=path,
+                duration_ms=(time.monotonic() - start) * 1000.0,
+                bytes_sent=(
+                    len(response.request.content or b"")
+                    if response.request
+                    else _estimate_bytes(body)
+                ),
+                bytes_received=bytes_written,
+                status=response.status_code,
+                retry=0,
                 error=None,
                 metadata=metadata,
             )
@@ -427,8 +734,8 @@ class PicSureClient:
                 kind="error",
                 name=path,
                 duration_ms=duration_ms,
-                bytes_in=None,
-                bytes_out=None,
+                bytes_sent=None,
+                bytes_received=None,
                 status=None,
                 retry=attempt,
                 error=error_name,
@@ -444,12 +751,17 @@ def _raise_for_status(status: int, body: str, response: httpx.Response) -> None:
     so the two surfaces translate 4xx identically.  Callers are
     responsible for handling 5xx themselves (the retry policy differs
     between GET and POST).
+
+    401 and 403 are decided by status before the response body is
+    consulted, so every refusal lands in the authentication /
+    authorization family whether or not the server sent a structured
+    payload.
     """
+    if status in (401, 403):
+        raise _refusal_transport_error(status, body)
     structured_error = _structured_transport_error(status, body)
     if structured_error is not None:
         raise structured_error
-    if status in (401, 403):
-        raise TransportAuthenticationError(status, body)
     if status == 404:
         raise TransportNotFoundError(status, body)
     if status == 429:
@@ -459,6 +771,22 @@ def _raise_for_status(status: int, body: str, response: httpx.Response) -> None:
     if 400 <= status < 500:
         # 400, 422, and any other 4xx fall into the validation bucket.
         raise TransportValidationError(status, body)
+
+
+def _refusal_transport_error(status: int, body: str) -> TransportError:
+    """Build the transport error for a 401 or 403.
+
+    A ``consent_denied`` payload refines the refusal into
+    :class:`TransportConsentDeniedError`, which keeps the server's own
+    ``errorType`` and message.  Every other 401 / 403 — including one
+    carrying ``consent_lookup_failed``, which the backend only ever emits
+    as a 502 — becomes a plain :class:`TransportAuthenticationError`, so
+    callers can rely on the status alone to place it.
+    """
+    structured_error = _structured_transport_error(status, body)
+    if isinstance(structured_error, TransportConsentDeniedError):
+        return structured_error
+    return TransportAuthenticationError(status, body)
 
 
 def _structured_transport_error(
@@ -500,7 +828,27 @@ def _parse_retry_after(response: httpx.Response) -> int | None:
         return None
 
 
-def _estimate_bytes(body: dict | None) -> int | None:  # type: ignore[type-arg]
+def _timeout_kwargs(timeout: float | None) -> dict[str, float]:
+    """Render a per-request timeout override as request kwargs.
+
+    Absent an override the key is omitted entirely, so the request keeps
+    the client-wide timeout rather than passing ``None``, which httpx
+    reads as "no deadline at all".
+    """
+    return {} if timeout is None else {"timeout": timeout}
+
+
+def _remove_partial(part_path: Path) -> None:
+    """Best-effort removal of a staging file after a failed download.
+
+    If the partial cannot be deleted there is nothing useful to do; the
+    original failure is the one worth propagating.
+    """
+    with contextlib.suppress(OSError):
+        part_path.unlink(missing_ok=True)
+
+
+def _estimate_bytes(body: RequestBody | None) -> int | None:
     if body is None:
         return 0
     import json as _json

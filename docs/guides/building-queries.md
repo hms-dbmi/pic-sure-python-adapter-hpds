@@ -212,33 +212,56 @@ freq_filter = picsure.buildGenomicFilter(
 
 `values` is required. Keys are validated against `GenomicFilterKey`; an
 unrecognized string key — or a variant-spec / SNP key (an rsID or
-`chr,pos,ref,alt`) — is rejected with an actionable error. `VariantFrequency`
-has three members: `RARE`, `COMMON`, and `NOVEL`.
+`chr,pos,ref,alt`) — is rejected with an actionable error.
+
+`VariantFrequency` has five members: `RARE`, `COMMON`, `LOW_FREQUENCY`,
+`ULTRA_RARE`, and `NOVEL`. `NOVEL` is deprecated — it is absent from every
+annotation set observed on a PIC-SURE deployment, and is kept only so
+existing code keeps working. The members are a convenience, not an
+allowlist: `buildGenomicFilter` accepts any string for this key, and
+`session.searchGenomicValues("Variant_frequency_as_text")` is the
+authoritative vocabulary for a given deployment.
 
 ### Filtering by variant severity
 
-`Variant_severity` is a **virtual** key: the backend has no severity filter, so
-`buildGenomicFilter` expands a `VariantSeverity` bucket into the matching
-`Variant_consequence_calculated` values. Filter as if severity were a real key:
+`Variant_severity` accepts **two different vocabularies**, and
+`buildGenomicFilter` routes them differently:
+
+| You pass | Sent as | Why |
+|---|---|---|
+| a `VariantSeverity` bucket (`HIGH` / `MEDIUM` / `LOW`) | a `Variant_consequence_calculated` filter | The buckets are this adapter's own grouping, so they are expanded into the consequences they cover. |
+| a backend impact value (`HIGH`, `MODERATE`, `LOW`, `MODIFIER`) | a `Variant_severity` filter, unchanged | The backend does carry a `Variant_severity` annotation (VEP's `IMPACT` field) and applies the key verbatim. |
 
 ```python
 import picsure
 
-# High-severity variants -> a Variant_consequence_calculated filter
+# A VariantSeverity bucket is expanded into consequences.
 severe = picsure.buildGenomicFilter(
     key=picsure.GenomicFilterKey.VARIANT_SEVERITY,
     values=picsure.VariantSeverity.HIGH,
 )
 # severe.key == "Variant_consequence_calculated"
 
-# Multiple severities are unioned
+# Multiple buckets are unioned.
 severe_or_moderate = picsure.buildGenomicFilter(
     key=picsure.GenomicFilterKey.VARIANT_SEVERITY,
     values=[picsure.VariantSeverity.HIGH, picsure.VariantSeverity.MEDIUM],
 )
+
+# A backend impact value stays on the Variant_severity key.
+modifier = picsure.buildGenomicFilter(
+    key=picsure.GenomicFilterKey.VARIANT_SEVERITY,
+    values="MODIFIER",
+)
+# modifier.key == "Variant_severity"
 ```
 
-`VariantSeverity` has three members: `HIGH`, `MEDIUM`, and `LOW`.
+`VariantSeverity` has three members: `HIGH`, `MEDIUM`, and `LOW`. On
+observed data the two routes select the same patients, but only the impact
+values reach `MODIFIER`, which no bucket covers. The four impact values are
+`HIGH`, `MODERATE`, `LOW`, and `MODIFIER`;
+`session.searchGenomicValues("Variant_severity")` reports which of them a
+given deployment actually holds.
 
 ### Genomic-only query
 

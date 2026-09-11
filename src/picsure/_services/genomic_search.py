@@ -4,24 +4,13 @@ from urllib.parse import urlencode
 
 import pandas as pd
 
-from picsure._services._errors import rate_limit_message, translate_stage_error
+from picsure._services._errors import translate_transport_error
 from picsure._services._hpds_paths import search_values_path
 from picsure._transport.client import PicSureClient
-from picsure._transport.errors import (
-    TransportAuthenticationError,
-    TransportConsentDeniedError,
-    TransportConsentLookupError,
-    TransportError,
-    TransportNotFoundError,
-    TransportRateLimitError,
-    TransportValidationError,
-)
-from picsure.errors import (
-    PicSureAuthError,
-    PicSureConnectionError,
-    PicSureQueryError,
-    PicSureValidationError,
-)
+from picsure._transport.errors import TransportError, TransportNotFoundError
+from picsure.errors import PicSureQueryError, PicSureValidationError
+
+_GENOMIC_VALUES_OPERATION = "the genomic value lookup"
 
 
 def search_genomic_values(
@@ -41,6 +30,12 @@ def search_genomic_values(
     Returns a single-column (``value``) DataFrame. Pagination metadata is
     preserved on ``df.attrs``: ``total``, ``page``, ``size``,
     ``genomic_concept_path``.
+
+    Raises:
+        PicSureValidationError: If ``genomic_concept_path`` is blank.
+        PicSureQueryError: If the endpoint is absent, or the response is not
+            a genomic values payload — including the empty body the server
+            returns for a concept that is not a genomic annotation.
     """
     if not isinstance(genomic_concept_path, str) or not genomic_concept_path.strip():
         raise PicSureValidationError(
@@ -59,30 +54,25 @@ def search_genomic_values(
 
     try:
         data = client.get_json(path)
-    except (TransportConsentDeniedError, TransportConsentLookupError) as exc:
-        raise translate_stage_error(
-            exc, service="genomic values", stage="fetch"
-        ) from exc
-    except TransportAuthenticationError as exc:
-        raise PicSureAuthError(
-            f"Authentication failed fetching genomic values "
-            f"(HTTP {exc.status_code}): {exc.body[:200]}"
+    except ValueError as exc:
+        # The server answers HTTP 200 with an empty body when the concept is
+        # not a genomic annotation, which leaves get_json with nothing to
+        # decode.  Without this, a JSONDecodeError escapes the library.
+        raise PicSureQueryError(
+            f"The server returned no genomic values payload for "
+            f"'{genomic_concept_path}'. That concept may not be a genomic "
+            "annotation on this deployment — valid keys look like "
+            "'Gene_with_variant' or 'Variant_consequence_calculated', not a "
+            "phenotypic concept path."
         ) from exc
     except TransportNotFoundError as exc:
         raise PicSureQueryError(
             f"Genomic values endpoint not found (HTTP {exc.status_code}). "
             "This deployment may not support genomic value lookups."
         ) from exc
-    except TransportValidationError as exc:
-        raise PicSureValidationError(
-            f"Server rejected the genomic value request "
-            f"(HTTP {exc.status_code}): {exc.body[:200]}"
-        ) from exc
-    except TransportRateLimitError as exc:
-        raise PicSureConnectionError(rate_limit_message(exc)) from exc
     except TransportError as exc:
-        raise PicSureConnectionError(
-            "Could not fetch genomic values. The server may be temporarily unavailable."
+        raise translate_transport_error(
+            exc, operation=_GENOMIC_VALUES_OPERATION
         ) from exc
 
     if not isinstance(data, dict) or not isinstance(data.get("results"), list):

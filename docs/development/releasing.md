@@ -24,8 +24,13 @@ The "public surface" is exactly the `__all__` list in
 prefixed with `_` (the `_models/`, `_services/`, `_transport/`, and
 `_dev/` subpackages) can change without a major bump.
 
-The current version lives in
-[`pyproject.toml`](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/blob/main/pyproject.toml) under `[project].version`.
+There is no version field to read or edit. `pyproject.toml` declares
+`dynamic = ["version"]` with `[tool.hatch.version] source = "vcs"`, so
+`hatch-vcs` derives the version from the git tag at build time — the
+tag *is* the version. Between tags it derives a dev version from the
+commit distance. This is why every workflow checks out with
+`fetch-depth: 0`: a shallow clone has no tags and the build cannot
+name itself.
 
 ## Pre-release checklist
 
@@ -37,7 +42,9 @@ The current version lives in
    already in use: `### Added`, `### Changed`, `### Removed`, `###
    Fixed`. Keep entries user-focused; internal refactors don't need
    a line unless they shift behaviour.
-3. **Bump `version` in `pyproject.toml`** to `X.Y.Z`.
+3. **Do not add a `version` to `pyproject.toml`.** It declares the
+   version `dynamic`; a static field alongside that fails the build.
+   The tag you push in the next section sets the version.
 4. **Build the docs locally and skim.**
    ```bash
    uv run mkdocs build --strict
@@ -52,11 +59,18 @@ The current version lives in
 
 ## Cutting the release
 
-Existing tags follow `vX.Y` (e.g. `v1.0`, `v1.2`). Going forward,
-the SemVer convention is to use the full `vX.Y.Z`. (Confirm with
-maintainers whether the abbreviated `vX.Y` form should be preserved
-for continuity, or whether new tags should standardize on
-`vX.Y.Z`.)
+The tag format is enforced, not a convention. `release.yml`'s
+"Classify tag" step accepts exactly two shapes and fails the workflow
+on anything else:
+
+| Tag | Classified | Publishes to |
+|---|---|---|
+| `vX.Y.Z` (e.g. `v2.0.0`) | final release | PyPI |
+| `vX.Y.Z{a,b,rc}N` (e.g. `v2.0.0rc1`) | pre-release | TestPyPI |
+| anything else (e.g. `v1.0`) | error | nothing — the run fails |
+
+The two-component tags still in the repo (`v1.0`, `v1.2`) predate
+this workflow and would be rejected today. Use the full `vX.Y.Z`.
 
 ```bash
 # from a clean main, on the merge commit you want to ship
@@ -66,54 +80,67 @@ git tag -a vX.Y.Z -m "Release X.Y.Z"
 git push origin vX.Y.Z
 ```
 
-There is **no tag-triggered workflow in the repo today**: neither
-`ci.yml` nor `docs.yml` includes a `push: tags:` filter. Tagging is
-a marker for humans; publishing happens separately. Confirm with
-maintainers whether a tag should trigger anything.
+Pushing the tag is the release. `release.yml` triggers on
+`push: tags: ["v*"]` and does the whole run itself: `lint`, then
+`test` across Python 3.10/3.11/3.12, then `build` (which classifies
+the tag, runs `uv build`, and validates the metadata with
+`uvx twine check`), then one of the two publish jobs. A failing lint
+or test job stops the release before anything is uploaded.
 
 ## Publishing to PyPI
 
-No automated publish job is wired up — the package is published
-manually. Confirm with maintainers whether this is intended to stay
-manual or whether the team plans to add a `publish.yml` workflow.
+Publishing is automated and there is **no API token to manage**. The
+`publish-pypi` and `publish-testpypi` jobs in `release.yml` use
+`pypa/gh-action-pypi-publish` with `permissions: id-token: write`,
+which is [Trusted
+Publishing](https://docs.pypi.org/trusted-publishers/) — PyPI trusts
+a short-lived OIDC token minted for that workflow in that repository.
+Do not create a `PYPI_TOKEN` or set `UV_PUBLISH_TOKEN`; a long-lived
+token is the thing this setup exists to avoid.
 
-Manual path with `uv`:
+Each publish job is pinned to a GitHub
+[environment](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/settings/environments)
+— `PyPi` for final releases, `TestPyPi` for pre-releases — which is
+where the trusted-publisher binding and any required reviewers live.
+A first release from a new repository or environment needs the
+publisher registered on PyPI first, or the job fails at upload with a
+permissions error.
+
+The TestPyPI dry run is not a separate manual step: tag a pre-release
+and it routes there automatically.
 
 ```bash
-# from a clean checkout at the tagged commit
-uv build                                  # writes dist/picsure-X.Y.Z-*.whl and .tar.gz
-uv publish                                # uploads to PyPI; requires PYPI_TOKEN
+git tag -a v2.0.0rc1 -m "Release candidate 2.0.0rc1"
+git push origin v2.0.0rc1        # -> TestPyPI, via release.yml
+pip install --index-url https://test.pypi.org/simple/ picsure==2.0.0rc1
 ```
 
-`uv publish` reads the `UV_PUBLISH_TOKEN` environment variable (or
-`--token`) for the API token. Use a project-scoped PyPI token, not a
-personal one — see <https://pypi.org/manage/account/token/>.
-
-A dry run against TestPyPI before the real publish is cheap
-insurance:
-
-```bash
-uv publish --publish-url https://test.pypi.org/legacy/ --token <test-token>
-pip install --index-url https://test.pypi.org/simple/ picsure==X.Y.Z
-```
+Only reach for a manual `uv build` / `uv publish` if the workflow
+itself is broken, and prefer fixing the workflow.
 
 ## Publishing the docs
 
-`docs.yml` handles the docs site automatically. On every push to
-`main`, it builds with `uv run mkdocs build --strict` and deploys
-the `site/` output to the `gh-pages` branch via
-`peaceiris/actions-gh-pages`. The site URL follows GitHub Pages'
-default for the repo (`mkdocs.yml` does not set a `site_url`;
-confirm the published location with maintainers if it isn't visible
-under the repo's Pages settings).
+`docs.yml` builds the site with `uv run mkdocs build --strict` on
+every pull request and every branch push, and **deploys** only from a
+published release or a push to the repository's default branch. The
+guard compares against `github.event.repository.default_branch`
+rather than a hard-coded name, so it cannot go stale if the default
+branch is renamed — but it also means the deploy follows whatever
+GitHub says the default branch is, not whichever branch the team
+treats as mainline.
 
-Two practical notes:
+Three practical notes:
 
-- A docs-only release does not need a version bump. Pushing to
-  `main` republishes.
-- Because `docs.yml` runs `mkdocs build --strict`, a broken link in
-  a new doc fails CI on the PR that introduces it. Fix relative
-  paths before merging; don't expect to fix them after.
+- A docs-only change needs no version bump: a push to the default
+  branch republishes.
+- Because `docs.yml` runs `mkdocs build --strict`, a broken link
+  fails the check on the PR that introduces it. Fix relative paths
+  before merging; don't expect to fix them after.
+- The deploy writes the `gh-pages` branch via
+  `peaceiris/actions-gh-pages`, but GitHub Pages is **not currently
+  enabled for this repository** (`has_pages` is false), so nothing is
+  served from it yet. `mkdocs.yml` sets no `site_url`. Enabling Pages
+  and pointing it at `gh-pages` is a repository-settings change.
 
 ## Post-release
 
@@ -121,11 +148,9 @@ Two practical notes:
    `## [Unreleased]` block above the just-released version, with
    empty `### Added` / `### Changed` / `### Removed` / `### Fixed`
    subsections — easier than adding them ad-hoc later.
-2. **Optionally bump to a `-dev` version** in `pyproject.toml` (e.g.
-   `X.Y.(Z+1)-dev0`). This is bookkeeping; the next release will
-   overwrite it. Confirm with maintainers whether the project uses
-   this convention — current tags suggest a plain bump-on-release
-   workflow without explicit `-dev` markers.
+2. **Nothing to bump.** `hatch-vcs` already derives a dev version
+   from the distance past the tag, so commits after a release build
+   as `X.Y.Z.devN` without anyone editing a file.
 3. **Verify the install.** `pip install picsure==X.Y.Z` from a fresh
    virtualenv and run the quickstart. Any import-time regression
    (missing dependency, wrong wheel platform, py.typed-related

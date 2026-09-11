@@ -91,7 +91,6 @@ def _connect(args: argparse.Namespace, *, genomic: bool = False) -> picsure.Sess
     return picsure.connect(
         platform=_resolve_platform(args.platform),
         token=args.token,
-        resource_uuid=args.resource_uuid or None,
         supports_genomic=genomic or None,
         dev_mode=True,
     )
@@ -223,11 +222,6 @@ def main() -> int:
         help="Read the token from a file instead (e.g. notebooks/token.txt)",
     )
     parser.add_argument(
-        "--resource-uuid",
-        default=os.environ.get("PICSURE_TEST_RESOURCE_UUID", ""),
-        help="Resource UUID when the deployment has more than one resource",
-    )
-    parser.add_argument(
         "--concept-path",
         default=os.environ.get("PICSURE_TEST_CONCEPT_PATH", ""),
         help="Concept path for query actions (PICSURE_TEST_CONCEPT_PATH)",
@@ -277,9 +271,9 @@ def main() -> int:
 
     frames: list[pd.DataFrame] = []
 
-    # connect() itself is the auth-path probe: each iteration exercises
-    # /psama/user/me and /picsure/info/resources on a fresh session.
-    print("-- connect (PSAMA profile + resource listing)")
+    # connect() itself is the auth-path probe: each iteration builds a
+    # fresh client and, on consent-gated platforms, fetches the consent list.
+    print("-- connect")
 
     def do_connect() -> None:
         s = _connect(args)

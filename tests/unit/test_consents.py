@@ -4,7 +4,14 @@ import respx
 
 from picsure._services.consents import fetch_consents
 from picsure._transport.client import PicSureClient
-from picsure.errors import PicSureConnectionError, PicSureConsentDeniedError
+from picsure.errors import (
+    PicSureAuthenticationError,
+    PicSureAuthorizationError,
+    PicSureConnectionError,
+    PicSureConsentDeniedError,
+    PicSureServerError,
+    PicSureTLSError,
+)
 
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
@@ -127,3 +134,33 @@ class TestFetchConsents:
         )
         with pytest.raises(PicSureConnectionError):
             fetch_consents(_make_client())
+
+
+class TestFetchConsentsRefusalIsNotAvailability:
+    @respx.mock
+    def test_401_names_the_token(self):
+        respx.get(CONSENTS_URL).mock(
+            return_value=httpx.Response(401, text="Token is invalid or expired")
+        )
+        with pytest.raises(PicSureAuthenticationError) as exc_info:
+            fetch_consents(_make_client())
+        message = str(exc_info.value)
+        assert "token was rejected" in message
+        assert "unavailable" not in message
+
+    @respx.mock
+    def test_403_names_the_permission(self):
+        respx.get(CONSENTS_URL).mock(return_value=httpx.Response(403, text="Forbidden"))
+        with pytest.raises(PicSureAuthorizationError) as exc_info:
+            fetch_consents(_make_client())
+        message = str(exc_info.value)
+        assert "not authorized for it" in message
+        assert "unavailable" not in message
+
+    @respx.mock
+    def test_5xx_is_a_server_error_and_still_a_connection_error(self):
+        respx.get(CONSENTS_URL).mock(return_value=httpx.Response(503, text="down"))
+        with pytest.raises(PicSureServerError) as exc_info:
+            fetch_consents(_make_client())
+        assert isinstance(exc_info.value, PicSureConnectionError)
+        assert not isinstance(exc_info.value, PicSureTLSError)

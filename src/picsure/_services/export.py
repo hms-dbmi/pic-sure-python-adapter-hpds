@@ -10,14 +10,15 @@ import pandas as pd
 from picsure._models.clause import Clause
 from picsure._models.clause_group import ClauseGroup
 from picsure._models.query import Query
-from picsure._services._errors import translate_stage_error
+from picsure._services._errors import translate_transport_error
 from picsure._services._hpds_paths import query_prefix
 from picsure._services.query_run import build_query_body
-from picsure._transport.client import PicSureClient
+from picsure._transport.client import PicSureClient, json_object
 from picsure._transport.errors import TransportError
 from picsure.errors import (
     PicSureConnectionError,
     PicSureQueryError,
+    PicSureValidationError,
 )
 
 # Terminal status values returned by PIC-SURE's ``PicSureStatus`` enum.
@@ -45,15 +46,17 @@ def export_pfb(
 ) -> None:
     """Execute a query and stream the PFB result to disk.
 
-    Uses PIC-SURE's async flow on the authorized v3 routes:
+    Uses PIC-SURE's async flow on the authorized v3 routes, built from
+    ``backend`` by :func:`~picsure._services._hpds_paths.query_prefix`:
 
-    1. ``POST /hpds/auth/v3/query`` — submit the query, receive a query id.
-    2. ``POST /hpds/auth/v3/query/{id}/status`` — poll with exponential
-       backoff (1s, 2s, 4s, ..., capped at 60s per poll) until the
-       server reports ``AVAILABLE``.  Total elapsed time is bounded at
+    1. ``POST /picsure/hpds/auth/v3/query`` — submit the query, receive a
+       query id.
+    2. ``POST /picsure/hpds/auth/v3/query/{id}/status`` — poll with
+       exponential backoff (1s, 2s, 4s, ..., capped at 60s per poll) until
+       the server reports ``AVAILABLE``.  Total elapsed time is bounded at
        10 minutes.
-    3. ``POST /hpds/auth/v3/query/{id}/result`` — stream the Avro-binary
-       PFB bytes straight to disk.
+    3. ``POST /picsure/hpds/auth/v3/query/{id}/result`` — stream the
+       Avro-binary PFB bytes straight to disk.
 
     The output file is written atomically: bytes land at
     ``<path>.part``, then :func:`os.replace` promotes that to ``path``
@@ -73,7 +76,8 @@ def export_pfb(
             (HTTP 400 / 422 / other 4xx) at any stage.
         PicSureQueryError: If the server returns 404 for the submit,
             status, or result endpoint.
-        PicSureAuthError: If the server returns 401 / 403.
+        PicSureAuthenticationError: If the server returns 401.
+        PicSureAuthorizationError: If the server returns 403.
         PicSureConnectionError: If the server is unreachable, rate
             limits the request, returns 5xx after retries, fails the
             query (terminal status ``ERROR``), does not produce a result
@@ -101,10 +105,12 @@ def _submit_query(
     base: str,
     body: dict[str, object],
 ) -> dict[str, object]:
+    submit_path = f"{base}/query"
     try:
-        return client.post_json(f"{base}/query", body=body)
+        payload = client.post_json(submit_path, body=body)
     except TransportError as exc:
-        raise translate_stage_error(exc, service="PFB", stage="submit") from exc
+        raise translate_transport_error(exc, operation="the PFB export submit") from exc
+    return json_object(payload, path=submit_path)
 
 
 def _extract_query_id(response: dict[str, object]) -> str:
@@ -138,11 +144,13 @@ def _poll_until_available(
 
     while True:
         try:
-            status_response = client.post_json(status_path, body=body)
+            status_payload = client.post_json(status_path, body=body)
         except TransportError as exc:
-            raise translate_stage_error(exc, service="PFB", stage="status") from exc
+            raise translate_transport_error(
+                exc, operation="the PFB export status check"
+            ) from exc
 
-        status = _extract_status(status_response)
+        status = _extract_status(json_object(status_payload, path=status_path))
 
         if status == _STATUS_AVAILABLE:
             return
@@ -194,7 +202,9 @@ def _download_result(
             _stream_to_file(response, part_path)
     except TransportError as exc:
         _cleanup_partial(part_path)
-        raise translate_stage_error(exc, service="PFB", stage="result") from exc
+        raise translate_transport_error(
+            exc, operation="the PFB export download"
+        ) from exc
     except OSError as exc:
         _cleanup_partial(part_path)
         raise PicSureConnectionError(f"Could not write PFB to {target}: {exc}") from exc
@@ -242,8 +252,12 @@ def export_csv(data: pd.DataFrame, path: str | Path) -> None:
     Args:
         data: DataFrame to export (e.g. from runQuery).
         path: File path for the CSV output.
+
+    Raises:
+        PicSureValidationError: If ``data`` is not a DataFrame.
+        PicSureConnectionError: If ``path`` could not be written.
     """
-    data.to_csv(path, index=False)
+    _write_delimited(data, path, sep=",", fmt="CSV", method="exportCSV")
 
 
 def export_tsv(data: pd.DataFrame, path: str | Path) -> None:
@@ -252,5 +266,51 @@ def export_tsv(data: pd.DataFrame, path: str | Path) -> None:
     Args:
         data: DataFrame to export (e.g. from runQuery).
         path: File path for the TSV output.
+
+    Raises:
+        PicSureValidationError: If ``data`` is not a DataFrame.
+        PicSureConnectionError: If ``path`` could not be written.
     """
-    data.to_csv(path, sep="\t", index=False)
+    _write_delimited(data, path, sep="\t", fmt="TSV", method="exportTSV")
+
+
+def _write_delimited(
+    data: pd.DataFrame,
+    path: str | Path,
+    *,
+    sep: str,
+    fmt: str,
+    method: str,
+) -> None:
+    """Write a DataFrame to a delimited file inside the public error hierarchy.
+
+    ``DataFrame.to_csv`` raises a bare ``OSError`` for an unwritable path
+    and, handed something that is not a DataFrame, an ``AttributeError``
+    naming ``to_csv`` -- neither of which a caller wrapping the call in
+    ``except PicSureError`` catches, and neither of which names the path
+    that failed. The type is checked up front rather than caught, so the
+    message can say what arrived instead.
+
+    Args:
+        data: DataFrame to write.
+        path: Destination file path.
+        sep: Field delimiter.
+        fmt: Format name used in messages, e.g. ``"CSV"``.
+        method: Public method name used in messages, e.g. ``"exportCSV"``.
+
+    Raises:
+        PicSureValidationError: If ``data`` is not a DataFrame.
+        PicSureConnectionError: If the file could not be written.
+    """
+    if not isinstance(data, pd.DataFrame):
+        raise PicSureValidationError(
+            f"{method} writes a pandas DataFrame, but got "
+            f"{type(data).__name__}. A count query returns a CountResult "
+            f"rather than a table -- run the query with "
+            f"type='participant' (or read CountResult.value directly) "
+            f"before exporting."
+        )
+    try:
+        data.to_csv(path, sep=sep, index=False)
+    except OSError as exc:
+        raise PicSureConnectionError(f"Could not write {fmt} to {path}: {exc}") from exc

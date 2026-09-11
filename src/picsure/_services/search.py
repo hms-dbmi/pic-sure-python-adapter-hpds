@@ -6,29 +6,31 @@ import pandas as pd
 
 from picsure._models.dictionary import DictionaryEntry
 from picsure._models.facet import FacetCategory, FacetSet
-from picsure._services._errors import rate_limit_message, translate_stage_error
-from picsure._transport.client import PicSureClient
-from picsure._transport.errors import (
-    TransportConsentDeniedError,
-    TransportConsentLookupError,
-    TransportError,
-    TransportNotFoundError,
-    TransportRateLimitError,
-    TransportValidationError,
-)
-from picsure.errors import (
-    PicSureConnectionError,
-    PicSureQueryError,
-    PicSureValidationError,
-)
+from picsure._services._errors import translate_transport_error
+from picsure._transport.client import PicSureClient, json_object
+from picsure._transport.errors import TransportError
+from picsure.errors import PicSureValidationError
 
 _CONCEPTS_PATH = "/picsure/dictionary/concepts"
 _FACETS_PATH = "/picsure/dictionary/facets"
 
-# Page size for the "one big page" dictionary search.  Set to Java
-# ``Integer.MAX_VALUE`` (the backend's int width) so a single request
-# returns every concept the user can see, without a prior count probe.
-_MAX_PAGE_SIZE = 2_147_483_647
+_SEARCH_OPERATION = "the dictionary search"
+_FACETS_OPERATION = "the dictionary facets lookup"
+
+# ``/concepts`` answers with a Spring Data ``Page`` envelope -- ``content``
+# alongside ``totalElements``, ``totalPages``, ``number``, ``size``, ``first``
+# and ``last``.  Paging is zero-based through the ``page_number`` and
+# ``page_size`` query parameters.
+_DEFAULT_PAGE_SIZE = 500
+
+# Largest ``page_size`` the backend accepts: Java ``Integer.MAX_VALUE``.  One
+# above it overflows the int binding and comes back as HTTP 400.
+_SERVER_MAX_PAGE_SIZE = 2_147_483_647
+
+# Ceiling on rows an unpaged search accumulates before it refuses to continue.
+# Without it, a caller who omits ``page`` on a production-sized dictionary
+# walks the whole thing into one DataFrame.
+_MAX_UNPAGED_ROWS = 100_000
 
 _COLUMNS_WITH_VALUES = [
     "conceptPath",
@@ -60,36 +62,33 @@ _COLUMNS_WITHOUT_VALUES = [
 ]
 
 
-def _translate_dictionary_4xx(
-    exc: TransportValidationError | TransportNotFoundError,
-    operation: str,
-) -> Exception:
-    """Convert a transport 4xx error to the matching user-facing exception."""
-    if isinstance(exc, TransportNotFoundError):
-        return PicSureQueryError(
-            f"Dictionary endpoint not found (HTTP {exc.status_code}) while "
-            f"attempting to {operation}: {exc.body[:200]}"
-        )
-    return PicSureValidationError(
-        f"Server rejected request to {operation} "
-        f"(HTTP {exc.status_code}): {exc.body[:200]}"
-    )
-
-
 def searchDictionary(  # noqa: N802
     client: PicSureClient,
     term: str = "",
     facets: FacetSet | None = None,
     include_values: bool = True,
     consents: list[str] | None = None,
+    page: int | None = None,
     page_size: int | None = None,
 ) -> pd.DataFrame:
     """Search the PIC-SURE data dictionary.
 
-    Issues a single POST to ``/picsure/proxy/dictionary-api/concepts``
-    with ``page_size`` large enough to return every match.  The
-    session computes ``page_size`` at connect time by probing
-    ``totalElements``.
+    POSTs to ``/picsure/dictionary/concepts``, which answers with a
+    zero-based Spring Data ``Page``.
+
+    Omitting ``page`` returns the complete result set, collected by
+    walking the pages in ``page_size`` chunks.  Passing ``page``
+    returns that one page and nothing else.
+
+    Either way the returned DataFrame carries the page metadata in
+    :attr:`pandas.DataFrame.attrs`:
+
+    - ``total_elements`` — server's total match count, or ``None`` if
+      the response omitted it
+    - ``has_more`` — whether further pages exist beyond what was returned
+    - ``page`` — the requested page, or ``None`` when every page was collected
+    - ``page_size`` — rows requested per HTTP call
+    - ``pages_fetched`` — number of HTTP calls made
 
     Args:
         client: Authenticated HTTP client.
@@ -98,57 +97,171 @@ def searchDictionary(  # noqa: N802
         include_values: If False, omit the values column.
         consents: Optional consent list.  Passed through in the body
             for authorized deployments; omitted when ``None`` or empty.
-        page_size: Page size for the request.  If omitted or
-            non-positive, defaults to :data:`_MAX_PAGE_SIZE` so the
-            entire result set comes back in one page.
+        page: Zero-based page to return.  ``None`` (the default)
+            collects every page.
+        page_size: Rows per HTTP request.  Defaults to
+            :data:`_DEFAULT_PAGE_SIZE`.
 
     Returns:
         DataFrame of matching dictionary entries.
+
+    Raises:
+        PicSureValidationError: If ``page`` or ``page_size`` is out of
+            range, or if an unpaged search matches more than
+            :data:`_MAX_UNPAGED_ROWS` concepts.
     """
-    effective_page_size = page_size if page_size and page_size > 0 else _MAX_PAGE_SIZE
+    effective_page_size = _resolve_page_size(page_size)
+    _validate_page(page)
     body = _build_concepts_body(term=term, facets=facets, consents=consents)
-    url = f"{_CONCEPTS_PATH}?page_number=0&page_size={effective_page_size}"
 
-    try:
-        data = client.post_json(url, body=body)
-    except (TransportConsentDeniedError, TransportConsentLookupError) as exc:
-        raise translate_stage_error(exc, service="dictionary", stage="search") from exc
-    except (TransportValidationError, TransportNotFoundError) as exc:
-        raise _translate_dictionary_4xx(exc, "complete search") from exc
-    except TransportRateLimitError as exc:
-        raise PicSureConnectionError(rate_limit_message(exc)) from exc
-    except TransportError as exc:
-        raise PicSureConnectionError(
-            "Could not complete search. The server may be temporarily unavailable."
-        ) from exc
-
-    content = data.get("content", [])
-    total_elements = data.get("totalElements")  # may be None
-    last = data.get("last")
-    # The "one big page" strategy assumes the single request returned every
-    # match. Only treat as truncated when there is positive evidence of more
-    # pages: an explicit ``last: false`` or a present-but-mismatched
-    # ``totalElements``. Missing fields must not trigger a false failure.
-    truncated = last is False or (
-        total_elements is not None and len(content) != total_elements
-    )
-    if truncated:
-        total_repr = total_elements if total_elements is not None else "unknown"
-        raise PicSureQueryError(
-            f"Search returned a truncated page ({len(content)}/{total_repr} "
-            "entries). Reconnect to refresh the concept count."
+    if page is None:
+        content, total_elements, has_more, pages_fetched = _fetch_all_pages(
+            client, body, effective_page_size
         )
+    else:
+        data = _request_page(client, body, page, effective_page_size)
+        content = _page_content(data)
+        total_elements = _page_total(data)
+        has_more = _page_has_more(data, page, effective_page_size, len(content))
+        pages_fetched = 1
 
-    entries = [DictionaryEntry.from_dict(r) for r in content]
-    entries = _deduplicate(entries)
-
+    entries = _deduplicate([DictionaryEntry.from_dict(r) for r in content])
     columns = _COLUMNS_WITH_VALUES if include_values else _COLUMNS_WITHOUT_VALUES
 
-    if not entries:
+    if entries:
+        df = _entries_to_dataframe(entries, include_values)
+    else:
         print("Note: search returned 0 results.", file=sys.stderr)
-        return pd.DataFrame(columns=columns)
+        df = pd.DataFrame(columns=columns)
 
-    return _entries_to_dataframe(entries, include_values)
+    df.attrs.update(
+        {
+            "total_elements": total_elements,
+            "has_more": has_more,
+            "page": page,
+            "page_size": effective_page_size,
+            "pages_fetched": pages_fetched,
+        }
+    )
+    return df
+
+
+def _validate_page(page: int | None) -> None:
+    if page is None:
+        return
+    if not isinstance(page, int) or isinstance(page, bool):
+        raise PicSureValidationError("`page` must be an integer or None.")
+    if page < 0:
+        raise PicSureValidationError(
+            f"`page` must be 0 or greater (got {page}); pages are zero-based."
+        )
+
+
+def _resolve_page_size(page_size: int | None) -> int:
+    if page_size is None:
+        return _DEFAULT_PAGE_SIZE
+    if not isinstance(page_size, int) or isinstance(page_size, bool):
+        raise PicSureValidationError("`page_size` must be an integer or None.")
+    if page_size < 1:
+        raise PicSureValidationError(
+            f"`page_size` must be 1 or greater (got {page_size})."
+        )
+    if page_size > _SERVER_MAX_PAGE_SIZE:
+        raise PicSureValidationError(
+            f"`page_size` must be at most {_SERVER_MAX_PAGE_SIZE} (got "
+            f"{page_size}); the server rejects anything larger with HTTP 400."
+        )
+    return page_size
+
+
+def _request_page(
+    client: PicSureClient,
+    body: dict[str, object],
+    page: int,
+    page_size: int,
+) -> dict[str, object]:
+    url = f"{_CONCEPTS_PATH}?page_number={page}&page_size={page_size}"
+    try:
+        payload = client.post_json(url, body=body)
+    except TransportError as exc:
+        raise translate_transport_error(exc, operation=_SEARCH_OPERATION) from exc
+    return json_object(payload, path=url)
+
+
+def _page_content(data: dict[str, object]) -> list[dict[str, object]]:
+    content = data.get("content")
+    return content if isinstance(content, list) else []
+
+
+def _page_total(data: dict[str, object]) -> int | None:
+    total = data.get("totalElements")
+    if isinstance(total, bool) or not isinstance(total, int):
+        return None
+    return total
+
+
+def _page_has_more(
+    data: dict[str, object],
+    page: int,
+    page_size: int,
+    returned: int,
+) -> bool:
+    """Decide whether pages remain after the one just read.
+
+    Prefers the envelope's ``last`` flag.  Falls back to comparing the
+    rows consumed so far against ``totalElements``, and finally to
+    "a completely full page probably has a successor".
+    """
+    last = data.get("last")
+    if isinstance(last, bool):
+        return not last
+    total = _page_total(data)
+    if total is not None:
+        return (page * page_size) + returned < total
+    return returned > 0 and returned == page_size
+
+
+def _unpaged_ceiling_error(matched: int | None) -> PicSureValidationError:
+    matched_repr = (
+        f"matched {matched} concepts" if matched is not None else "matched too many"
+    )
+    return PicSureValidationError(
+        f"The dictionary search {matched_repr}, above the "
+        f"{_MAX_UNPAGED_ROWS}-row limit for a single unpaged call. Read the "
+        "results a page at a time -- pass page=0, then page=1, and so on, "
+        "using the `has_more` and `total_elements` entries of each returned "
+        "DataFrame's `.attrs` to know when to stop. Supplying `term` or "
+        "`facets` will also reduce the match count."
+    )
+
+
+def _fetch_all_pages(
+    client: PicSureClient,
+    body: dict[str, object],
+    page_size: int,
+) -> tuple[list[dict[str, object]], int | None, bool, int]:
+    """Walk every page of a concepts search and return the rows as one list.
+
+    Returns the accumulated content, the server's ``totalElements`` (or
+    ``None``), ``has_more`` (always ``False`` on a completed walk), and
+    the number of requests issued.
+    """
+    content: list[dict[str, object]] = []
+    total_elements: int | None = None
+    page = 0
+    while True:
+        data = _request_page(client, body, page, page_size)
+        total_elements = _page_total(data)
+        if total_elements is not None and total_elements > _MAX_UNPAGED_ROWS:
+            raise _unpaged_ceiling_error(total_elements)
+        page_rows = _page_content(data)
+        content.extend(page_rows)
+        pages_fetched = page + 1
+        if not page_rows or not _page_has_more(data, page, page_size, len(page_rows)):
+            return content, total_elements, False, pages_fetched
+        if len(content) > _MAX_UNPAGED_ROWS:
+            raise _unpaged_ceiling_error(total_elements)
+        page += 1
 
 
 def fetch_facets(
@@ -159,9 +272,9 @@ def fetch_facets(
 ) -> list[FacetCategory]:
     """Fetch facet categories from the server.
 
-    POSTs to ``/picsure/proxy/dictionary-api/facets`` with the same
-    body shape as :func:`search`.  The response is a top-level array
-    of facet categories (not wrapped in an object).
+    POSTs to ``/picsure/dictionary/facets`` with the same body shape as
+    :func:`searchDictionary`.  The response is a top-level array of
+    facet categories -- not wrapped in an object, and not paginated.
 
     Args:
         client: Authenticated HTTP client.
@@ -184,21 +297,11 @@ def fetch_facets(
 
     try:
         data = client.post_json(_FACETS_PATH, body=body)
-    except (TransportConsentDeniedError, TransportConsentLookupError) as exc:
-        raise translate_stage_error(
-            exc, service="dictionary", stage="fetch facets"
-        ) from exc
-    except (TransportValidationError, TransportNotFoundError) as exc:
-        raise _translate_dictionary_4xx(exc, "fetch facets") from exc
-    except TransportRateLimitError as exc:
-        raise PicSureConnectionError(rate_limit_message(exc)) from exc
     except TransportError as exc:
-        raise PicSureConnectionError(
-            "Could not fetch facets. The server may be temporarily unavailable."
-        ) from exc
+        raise translate_transport_error(exc, operation=_FACETS_OPERATION) from exc
 
-    # /facets returns a JSON array at the top level. PicSureClient.post_json
-    # is typed as returning dict, but the parsed JSON can be a list here.
+    # /facets answers with a JSON array at the top level; the dict branch
+    # covers a deployment that wraps it in a ``facets`` key instead.
     raw_categories = data if isinstance(data, list) else data.get("facets", [])
     return [FacetCategory.from_dict(f) for f in raw_categories]
 

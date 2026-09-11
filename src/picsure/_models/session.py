@@ -8,7 +8,6 @@ from picsure._dev.config import DevConfig
 from picsure._dev.reporting import events_to_df, stats_to_df
 from picsure._dev.timing import timed
 from picsure._models.query_type import QueryType
-from picsure._models.resource import Resource
 from picsure.errors import PicSureValidationError
 
 if TYPE_CHECKING:
@@ -22,12 +21,16 @@ if TYPE_CHECKING:
     from picsure._transport.client import PicSureClient
 
 
+# The only two HPDS backends the gateway routes to, by URL path.
+_BACKENDS = frozenset({"auth", "open"})
+
+
 class Session:
     """A live connection to a PIC-SURE instance.
 
-    Returned by ``picsure.connect()``. Holds the authenticated HTTP client
-    and resource metadata. Methods for search, query building, and export
-    are added in later plans.
+    Returned by ``picsure.connect()``. Holds the authenticated HTTP client,
+    the user's consent list, and the HPDS backend the gateway routes to.
+    Search, query building, and export delegate to the service modules.
     """
 
     def __init__(
@@ -35,24 +38,48 @@ class Session:
         client: PicSureClient,
         user_email: str,
         token_expiration: str,
-        resources: list[Resource] | None = None,
-        resource_uuid: str | None = None,
         consents: list[str] | None = None,
         dev_config: DevConfig | None = None,
         backend: str = "auth",
         supports_genomic: bool = False,
         session_id: str = "",
     ) -> None:
+        """Build a session around an already-configured client.
+
+        Args:
+            client: The HTTP client to issue requests through.
+            user_email: Display email for the connect banner.
+            token_expiration: Formatted token expiry, or ``"N/A"`` on an
+                anonymous connection.
+            consents: Study-consent identifiers to scope dictionary
+                requests by.
+            dev_config: Developer-mode configuration; defaults to off.
+            backend: ``"auth"`` or ``"open"`` — the HPDS instance every
+                query on this session routes to.
+            supports_genomic: Whether genomic operations are allowed.
+            session_id: Correlation id sent on every request.
+
+        Raises:
+            PicSureValidationError: If ``backend`` is not ``"auth"`` or
+                ``"open"``.
+        """
         self._client = client
         self._user_email = user_email
         self._token_expiration = token_expiration
-        self._resources = list(resources) if resources else []
-        self._resource_uuid = resource_uuid
         self._session_id = session_id
         self._consents: list[str] = list(consents) if consents else []
+        if backend not in _BACKENDS:
+            raise PicSureValidationError(
+                f"backend must be one of {sorted(_BACKENDS)}, not {backend!r}. "
+                f"It is interpolated straight into the HPDS request path, so "
+                f"an unrecognized value would silently produce a 404 on every "
+                f"query."
+            )
         # "auth" or "open": selects the HPDS backend by URL path
-        # (/hpds/auth vs /hpds/open) and, with it, the v3 vs v1 query
-        # lifecycle.  Replaces the old resource-UUID backend selection.
+        # (/hpds/auth vs /hpds/open).  Replaces the old resource-UUID
+        # backend selection; both backends use the v3 query lifecycle.
+        # connect() derives it from PlatformInfo.backend, the single value
+        # that both this routing and the connect banner read.
         self._backend = backend
         self._supports_genomic = supports_genomic
         self._dev_config = (
@@ -72,6 +99,36 @@ class Session:
         return self._session_id
 
     @property
+    def user_email(self) -> str:
+        """Email address of the account this session runs as.
+
+        On an authorized connection with ``validate=True`` (the default)
+        this is the address PSAMA returned for the token from
+        ``GET /psama/user/me``, so it names the account the server will
+        actually run requests as rather than whatever the token claims.
+        Falls back to the token's own ``email`` claim when validation was
+        skipped, and is ``"anonymous"`` on an open-access connection.
+
+        The token itself is never exposed: only this address and
+        :attr:`token_expiration` are readable from a session.
+        """
+        return self._user_email
+
+    @property
+    def token_expiration(self) -> str:
+        """When this session's token expires, as UTC ISO 8601.
+
+        Read from the token's ``exp`` claim at connect time and formatted
+        as ``"YYYY-MM-DDTHH:MM:SSZ"``. ``"unknown"`` when the token
+        carried no readable ``exp``, and ``"N/A"`` on an open-access
+        connection, which has no token to expire.
+
+        A rendered timestamp rather than the token: nothing here can be
+        replayed as a credential.
+        """
+        return self._token_expiration
+
+    @property
     def consents(self) -> list[str]:
         """Study-consent identifiers the user is authorized for.
 
@@ -80,68 +137,6 @@ class Session:
         body so the backend scopes results to accessible studies.
         """
         return list(self._consents)
-
-    def getResourceID(self) -> pd.DataFrame:
-        """Return resource IDs and metadata as a DataFrame.
-
-        The resource registry has been removed — the gateway now selects
-        the HPDS backend by URL path rather than by a discovered resource
-        UUID — so this returns an empty frame unless a UUID was passed to
-        :func:`picsure.connect` or :meth:`setResourceID`.  Retained for
-        backwards compatibility; it no longer drives which data is queried.
-        """
-        if not self._resources:
-            return pd.DataFrame(columns=["uuid", "name", "description"])
-        return pd.DataFrame(
-            [
-                {
-                    "uuid": r.uuid,
-                    "name": r.name,
-                    "description": r.description,
-                }
-                for r in self._resources
-            ]
-        )
-
-    def setResourceID(self, resource_uuid: str) -> None:
-        """Set the resource UUID stored on this session.
-
-        Deprecated: the gateway selects the HPDS backend by URL path
-        (``/hpds/auth`` vs ``/hpds/open``), derived from the platform, so
-        the stored UUID no longer chooses a backend and is not sent in
-        query bodies.  Retained for backwards compatibility.  With the
-        resource registry removed there is nothing to validate against,
-        so any value is accepted.
-
-        Args:
-            resource_uuid: A resource UUID to store on the session.
-        """
-        known_uuids = {r.uuid for r in self._resources}
-        if known_uuids and resource_uuid not in known_uuids:
-            raise PicSureValidationError(
-                f"'{resource_uuid}' is not a valid resource UUID. "
-                f"Use session.getResourceID() to see available resources."
-            )
-        self._resource_uuid = resource_uuid
-
-    def setResourceIDByName(self, name: str) -> None:
-        """Set the active resource by looking up its name.
-
-        Args:
-            name: The resource name (e.g. ``"hpds"``, ``"auth-hpds"``).
-
-        Raises:
-            PicSureValidationError: If no resource matches the given name.
-        """
-        for r in self._resources:
-            if r.name == name:
-                self._resource_uuid = r.uuid
-                return
-
-        valid = ", ".join(r.name for r in self._resources)
-        raise PicSureValidationError(
-            f"'{name}' does not match any resource. Available resources: {valid}."
-        )
 
     @timed("session.searchDictionary")
     def searchDictionary(  # noqa: N802
@@ -447,6 +442,11 @@ class Session:
         Args:
             data: DataFrame to export (e.g. from runQuery).
             path: File path for the CSV output.
+
+        Raises:
+            PicSureValidationError: If ``data`` is not a DataFrame — a
+                count query returns a :class:`CountResult`, not a table.
+            PicSureConnectionError: If ``path`` could not be written.
         """
         from picsure._services.export import export_csv
 
@@ -463,6 +463,11 @@ class Session:
         Args:
             data: DataFrame to export (e.g. from runQuery).
             path: File path for the TSV output.
+
+        Raises:
+            PicSureValidationError: If ``data`` is not a DataFrame — a
+                count query returns a :class:`CountResult`, not a table.
+            PicSureConnectionError: If ``path`` could not be written.
         """
         from picsure._services.export import export_tsv
 
