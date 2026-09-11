@@ -6,9 +6,10 @@ from typing import TYPE_CHECKING
 from picsure._models.clause import Clause
 from picsure._models.clause_group import ClauseGroup
 from picsure._models.query import Query
-from picsure._services._errors import translate_stage_error
+from picsure._services._errors import translate_transport_error
 from picsure._services._hpds_paths import query_prefix
 from picsure._services.query_run import build_query_body
+from picsure._transport.client import json_object
 from picsure._transport.errors import TransportError
 from picsure.errors import (
     PicSureQueryError,
@@ -108,8 +109,8 @@ def _find_existing_by_name(
     try:
         response = client.get_json(_NAMED_DATASET_COLLECTION_PATH)
     except TransportError as exc:
-        raise translate_stage_error(
-            exc, service="saveQueryByName", stage="list"
+        raise translate_transport_error(
+            exc, operation="list"
         ) from exc
     if isinstance(response, list):
         items: list[object] = response
@@ -134,8 +135,8 @@ def _create_named_dataset(client: PicSureClient, *, query_id: str, name: str) ->
     try:
         client.post_json(_NAMED_DATASET_COLLECTION_PATH, body=body)
     except TransportError as exc:
-        raise translate_stage_error(
-            exc, service="saveQueryByName", stage="save"
+        raise translate_transport_error(
+            exc, operation="save"
         ) from exc
 
 
@@ -158,8 +159,8 @@ def _update_named_dataset(
     try:
         client.put_json(path, body=body)
     except TransportError as exc:
-        raise translate_stage_error(
-            exc, service="saveQueryByName", stage="update"
+        raise translate_transport_error(
+            exc, operation="update"
         ) from exc
 
 
@@ -181,10 +182,12 @@ def _submit_and_extract_id(
     client: PicSureClient, submit_path: str, body: dict[str, object]
 ) -> str:
     try:
-        response = client.post_json(submit_path, body=body)
+        response = json_object(
+            client.post_json(submit_path, body=body), path=submit_path
+        )
     except TransportError as exc:
-        raise translate_stage_error(
-            exc, service="saveQueryByName", stage="submit"
+        raise translate_transport_error(
+            exc, operation="submit"
         ) from exc
     for field in ("picsureResultId", "resourceResultId", "queryId"):
         v = response.get(field)

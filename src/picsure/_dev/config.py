@@ -58,8 +58,8 @@ def _format_event(event: Event) -> str:
     if event.kind == "http":
         status = event.status if event.status is not None else "-"
         parts.append(f"{event.name} {status} {event.duration_ms:.0f}ms")
-        parts.append(f"in={_format_bytes(event.bytes_in)}")
-        parts.append(f"out={_format_bytes(event.bytes_out)}")
+        parts.append(f"sent={_format_bytes(event.bytes_sent)}")
+        parts.append(f"recv={_format_bytes(event.bytes_received)}")
         parts.append(f"retry={event.retry}")
         if event.metadata.get("redacted"):
             parts.append(f"[body redacted: {event.metadata['redacted']}]")
