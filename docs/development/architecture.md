@@ -92,11 +92,12 @@ src/picsure/
 | `resource.py`      | `Resource` dataclass (`uuid`, `name`, `description`) with a `from_dict` constructor. Retained for the `getResourceID` / `setResourceIDByName` surface; the resource registry it used to be populated from has been removed. |
 | `clause.py`        | `Clause` dataclass + `PhenotypicFilterType` enum (`FILTER`, `ANYRECORD`, `REQUIRE`). Each `Clause.to_query_json()` emits the v3 `PhenotypicClause` shape. |
 | `clause_group.py`  | `ClauseGroup` dataclass + `GroupOperator` enum (`AND`, `OR`). Recursively serializes to a v3 `PhenotypicSubquery`. |
-| `query.py`         | `Query` dataclass: a `phenotypicFilter` (`Clause | ClauseGroup | None`) plus `includeConcepts` (output concept paths). `runQuery` also accepts a bare `Clause` / `ClauseGroup` (filter; its variables are returned as output columns). `concept_paths()` on each collects the filter's variables to fold into `select`. |
-| `query_type.py`    | `QueryType` enum (`COUNT`, `PARTICIPANT`, `TIMESTAMP`, `CROSS_COUNT`). Public API also accepts equivalent lowercase strings. |
+| `query.py`         | `Query` dataclass: a `phenotypicFilter` (`Clause | ClauseGroup | None`), `includeConcepts` (output concept paths), and `genomicFilters` (a `tuple[GenomicFilter, ...]`, applied conjunctively alongside the phenotypic filter). `runQuery` also accepts a bare `Clause` / `ClauseGroup` (filter; its variables are returned as output columns). `concept_paths()` on each collects the filter's variables to fold into `select`. |
+| `query_type.py`    | `QueryType` enum (`COUNT`, `PARTICIPANT`, `TIMESTAMP`, `CROSS_COUNT`, `VARIANT_COUNT`, `VARIANT_LIST`, `VCF_EXCERPT`, `AGGREGATE_VCF_EXCERPT`). Public API also accepts equivalent lowercase strings. |
 | `count_result.py`  | `CountResult` dataclass — preserves `value`, `margin`, `cap`, `raw`. Encodes exact / noisy / suppressed shapes from open-access backends. `obfuscated` property is a convenience. |
 | `dictionary.py`    | `DictionaryEntry` dataclass — one row of `searchDictionary` output, mapped from the backend `Concept` payload. |
 | `facet.py`         | `Facet`, `FacetCategory`, and the public `FacetSet`. Iterative `from_dict` build so deep hierarchical facets don't blow Python's recursion limit. |
+| `genomic_filter.py`| `GenomicFilter` dataclass plus the `GenomicFilterKey`, `VariantFrequency`, and `VariantSeverity` enums (all public). `VariantSeverity` buckets expand into `Variant_consequence_calculated` values; the backend's own `Variant_severity` impact values (`HIGH`, `MODERATE`, `LOW`, `MODIFIER`) pass through on that key unchanged. |
 
 ### `_services/` — operations
 
@@ -111,6 +112,8 @@ src/picsure/
 | `query_save.py`  | `save_query_by_name(client, query, name, *, backend, overwrite)`. Submits the query via `POST /hpds/auth/v3/query`, then `POST`s a new record to `/dataset/named/` (or `PUT`-updates an existing one when `overwrite=True`). Validates `name` against the backend `NamedDataset` pattern client-side. Refused on open-access (`open` backend) deployments. |
 | `_hpds_paths.py` | `query_prefix(backend, *, v3)` and `search_values_path(backend)` — the single place the `/hpds/{auth,open}[/v3]/…` route shape (and the ignored search `{resourceId}` placeholder) is built. |
 | `export.py`      | `export_pfb` — the async PFB flow (submit → poll with exponential backoff capped at 60s, 10-minute total deadline → stream result to a `.part` file → atomic rename). Plus `export_csv` and `export_tsv` for in-memory DataFrames. |
+| `genomic_search.py` | `search_genomic_values(client, ...)` backing `Session.searchGenomicValues`. GETs `/picsure/hpds/{backend}/search/values` with the annotation key and a page/size, and returns a one-column DataFrame of values with the server's paging in `df.attrs`. A 200 with an empty body means the key is not a genomic annotation on this deployment. |
+| `genomic_data.py`  | `genomicConsequences()` — reads the bundled `_data/variant_consequences.json` into a DataFrame of `severity` / `consequence` rows. No network call. |
 | `consents.py`    | `fetch_consents(client)`. Reads `/psama/user/me/consents` and pulls the `\\_consents\\` study-consent list used by dictionary-api requests on authorized deployments. |
 
 ### `_transport/` — HTTP
