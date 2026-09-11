@@ -26,6 +26,7 @@ tests/
     ├── test_connect_live.py
     ├── test_search_live.py
     ├── test_query_live.py
+    ├── test_query_genomic_live.py
     └── test_export_live.py
 ```
 
@@ -49,10 +50,13 @@ throughout `tests/unit/`:
 import httpx
 import respx
 
+from picsure._services._hpds_paths import query_prefix
 from picsure._services.query_run import run_query
 
 BASE_URL = "https://test.example.com"
-QUERY_URL = f"{BASE_URL}/hpds/auth/v3/query/sync"
+# Compose the route rather than hand-writing it: query_prefix supplies the
+# /picsure context prefix, so a literal would silently stop matching.
+QUERY_URL = f"{BASE_URL}{query_prefix('auth', v3=True)}/query/sync"
 
 
 class TestRunQueryCount:
@@ -108,9 +112,11 @@ Integration tests hit a real PIC-SURE instance. They require:
 |----------------------------|--------------------------------------------------------------------|
 | `PICSURE_INTEGRATION`      | Set to `1` to opt in. Without it, the suite skips at collection.   |
 | `PICSURE_TEST_TOKEN`       | Bearer token for authorized platforms. Leave unset for open-access. |
-| `PICSURE_TEST_PLATFORM`    | A `Platform` enum name (e.g. `BDC_AUTHORIZED`, `BDC_OPEN`, `NHANES_OPEN`) or a full URL. Defaults to `DEMO`. |
+| `PICSURE_TEST_PLATFORM`    | A `Platform` enum name (e.g. `BDC_AUTHORIZED`, `BDC_OPEN`, `NHANES_OPEN`) or a full `http(s)://` URL. There is no default. Unset, unrecognized, or naming an authorized platform with no `PICSURE_TEST_TOKEN`, the whole live suite skips at collection with one message naming what to set — it does not fail. |
 | `PICSURE_TEST_CONCEPT_PATH`| Concept path used by query/export tests. Required — tests skip with a clear message if unset. |
 | `PICSURE_TEST_SEARCH_TERM` | Search term for `test_search_live.py`. Defaults to `"age"`.        |
+| `PICSURE_TEST_GENE`        | Gene symbol for `test_query_genomic_live.py`. Required — all four genomic tests skip without it. `CHD8` is verified on `BDC_PREDEV_AUTHORIZED`; genomic tests need an `*_AUTHORIZED` platform. |
+| `PICSURE_SSL_VERIFY`       | Set to `false` only when targeting a local stack with a self-signed certificate. Leave unset against a real deployment. |
 
 The integration `conftest.py` calls `dotenv` against the repo root,
 so a `.env` file works as well as exported variables (exported vars
@@ -123,6 +129,7 @@ What each `*_live.py` covers:
 | `test_connect_live.py`     | `picsure.connect`, the success banner, that `Session` has an email / resources. |
 | `test_search_live.py`      | `searchDictionary`, `facets`, `showAllFacets` against a real dictionary-api. |
 | `test_query_live.py`       | `runQuery` for `count`, `participant`, `timestamp`, `cross_count`. Some types skip on open-access. |
+| `test_query_genomic_live.py` | `buildGenomicFilter` as a query constraint, `variant_count`, `variant_list`, `searchGenomicValues`. Requires `PICSURE_TEST_GENE` and an `*_AUTHORIZED` platform. |
 | `test_export_live.py`      | `exportAsPFB`, `exportCSV`, `exportTSV` (the last two require an authorized platform — they need a participant-query DataFrame). |
 
 ```bash
@@ -130,8 +137,58 @@ PICSURE_INTEGRATION=1 \
 PICSURE_TEST_TOKEN="your-token" \
 PICSURE_TEST_PLATFORM="BDC_AUTHORIZED" \
 PICSURE_TEST_CONCEPT_PATH='\phs000007\some\path\' \
+PICSURE_TEST_GENE=CHD8 \
 uv run pytest tests/integration/ -v
 ```
+
+Copy `.env.example` to `.env` instead of assembling that command by hand —
+it carries a working value and a comment for every variable above.
+
+### The token fixture is opaque
+
+`test_token` does not return a `str`. It returns an `OpaqueToken` whose
+`__repr__`, `__str__` and `__format__` all render
+`<PICSURE_TEST_TOKEN redacted>`. Unwrap it at the point the token is
+handed to the library:
+
+```python
+session = picsure.connect(platform=test_platform, token=test_token.reveal())
+```
+
+This exists because pytest's default `--tb=long` prints the arguments of
+every frame in a traceback, the failing test's frame included. A fixture
+returning the token as a plain `str` therefore printed token material on
+any failure in any test that took it.
+
+Two rules follow:
+
+- **Call `.reveal()` inline, in the call that consumes the token.** Binding
+  it to a local (`raw = test_token.reveal()`) puts the raw string back into
+  a frame that `--showlocals` will dump.
+- **Do not interpolate `test_token` into a message.** It renders as the
+  placeholder, so the message says nothing useful; assert on what the
+  library did instead.
+
+As a backstop, `conftest.py` scrubs any run of token characters out of
+integration-test failure output and captured stdout/stderr/log sections,
+which covers the frames the wrapper cannot reach — a library function
+holding the unwrapped token as a local, for instance. The scrubber works
+on captured output, so it cannot protect a run with `-s`, where output
+bypasses capture and goes straight to the terminal.
+
+### Skipped tests are reported in the summary
+
+A live test that skips still counts as a pass at a glance, which is how the
+genomic file once contributed no coverage for a whole release without
+anyone noticing. The integration `conftest.py` prints an
+`integration tests skipped` section at the end of the run, listing each
+skipped test with its reason and naming any `PICSURE_TEST_*` variable that
+is unset along with the coverage it silences.
+
+The run still exits 0 — a skip is often legitimate (an open-access target
+has no token, predev does not serve the variant result types), so failing
+the run would punish a correct partial configuration. Visibility is the
+lever: check that section before believing a green integration run.
 
 ### Gotchas
 
