@@ -13,7 +13,7 @@ class TestRunQueryLive:
     ):
         from picsure import CountResult
 
-        session = picsure.connect(platform=test_platform, token=test_token)
+        session = picsure.connect(platform=test_platform, token=test_token.reveal())
         clause = buildClause(test_concept_path, type=PhenotypicFilterType.REQUIRE)
         result = session.runQuery(clause, type="count")
         assert isinstance(result, CountResult)
@@ -31,13 +31,13 @@ class TestRunQueryLive:
                 "DATAFRAME result type is authorized-only; "
                 "open-access platforms don't support participant queries."
             )
-        session = picsure.connect(platform=test_platform, token=test_token)
+        session = picsure.connect(platform=test_platform, token=test_token.reveal())
         clause = buildClause(test_concept_path, type=PhenotypicFilterType.REQUIRE)
         df = session.runQuery(clause, type="participant")
         assert isinstance(df, pd.DataFrame)
 
     def test_invalid_type_raises(self, test_token, test_platform, test_concept_path):
-        session = picsure.connect(platform=test_platform, token=test_token)
+        session = picsure.connect(platform=test_platform, token=test_token.reveal())
         clause = buildClause(test_concept_path, type=PhenotypicFilterType.REQUIRE)
         with pytest.raises(picsure.PicSureError):
             session.runQuery(clause, type="invalid_type")

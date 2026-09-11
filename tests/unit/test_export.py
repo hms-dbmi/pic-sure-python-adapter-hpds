@@ -7,12 +7,14 @@ import pytest
 import respx
 
 from picsure._models.clause import Clause, PhenotypicFilterType
+from picsure._models.count_result import CountResult
 from picsure._services._hpds_paths import query_prefix
 from picsure._services.export import export_csv, export_pfb, export_tsv
 from picsure._transport.client import PicSureClient
 from picsure.errors import (
     PicSureConnectionError,
     PicSureConsentDeniedError,
+    PicSureError,
     PicSureQueryError,
     PicSureValidationError,
 )
@@ -419,3 +421,39 @@ class TestExportTSV:
         output = str(tmp_path / "test.tsv")
         export_tsv(df, output)
         assert Path(output).exists()
+
+
+class TestDelimitedExportErrors:
+    """Failures stay inside the public hierarchy and name the path."""
+
+    @pytest.mark.parametrize("export", [export_csv, export_tsv])
+    def test_unwritable_directory_raises_connection_error(self, export, tmp_path):
+        output = tmp_path / "no-such-dir" / "out.csv"
+
+        with pytest.raises(PicSureConnectionError) as info:
+            export(pd.DataFrame({"x": [1]}), output)
+
+        assert str(output) in str(info.value)
+        assert isinstance(info.value.__cause__, OSError)
+
+    @pytest.mark.parametrize("export", [export_csv, export_tsv])
+    def test_unwritable_directory_is_caught_as_picsure_error(self, export, tmp_path):
+        with pytest.raises(PicSureError):
+            export(pd.DataFrame({"x": [1]}), tmp_path / "nope" / "out.csv")
+
+    @pytest.mark.parametrize("export", [export_csv, export_tsv])
+    def test_count_result_raises_validation_error(self, export, tmp_path):
+        result = CountResult(value=42, margin=None, cap=None, raw="42")
+
+        with pytest.raises(PicSureValidationError, match="CountResult"):
+            export(result, tmp_path / "out.csv")
+
+    @pytest.mark.parametrize("export", [export_csv, export_tsv])
+    def test_non_dataframe_names_the_type_it_got(self, export, tmp_path):
+        with pytest.raises(PicSureValidationError, match="got list"):
+            export([1, 2, 3], tmp_path / "out.csv")
+
+    @pytest.mark.parametrize("export", [export_csv, export_tsv])
+    def test_non_dataframe_is_caught_as_picsure_error(self, export, tmp_path):
+        with pytest.raises(PicSureError):
+            export(None, tmp_path / "out.csv")

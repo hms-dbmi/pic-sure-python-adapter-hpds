@@ -13,7 +13,7 @@ class TestExportLive:
                 "exportCSV depends on a participant-query DataFrame, "
                 "which is authorized-only."
             )
-        session = picsure.connect(platform=test_platform, token=test_token)
+        session = picsure.connect(platform=test_platform, token=test_token.reveal())
         clause = buildClause(test_concept_path, type=PhenotypicFilterType.REQUIRE)
         df = session.runQuery(clause, type="participant")
         output = tmp_path / "test.csv"
@@ -27,7 +27,7 @@ class TestExportLive:
                 "exportTSV depends on a participant-query DataFrame, "
                 "which is authorized-only."
             )
-        session = picsure.connect(platform=test_platform, token=test_token)
+        session = picsure.connect(platform=test_platform, token=test_token.reveal())
         clause = buildClause(test_concept_path, type=PhenotypicFilterType.REQUIRE)
         df = session.runQuery(clause, type="participant")
         output = tmp_path / "test.tsv"
