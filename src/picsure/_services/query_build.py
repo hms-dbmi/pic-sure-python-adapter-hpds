@@ -62,15 +62,18 @@ def buildClause(  # noqa: N802
         ...     min=40.0,
         ... )
     """
-    keys = [keys] if isinstance(keys, str) else list(keys)
-    if categories is not None:
-        categories = [categories] if isinstance(categories, str) else list(categories)
+    key_paths = (keys,) if isinstance(keys, str) else tuple(keys)
+    category_values = (
+        None
+        if categories is None
+        else ((categories,) if isinstance(categories, str) else tuple(categories))
+    )
 
-    if not keys:
+    if not key_paths:
         raise PicSureValidationError("Clause must have at least one concept path.")
 
     if type == PhenotypicFilterType.ANYRECORD:
-        if categories is not None:
+        if category_values is not None:
             raise PicSureValidationError(
                 "ANYRECORD clauses cannot have categories. ANYRECORD matches "
                 "the presence of any value for the variable. Remove the "
@@ -84,28 +87,28 @@ def buildClause(  # noqa: N802
             )
 
     if type == PhenotypicFilterType.FILTER:
-        if categories is None and min is None and max is None:
+        if category_values is None and min is None and max is None:
             raise PicSureValidationError(
                 "FILTER clauses require at least one of: categories, min, or max. "
                 "Use categories for categorical variables or min/max for "
                 "continuous variables."
             )
-        if categories is not None and (min is not None or max is not None):
+        if category_values is not None and (min is not None or max is not None):
             raise PicSureValidationError(
                 "FILTER clauses cannot have both categories and min/max."
             )
 
     if type == PhenotypicFilterType.REQUIRE and (
-        categories is not None or min is not None or max is not None
+        category_values is not None or min is not None or max is not None
     ):
         raise PicSureValidationError(
             "REQUIRE clauses cannot have categories, min, or max."
         )
 
     return Clause(
-        keys=keys,
+        keys=key_paths,
         type=type,
-        categories=categories,
+        categories=category_values,
         min=min,
         max=max,
     )
@@ -140,7 +143,7 @@ def buildClauseGroup(  # noqa: N802
     if not clauses:
         raise PicSureValidationError("A clause group must contain at least one clause.")
 
-    return ClauseGroup(clauses=list(clauses), operator=operator)
+    return ClauseGroup(clauses=tuple(clauses), operator=operator)
 
 
 def buildQuery(  # noqa: N802

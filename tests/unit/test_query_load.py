@@ -18,9 +18,9 @@ class TestParsePhenotypicLeaf:
         }
         result = _parse_phenotypic(node)
         assert isinstance(result, Clause)
-        assert result.keys == ["\\phs1\\sex\\"]
+        assert result.keys == ("\\phs1\\sex\\",)
         assert result.type == PhenotypicFilterType.FILTER
-        assert result.categories == ["Male"]
+        assert result.categories == ("Male",)
         assert result.min is None
         assert result.max is None
 
@@ -48,7 +48,7 @@ class TestParsePhenotypicLeaf:
         result = _parse_phenotypic(node)
         assert isinstance(result, Clause)
         assert result.type == PhenotypicFilterType.REQUIRE
-        assert result.keys == ["\\phs1\\bmi\\"]
+        assert result.keys == ("\\phs1\\bmi\\",)
 
     def test_any_record_of_leaf(self):
         node = {
@@ -504,6 +504,78 @@ class TestLoadQueryGenomic:
         respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
         with pytest.raises(PicSureValidationError, match="SNP"):
             load_query(_make_client(), QUERY_ID, backend="auth")
+
+
+class TestLoadQueryIdValidation:
+    @pytest.mark.parametrize(
+        "bad_id",
+        [
+            "abc-123",
+            "not-a-uuid",
+            "11111111-2222-3333-4444",
+            "../../psama/user/me",
+            "11111111-2222-3333-4444-555555555555/../../admin",
+            "1' OR '1'='1",
+            "id with spaces",
+        ],
+    )
+    def test_non_uuid_rejected_before_http(self, bad_id):
+        # No respx mock installed: reaching the network would raise
+        # something other than PicSureValidationError.
+        with pytest.raises(PicSureValidationError, match="not a valid query ID"):
+            load_query(_make_client(), bad_id, backend="auth")
+
+    def test_error_shows_a_uuid_example(self):
+        with pytest.raises(PicSureValidationError) as excinfo:
+            load_query(_make_client(), "abc-123", backend="auth")
+        assert "3fa85f64-5717-4562-b3fc-2c963f66afa6" in str(excinfo.value)
+
+    @respx.mock
+    def test_uppercase_uuid_normalized_to_canonical_form(self):
+        route = respx.get(META_URL).mock(
+            return_value=httpx.Response(
+                200,
+                json=_envelope(
+                    {
+                        "select": ["\\phs1\\sex\\"],
+                        "phenotypicClause": None,
+                    }
+                ),
+            )
+        )
+        load_query(_make_client(), QUERY_ID.upper(), backend="auth")
+        assert route.called
+        assert QUERY_ID in str(route.calls[0].request.url)
+
+    @respx.mock
+    def test_braced_uuid_normalized(self):
+        route = respx.get(META_URL).mock(
+            return_value=httpx.Response(
+                200,
+                json=_envelope({"select": ["\\phs1\\sex\\"], "phenotypicClause": None}),
+            )
+        )
+        load_query(_make_client(), f"{{{QUERY_ID}}}", backend="auth")
+        assert QUERY_ID in str(route.calls[0].request.url)
+
+    @respx.mock
+    def test_surrounding_whitespace_stripped(self):
+        route = respx.get(META_URL).mock(
+            return_value=httpx.Response(
+                200,
+                json=_envelope({"select": ["\\phs1\\sex\\"], "phenotypicClause": None}),
+            )
+        )
+        load_query(_make_client(), f"  {QUERY_ID}  ", backend="auth")
+        assert route.called
+
+    def test_path_traversal_cannot_reach_another_route(self):
+        # The id is escaped as a single path segment, but validation
+        # rejects it first -- so no request is ever built.
+        with pytest.raises(PicSureValidationError):
+            load_query(
+                _make_client(), "../../../operations/dataset/named", backend="auth"
+            )
 
 
 class TestLoadQueryErrors:

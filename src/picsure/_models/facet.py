@@ -160,8 +160,9 @@ class FacetSet:
         """Serialize selected facets for the concepts/facets request body.
 
         The backend expects each selected option to arrive as the full
-        facet object (the shape returned by ``/dictionary-api/facets``)
-        with an added ``categoryRef`` pointing back at its category.
+        facet object (the shape returned by
+        ``/picsure/dictionary/facets``) with an added ``categoryRef``
+        pointing back at its category.
         """
         result: list[dict[str, object]] = []
         for cat_name, values in self._selected.items():
