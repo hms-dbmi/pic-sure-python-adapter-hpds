@@ -4,7 +4,7 @@ from urllib.parse import urlencode
 
 import pandas as pd
 
-from picsure._services._errors import rate_limit_message, translate_stage_error
+from picsure._services._errors import rate_limit_message, translate_transport_error
 from picsure._services._hpds_paths import search_values_path
 from picsure._transport.client import PicSureClient
 from picsure._transport.errors import (
@@ -60,8 +60,8 @@ def search_genomic_values(
     try:
         data = client.get_json(path)
     except (TransportConsentDeniedError, TransportConsentLookupError) as exc:
-        raise translate_stage_error(
-            exc, service="genomic values", stage="fetch"
+        raise translate_transport_error(
+            exc, operation="fetch"
         ) from exc
     except TransportAuthenticationError as exc:
         raise PicSureAuthError(

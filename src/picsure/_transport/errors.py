@@ -52,6 +52,15 @@ class TransportConnectionError(TransportError):
     """Network-level failure: DNS, timeout, connection refused."""
 
 
+class TransportTLSError(TransportConnectionError):
+    """TLS certificate verification failed before the request was sent.
+
+    Carries the fully-rendered, user-facing explanation: the host, the
+    reason OpenSSL gave, and how to trust the certificate.  Retrying is
+    pointless, so the client never re-sends after one of these.
+    """
+
+
 class TransportValidationError(TransportError):
     """HTTP 400 / 422 / other 4xx from the server.
 
