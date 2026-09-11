@@ -19,7 +19,19 @@ class PlatformConfig:
 
 @dataclass(frozen=True)
 class PlatformInfo:
-    """Resolved platform connection details."""
+    """Resolved platform connection details.
+
+    ``backend`` is the single derived value that both HPDS routing and
+    the connect banner read, so the two can no longer disagree about
+    whether a connection is open or authorized.
+
+    Raises:
+        PicSureValidationError: If ``include_consents`` is set with
+            ``requires_auth`` off.  Consent scoping exists only on the
+            authorized backend, and the consent list itself comes from
+            an authenticated PSAMA route, so the combination cannot
+            describe a real deployment.
+    """
 
     url: str
     include_consents: bool = False
@@ -27,6 +39,35 @@ class PlatformInfo:
     # unless the caller explicitly opts out with ``requires_auth=False``.
     requires_auth: bool = True
     supports_genomic: bool = False
+    # True when the caller passed a URL string rather than a Platform
+    # member, so connect() knows the capability flags are defaults it
+    # guessed rather than facts recorded for a known deployment.
+    is_custom_url: bool = False
+
+    def __post_init__(self) -> None:
+        if self.include_consents and not self.requires_auth:
+            raise PicSureValidationError(
+                "include_consents=True cannot be combined with "
+                "requires_auth=False. Consent scoping applies only to the "
+                "authorized HPDS backend, and the consent list is read from "
+                "an authenticated PSAMA endpoint, so an unauthenticated "
+                "connection has no consents to scope by. Pass a token and "
+                "leave requires_auth alone for a consent-scoped deployment, "
+                "or pass include_consents=False (e.g. Platform.BDC_OPEN) for "
+                "an open one."
+            )
+
+    @property
+    def backend(self) -> str:
+        """The HPDS backend this deployment routes to: ``"auth"`` or ``"open"``.
+
+        The gateway selects HPDS by URL path — ``/hpds/auth`` versus
+        ``/hpds/open`` — so this one string decides both the request path
+        and how the connection is described to the user.  Consent scoping
+        implies the authorized backend, which ``__post_init__`` enforces,
+        so the auth requirement alone settles it.
+        """
+        return "auth" if self.requires_auth else "open"
 
 
 class Platform(Enum):
@@ -149,7 +190,8 @@ def resolve_platform(
 
     Raises:
         PicSureValidationError: If the value is not a ``Platform`` member
-            and does not look like a URL.
+            and does not look like a URL, or if the resolved flags ask
+            for consent scoping on an unauthenticated connection.
     """
     if isinstance(platform, Platform):
         resolved_consents = (
@@ -178,6 +220,7 @@ def resolve_platform(
             include_consents=bool(include_consents),
             requires_auth=True if requires_auth is None else requires_auth,
             supports_genomic=bool(supports_genomic),
+            is_custom_url=True,
         )
 
     valid = ", ".join(f"Platform.{p.name}" for p in Platform)
