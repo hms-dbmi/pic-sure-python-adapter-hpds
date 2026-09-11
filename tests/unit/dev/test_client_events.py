@@ -8,6 +8,7 @@ from picsure._transport.errors import (
     TransportConnectionError,
     TransportServerError,
 )
+from picsure.errors import PicSureServerError
 
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token-abc"
@@ -205,3 +206,87 @@ def test_participant_query_body_not_logged():
         http_events[-1].bytes_received is not None
         and http_events[-1].bytes_received > 0
     )
+
+
+class TestStreamedDownloadEvents:
+    """A download that goes to disk must still be accounted for.
+
+    Participant and timestamp queries stream to a temporary file rather
+    than buffering the body, and the streaming helper does not go through
+    ``_request``.  Without its own event, switching those queries to the
+    streaming path silently removed them from the dev-mode buffer.
+    """
+
+    @staticmethod
+    def _run(query_type: str, content: bytes, cfg: DevConfig):
+        from picsure._models.clause import Clause, PhenotypicFilterType
+        from picsure._services._hpds_paths import query_prefix
+        from picsure._services.query_run import run_query
+
+        url = f"{BASE_URL}{query_prefix('auth', v3=True)}/query/sync"
+        respx.post(url).mock(return_value=httpx.Response(200, content=content))
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN, dev_config=cfg)
+        clause = Clause(
+            keys=["\\a\\b\\"], type=PhenotypicFilterType.FILTER, categories=["X"]
+        )
+        return run_query(client, clause, query_type, backend="auth")
+
+    @respx.mock
+    @pytest.mark.parametrize("query_type", ["participant", "timestamp"])
+    def test_a_streamed_query_emits_one_http_event(self, query_type):
+        cfg = DevConfig(enabled=True, max_events=10)
+
+        self._run(query_type, b"patient_id,age\nP1,42\n", cfg)
+
+        http_events = [e for e in cfg.buffer.snapshot() if e.kind == "http"]
+        assert len(http_events) == 1
+        assert http_events[0].status == 200
+
+    @respx.mock
+    def test_the_event_reports_the_bytes_written_to_disk(self):
+        cfg = DevConfig(enabled=True, max_events=10)
+        content = b"patient_id,age\nP1,42\nP2,51\n"
+
+        self._run("participant", content, cfg)
+
+        http_events = [e for e in cfg.buffer.snapshot() if e.kind == "http"]
+        assert http_events[0].bytes_received == len(content)
+
+    @respx.mock
+    def test_a_streamed_participant_body_is_still_marked_redacted(self):
+        # The buffered path marked these; losing the mark would make a
+        # participant-bearing body look safe to log.
+        cfg = DevConfig(enabled=True, max_events=10)
+
+        self._run("participant", b"patient_id,age\nP1,42\n", cfg)
+
+        http_events = [e for e in cfg.buffer.snapshot() if e.kind == "http"]
+        assert http_events[0].metadata.get("redacted") == "participant"
+
+    @respx.mock
+    def test_a_failed_download_emits_an_error_event(self):
+        from picsure._models.clause import Clause, PhenotypicFilterType
+        from picsure._services._hpds_paths import query_prefix
+        from picsure._services.query_run import run_query
+
+        url = f"{BASE_URL}{query_prefix('auth', v3=True)}/query/sync"
+        respx.post(url).mock(return_value=httpx.Response(500, text="boom"))
+        cfg = DevConfig(enabled=True, max_events=10)
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN, dev_config=cfg)
+        clause = Clause(
+            keys=["\\a\\b\\"], type=PhenotypicFilterType.FILTER, categories=["X"]
+        )
+
+        with pytest.raises(PicSureServerError):
+            run_query(client, clause, "participant", backend="auth")
+
+        errors = [e for e in cfg.buffer.snapshot() if e.kind == "error"]
+        assert errors and errors[0].error == "TransportServerError"
+
+    @respx.mock
+    def test_nothing_is_emitted_when_dev_mode_is_off(self):
+        cfg = DevConfig(enabled=False, max_events=10)
+
+        self._run("participant", b"patient_id,age\nP1,42\n", cfg)
+
+        assert cfg.buffer.snapshot() == []

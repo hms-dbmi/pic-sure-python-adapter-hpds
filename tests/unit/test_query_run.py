@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import httpx
 import pytest
 import respx
@@ -18,6 +20,7 @@ from picsure.errors import (
     PicSureConsentDeniedError,
     PicSureConsentLookupError,
     PicSureQueryError,
+    PicSureServerError,
     PicSureValidationError,
 )
 
@@ -1418,3 +1421,119 @@ class TestVariantParserDefensiveBranches:
         body = b'CHROM\tPOS\n7\t100000\n"unclosed\tquote\t\t\t\n'
         with pytest.raises(PicSureQueryError, match="malformed VCF excerpt"):
             _parse_vcf_excerpt(body)
+
+
+class TestDataframeQueriesStreamToDisk:
+    """Participant and timestamp results are streamed, not buffered.
+
+    The buffered path held the whole CSV in memory before handing it to
+    pandas, so peak usage was the raw bytes plus the frame -- enough to
+    kill a notebook kernel on a large cohort, silently.
+    """
+
+    @staticmethod
+    def _spy_on_streaming(monkeypatch) -> list[Path]:
+        """Record the target each streamed download is written to."""
+        targets: list[Path] = []
+        real = PicSureClient.post_raw_to_file
+
+        def spy(self, path, target, body=None):
+            targets.append(Path(target))
+            return real(self, path, target, body=body)
+
+        monkeypatch.setattr(PicSureClient, "post_raw_to_file", spy)
+        return targets
+
+    @staticmethod
+    def _forbid_buffering(monkeypatch) -> None:
+        def fail(self, path, body=None):
+            raise AssertionError("post_raw buffers the whole body in memory")
+
+        monkeypatch.setattr(PicSureClient, "post_raw", fail)
+
+    @respx.mock
+    @pytest.mark.parametrize("query_type", ["participant", "timestamp"])
+    def test_the_result_is_streamed_rather_than_buffered(self, query_type, monkeypatch):
+        csv = b"patient_id,age\nP001,42\nP002,51\n"
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=csv))
+        targets = self._spy_on_streaming(monkeypatch)
+        self._forbid_buffering(monkeypatch)
+
+        df = run_query(_make_client(), _simple_clause(), query_type, backend="auth")
+
+        assert len(targets) == 1
+        assert len(df) == 2
+
+    @respx.mock
+    def test_a_count_query_is_still_fetched_in_one_piece(self, monkeypatch):
+        # Small bodies gain nothing from streaming and must not change.
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"7"))
+        targets = self._spy_on_streaming(monkeypatch)
+
+        result = run_query(_make_client(), _simple_clause(), "count", backend="auth")
+
+        assert targets == []
+        assert result.value == 7
+
+    @respx.mock
+    def test_the_temporary_file_is_removed_after_a_successful_parse(self, monkeypatch):
+        csv = b"patient_id,age\nP001,42\n"
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=csv))
+        targets = self._spy_on_streaming(monkeypatch)
+
+        run_query(_make_client(), _simple_clause(), "participant", backend="auth")
+
+        assert not targets[0].exists()
+        assert not targets[0].parent.exists()
+
+    @respx.mock
+    def test_the_temporary_file_is_removed_when_the_download_fails(self, monkeypatch):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(500, text="boom"))
+        targets = self._spy_on_streaming(monkeypatch)
+
+        with pytest.raises(PicSureServerError):
+            run_query(_make_client(), _simple_clause(), "participant", backend="auth")
+
+        assert not targets[0].parent.exists()
+
+    @respx.mock
+    def test_the_temporary_file_is_removed_when_the_parse_fails(self, monkeypatch):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"a,b,c\n1,2,3\n4,5,6,7,8\n")
+        )
+        targets = self._spy_on_streaming(monkeypatch)
+
+        with pytest.raises(PicSureQueryError, match="malformed CSV"):
+            run_query(_make_client(), _simple_clause(), "participant", backend="auth")
+
+        assert not targets[0].exists()
+        assert not targets[0].parent.exists()
+
+    @respx.mock
+    def test_no_staging_file_survives_a_failed_download(self, monkeypatch):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(500, text="boom"))
+        targets = self._spy_on_streaming(monkeypatch)
+
+        with pytest.raises(PicSureServerError):
+            run_query(_make_client(), _simple_clause(), "participant", backend="auth")
+
+        assert not targets[0].with_suffix(".csv.part").exists()
+
+    @respx.mock
+    def test_a_transport_failure_is_still_translated(self, monkeypatch):
+        respx.post(QUERY_URL).mock(side_effect=httpx.ConnectError("refused"))
+
+        with pytest.raises(PicSureConnectionError):
+            run_query(_make_client(), _simple_clause(), "participant", backend="auth")
+
+    @respx.mock
+    def test_a_body_larger_than_one_read_chunk_round_trips(self):
+        rows = b"".join(f"P{i:06d},{i}\n".encode() for i in range(20000))
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"patient_id,n\n" + rows)
+        )
+
+        df = run_query(_make_client(), _simple_clause(), "participant", backend="auth")
+
+        assert len(df) == 20000
+        assert list(df.columns) == ["patient_id", "n"]

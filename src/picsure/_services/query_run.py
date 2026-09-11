@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import json
 import re
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import replace
-from io import BytesIO, StringIO
+from io import StringIO
+from pathlib import Path
 from typing import NoReturn
 
 import pandas as pd
@@ -45,6 +49,17 @@ _VARIANT_RESULT_TYPES = frozenset(
         "AGGREGATE_VCF_EXCERPT",
     }
 )
+
+# Result types that come back as a CSV cohort export rather than a short
+# JSON or count body.  These are the only ones large enough to be worth
+# streaming: a participant download for a big cohort can run to hundreds of
+# megabytes.  (VCF excerpts have their own parser and are not included.)
+_DATAFRAME_RESULT_TYPES = frozenset({"DATAFRAME", "DATAFRAME_TIMESERIES"})
+
+# How much of a download to quote back in a parse-failure message, and how
+# much to read at a time when checking whether a body is blank.
+_PREVIEW_BYTES = 200
+_SCAN_BYTES = 64 * 1024
 
 _COUNT_EXACT = re.compile(r"^(\d+)$")
 _COUNT_NOISY = re.compile(r"^(\d+)\s*\u00b1\s*(\d+)$")
@@ -94,6 +109,9 @@ def run_query(
     body = build_query_body(query, resolved_type)
     path = query_prefix(backend, v3=True) + "/query/sync"
 
+    if resolved_type in _DATAFRAME_RESULT_TYPES:
+        return _run_dataframe_query(client, path, body, resolved_type)
+
     try:
         raw = client.post_raw(path, body=body)
     except TransportError as exc:
@@ -107,9 +125,7 @@ def run_query(
         return _parse_variant_count(raw, context=_describe_filters(body))
     if resolved_type == "VARIANT_LIST_FOR_QUERY":
         return _parse_variant_list(raw)
-    if resolved_type in ("VCF_EXCERPT", "AGGREGATE_VCF_EXCERPT"):
-        return _parse_vcf_excerpt(raw)
-    return _parse_dataframe(raw)
+    return _parse_vcf_excerpt(raw)
 
 
 def _raise_query_error(exc: TransportError, resolved_type: str) -> NoReturn:
@@ -126,6 +142,43 @@ def _raise_query_error(exc: TransportError, resolved_type: str) -> NoReturn:
             f"HTTP {exc.status_code}.)"
         ) from exc
     raise translate_transport_error(exc, operation=_QUERY_OPERATION) from exc
+
+
+def _run_dataframe_query(
+    client: PicSureClient,
+    path: str,
+    body: dict[str, object],
+    resolved_type: str,
+) -> pd.DataFrame:
+    """Stream a participant or timestamp result and parse it from disk.
+
+    The buffered path holds the whole CSV in memory and then builds a
+    DataFrame from it, so peak usage is the raw bytes plus the frame.
+    For a large cohort that is enough to exhaust a notebook kernel,
+    which presents as a dead kernel with no error rather than as a
+    failure -- and the ten-minute data deadline lets much larger results
+    through than the old thirty seconds did.  Streaming to a temporary
+    file drops the peak to the frame alone.
+    """
+    with _download_target() as target:
+        try:
+            client.post_raw_to_file(path, target, body=body)
+        except TransportError as exc:
+            _raise_query_error(exc, resolved_type)
+        return _parse_dataframe(target)
+
+
+@contextmanager
+def _download_target() -> Iterator[Path]:
+    """Yield a path to stream a download into, removed on the way out.
+
+    The enclosing directory is what gets cleaned up, so the ``.part``
+    staging file :meth:`PicSureClient.post_raw_to_file` writes goes with
+    it whether the download succeeded, failed part-way, or the parse
+    afterwards raised.
+    """
+    with tempfile.TemporaryDirectory(prefix="picsure-query-") as directory:
+        yield Path(directory) / "result.csv"
 
 
 def build_query_body(
@@ -356,19 +409,44 @@ def _parse_cross_count(raw: bytes) -> dict[str, CountResult]:
     return result
 
 
-def _parse_dataframe(raw: bytes) -> pd.DataFrame:
-    if not raw.strip():
+def _parse_dataframe(source: Path) -> pd.DataFrame:
+    """Parse a streamed CSV download into a DataFrame.
+
+    Takes a path rather than the response bytes so pandas reads the file
+    incrementally and the raw body is never held alongside the frame.
+    """
+    if _holds_only_whitespace(source):
         return pd.DataFrame()
     try:
-        return pd.read_csv(BytesIO(raw), encoding="utf-8")
-    except UnicodeDecodeError as exc:
+        return pd.read_csv(source, encoding="utf-8")
+    except (
+        UnicodeDecodeError,
+        pd.errors.ParserError,
+        pd.errors.EmptyDataError,
+    ) as exc:
         raise PicSureQueryError(
-            f"Server returned a malformed CSV response: {raw[:200]!r}"
+            f"Server returned a malformed CSV response: {_download_preview(source)!r}"
         ) from exc
-    except (pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
-        raise PicSureQueryError(
-            f"Server returned a malformed CSV response: {raw[:200]!r}"
-        ) from exc
+
+
+def _holds_only_whitespace(source: Path) -> bool:
+    """Whether a download contains no non-whitespace byte.
+
+    An empty or whitespace-only body is a legitimate "no rows" answer
+    rather than a parse failure.  Scans in chunks and stops at the first
+    real byte, so a full-size result costs a single read.
+    """
+    with source.open("rb") as handle:
+        while chunk := handle.read(_SCAN_BYTES):
+            if chunk.strip():
+                return False
+    return True
+
+
+def _download_preview(source: Path) -> bytes:
+    """Return the leading bytes of a download, to quote in an error."""
+    with source.open("rb") as handle:
+        return handle.read(_PREVIEW_BYTES)
 
 
 _QUERY_TYPE_NOT_ALLOWED = "query type not allowed"

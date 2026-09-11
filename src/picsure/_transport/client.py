@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import ssl
@@ -29,6 +30,8 @@ from picsure._transport.secret import SecretToken, as_secret_token
 from picsure.errors import PicSureQueryError, PicSureValidationError
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from picsure._dev.config import DevConfig
 
 # A JSON request body. Always an object: no PIC-SURE route takes a bare
@@ -58,6 +61,9 @@ _MAX_RETRIES = 1
 # answers must fail in seconds, not sit on the ten-minute data deadline.
 DATA_TIMEOUT_SECONDS = 600.0
 VALIDATION_TIMEOUT_SECONDS = 15.0
+
+# Read size for streamed downloads.
+_CHUNK_BYTES = 64 * 1024
 
 # Env var controlling TLS certificate verification, used only when the caller
 # does not pass an explicit ``verify`` to connect()/PicSureClient. Accepts a
@@ -513,6 +519,61 @@ class PicSureClient:
 
         raise TransportConnectionError("Request failed after retries") from last_exc
 
+    def post_raw_to_file(
+        self,
+        path: str,
+        target: Path,
+        body: RequestBody | None = None,
+    ) -> None:
+        """POST a JSON body and stream the response to ``target`` on disk.
+
+        The buffered counterpart, :meth:`post_raw`, holds the whole
+        response in memory; with a ten-minute deadline a participant
+        download can be large enough that buffering it kills the kernel
+        with no error at all.  This method never holds more than one
+        chunk: bytes go to ``<target>.part`` as they arrive and
+        :func:`os.replace` promotes that to ``target`` only once the body
+        is complete, so a failed download never leaves a truncated file
+        at the real path.
+
+        Args:
+            path: Request path, relative to the client's base URL.
+            target: Final path to write.  Its parent must exist.
+            body: JSON request body.
+
+        Emits the same developer-mode ``http`` event the buffered helpers
+        do, so turning on dev mode still accounts for a download that
+        went to disk.  The size is the byte count actually written rather
+        than ``len(response.content)``, which is both unavailable on a
+        streamed response and would undo the streaming.
+
+        Raises:
+            TransportError: Same mapping as :meth:`post_raw_stream`.
+            OSError: If the staging file cannot be written or promoted.
+        """
+        part_path = target.with_suffix(target.suffix + ".part")
+        start = time.monotonic()
+        try:
+            with (
+                self.post_raw_stream(path, body=body) as response,
+                open(part_path, "wb") as out,
+            ):
+                written = 0
+                for chunk in response.iter_bytes(chunk_size=_CHUNK_BYTES):
+                    if chunk:
+                        written += out.write(chunk)
+                self._emit_download(path, body, response, written, start)
+        except BaseException as exc:
+            self._emit_error("POST", path, 0, start, type(exc).__name__)
+            _remove_partial(part_path)
+            raise
+
+        try:
+            os.replace(part_path, target)
+        except OSError:
+            _remove_partial(part_path)
+            raise
+
     def _request(self, method: str, path: str, **kwargs: object) -> httpx.Response:
         last_exc: Exception | None = None
         raw_body = kwargs.get("json")
@@ -607,6 +668,48 @@ class PicSureClient:
                 bytes_received=bytes_received,
                 status=response.status_code,
                 retry=attempt,
+                error=None,
+                metadata=metadata,
+            )
+        )
+
+    def _emit_download(
+        self,
+        path: str,
+        body: RequestBody | None,
+        response: httpx.Response,
+        bytes_written: int,
+        start: float,
+    ) -> None:
+        """Record a completed streamed download as an ``http`` event.
+
+        The buffered path uses :meth:`_emit_http`, which sizes the
+        response with ``len(response.content)``.  A streamed response has
+        no ``content`` to read -- and reading it would defeat the point --
+        so the size comes from what was written to disk.
+        """
+        cfg = self._dev_config
+        if cfg is None or not cfg.enabled:
+            return
+
+        metadata: dict[str, object] = {}
+        if body_is_sensitive(path, "POST", body):
+            metadata["redacted"] = "participant"
+
+        cfg.emit(
+            Event(
+                timestamp=datetime.now(timezone.utc),
+                kind="http",
+                name=path,
+                duration_ms=(time.monotonic() - start) * 1000.0,
+                bytes_sent=(
+                    len(response.request.content or b"")
+                    if response.request
+                    else _estimate_bytes(body)
+                ),
+                bytes_received=bytes_written,
+                status=response.status_code,
+                retry=0,
                 error=None,
                 metadata=metadata,
             )
@@ -733,6 +836,16 @@ def _timeout_kwargs(timeout: float | None) -> dict[str, float]:
     reads as "no deadline at all".
     """
     return {} if timeout is None else {"timeout": timeout}
+
+
+def _remove_partial(part_path: Path) -> None:
+    """Best-effort removal of a staging file after a failed download.
+
+    If the partial cannot be deleted there is nothing useful to do; the
+    original failure is the one worth propagating.
+    """
+    with contextlib.suppress(OSError):
+        part_path.unlink(missing_ok=True)
 
 
 def _estimate_bytes(body: RequestBody | None) -> int | None:
