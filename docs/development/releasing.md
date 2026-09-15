@@ -53,9 +53,8 @@ name itself.
    Strict mode catches broken cross-references that the CI docs job
    would also catch — running it locally is faster than waiting on
    the PR.
-5. **Open a "release X.Y.Z" PR.** The CHANGELOG bump and version bump
-   land on `main` via PR like any other change. Merge once CI is
-   green.
+5. **Open a "release X.Y.Z" PR.** The CHANGELOG update lands on
+   `main` via PR like any other change. Merge once CI is green.
 
 ## Cutting the release
 
@@ -66,11 +65,15 @@ on anything else:
 | Tag | Classified | Publishes to |
 |---|---|---|
 | `vX.Y.Z` (e.g. `v2.0.0`) | final release | PyPI |
-| `vX.Y.Z{a,b,rc}N` (e.g. `v2.0.0rc1`) | pre-release | TestPyPI |
+| `vX.Y.Z{a,b,rc}[N]` (e.g. `v2.0.0rc1`) | pre-release | TestPyPI |
 | anything else (e.g. `v1.0`) | error | nothing — the run fails |
 
 The two-component tags still in the repo (`v1.0`, `v1.2`) predate
 this workflow and would be rejected today. Use the full `vX.Y.Z`.
+The pre-release number is optional to the pattern (`v2.0.0rc` passes,
+and one such tag exists), but always give one: PEP 440 reads a bare
+`rc` as `rc0`, and the next candidate needs a name that sorts after
+it.
 
 ```bash
 # from a clean main, on the merge commit you want to ship
@@ -110,9 +113,9 @@ The TestPyPI dry run is not a separate manual step: tag a pre-release
 and it routes there automatically.
 
 ```bash
-git tag -a v2.0.0rc1 -m "Release candidate 2.0.0rc1"
-git push origin v2.0.0rc1        # -> TestPyPI, via release.yml
-pip install --index-url https://test.pypi.org/simple/ picsure==2.0.0rc1
+git tag -a vX.Y.Zrc1 -m "Release candidate X.Y.Zrc1"
+git push origin vX.Y.Zrc1        # -> TestPyPI, via release.yml
+pip install --index-url https://test.pypi.org/simple/ picsure==X.Y.Zrc1
 ```
 
 Only reach for a manual `uv build` / `uv publish` if the workflow
@@ -143,8 +146,9 @@ Two practical notes:
    empty `### Added` / `### Changed` / `### Removed` / `### Fixed`
    subsections — easier than adding them ad-hoc later.
 2. **Nothing to bump.** `hatch-vcs` already derives a dev version
-   from the distance past the tag, so commits after a release build
-   as `X.Y.Z.devN` without anyone editing a file.
+   from the distance past the tag: N commits after `vX.Y.Z` build as
+   `X.Y.(Z+1).devN+g<sha>`, the next patch version, without anyone
+   editing a file.
 3. **Verify the install.** `pip install picsure==X.Y.Z` from a fresh
    virtualenv and run the quickstart. Any import-time regression
    (missing dependency, wrong wheel platform, py.typed-related
