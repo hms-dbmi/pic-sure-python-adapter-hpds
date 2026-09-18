@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import contextlib
-import os
 import time
 from pathlib import Path
 
@@ -58,10 +56,10 @@ def export_pfb(
     3. ``POST /picsure/hpds/auth/v3/query/{id}/result`` streams the
        Avro-binary PFB bytes straight to disk.
 
-    The output file is written atomically: bytes land at
-    ``<path>.part``, then :func:`os.replace` promotes that to ``path``
-    on success.  Any exception after the ``.part`` file has been
-    created removes the partial file before re-raising.
+    The output file is written atomically by
+    :meth:`PicSureClient.post_raw_to_file`: bytes land at ``<path>.part``,
+    then :func:`os.replace` promotes that to ``path`` on success, and a
+    failure at any point removes the partial file before re-raising.
 
     Args:
         client: Authenticated HTTP client.
@@ -84,7 +82,6 @@ def export_pfb(
             within 10 minutes, or the local disk write fails.
     """
     target = Path(path)
-    part_path = target.with_suffix(target.suffix + ".part")
 
     base = query_prefix(backend, v3=True)
     body = build_query_body(query, "DATAFRAME_PFB")
@@ -97,7 +94,7 @@ def export_pfb(
     _poll_until_available(client, base, query_id, body)
 
     # 3. Stream the result to disk atomically.
-    _download_result(client, base, query_id, body, target, part_path)
+    _download_result(client, base, query_id, body, target)
 
 
 def _submit_query(
@@ -193,57 +190,24 @@ def _download_result(
     query_id: str,
     body: dict[str, object],
     target: Path,
-    part_path: Path,
 ) -> None:
-    result_path = f"{base}/query/{query_id}/result"
+    """Stream the finished PFB result into ``target``.
 
+    Delegates the staging file, the atomic promotion and the cleanup on
+    failure to :meth:`PicSureClient.post_raw_to_file`, and translates
+    what it raises into the public hierarchy: a transport failure by
+    status, a local write or rename failure to
+    :class:`PicSureConnectionError` naming the destination.
+    """
+    result_path = f"{base}/query/{query_id}/result"
     try:
-        with client.post_raw_stream(result_path, body=body) as response:
-            _stream_to_file(response, part_path)
+        client.post_raw_to_file(result_path, target, body=body)
     except TransportError as exc:
-        _cleanup_partial(part_path)
         raise translate_transport_error(
             exc, operation="the PFB export download"
         ) from exc
     except OSError as exc:
-        _cleanup_partial(part_path)
         raise PicSureConnectionError(f"Could not write PFB to {target}: {exc}") from exc
-    except BaseException:
-        _cleanup_partial(part_path)
-        raise
-
-    # Promote .part -> final path atomically.
-    try:
-        os.replace(part_path, target)
-    except OSError as exc:
-        _cleanup_partial(part_path)
-        raise PicSureConnectionError(
-            f"Could not finalise PFB at {target}: {exc}"
-        ) from exc
-
-
-def _stream_to_file(response: object, part_path: Path) -> None:
-    """Iterate ``response.iter_bytes()`` into ``part_path``.
-
-    Separated out so the streaming body is easy to mock in tests.
-    Typed ``response: object`` intentionally — the concrete type is
-    :class:`httpx.Response`, but declaring it here would force a
-    transport-layer import into this helper.
-    """
-    with open(part_path, "wb") as out:
-        for chunk in response.iter_bytes(chunk_size=64 * 1024):  # type: ignore[attr-defined]
-            if chunk:
-                out.write(chunk)
-
-
-def _cleanup_partial(part_path: Path) -> None:
-    """Best-effort removal of the ``.part`` staging file.
-
-    If we can't even delete the partial, there's nothing useful to do —
-    the original exception will still propagate.
-    """
-    with contextlib.suppress(OSError):
-        part_path.unlink(missing_ok=True)
 
 
 def export_csv(data: pd.DataFrame, path: str | Path) -> None:

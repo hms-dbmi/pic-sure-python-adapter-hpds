@@ -320,7 +320,7 @@ class TestExportPFBAtomicWrite:
         with (
             patch("picsure._services.export.time.sleep"),
             patch(
-                "picsure._services.export.os.replace",
+                "picsure._transport.client.os.replace",
                 side_effect=OSError("disk full"),
             ),
             pytest.raises(PicSureConnectionError, match="out.pfb"),
@@ -342,14 +342,32 @@ class TestExportPFBAtomicWrite:
         output = tmp_path / "out.pfb"
         part = tmp_path / "out.pfb.part"
 
-        def boom(_response, _part_path):  # noqa: ANN001
-            # Simulate a partial write that already left bytes behind.
-            part.write_bytes(b"partial")
-            raise OSError("no space left on device")
+        class FullDisk:
+            """A staging-file handle whose first write leaves bytes behind, then fails.
+
+            This is what a disk filling up part-way through a download looks like.
+            """
+
+            def __init__(self, handle):  # noqa: ANN001
+                self._handle = handle
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_exc_info):  # noqa: ANN002
+                self._handle.close()
+
+            def write(self, _chunk):  # noqa: ANN001
+                self._handle.write(b"partial")
+                self._handle.flush()
+                raise OSError("no space left on device")
+
+        def failing_open(path, mode="r", *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+            return FullDisk(open(path, mode, *args, **kwargs))
 
         with (
             patch("picsure._services.export.time.sleep"),
-            patch("picsure._services.export._stream_to_file", side_effect=boom),
+            patch("picsure._transport.client.open", failing_open, create=True),
             pytest.raises(PicSureConnectionError, match="out.pfb"),
         ):
             export_pfb(_make_client(), _simple_clause(), output, backend="auth")
