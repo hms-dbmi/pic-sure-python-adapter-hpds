@@ -26,7 +26,7 @@ from picsure._models.facet import FacetCategory, FacetSet
 from picsure._services._errors import translate_transport_error
 from picsure._transport.client import PicSureClient, json_object
 from picsure._transport.errors import TransportError
-from picsure.errors import PicSureValidationError
+from picsure.errors import PicSureQueryError, PicSureValidationError
 
 _CONCEPTS_PATH = "/picsure/dictionary/concepts"
 _FACETS_PATH = "/picsure/dictionary/facets"
@@ -322,6 +322,13 @@ def fetch_facets(
     Returns:
         List of facet categories.  Counts are contextual when ``term``
         and/or ``facets`` is supplied; global otherwise.
+
+    Raises:
+        PicSureQueryError: If an element of the categories array is not a
+            JSON object, or if one of its options is not. A malformed
+            response stays inside the public error hierarchy rather than
+            surfacing as an ``AttributeError`` naming neither the route
+            nor the payload.
     """
     body = _build_concepts_body(term=term, facets=facets, consents=consents)
 
@@ -331,7 +338,17 @@ def fetch_facets(
         raise translate_transport_error(exc, operation=_FACETS_OPERATION) from exc
 
     raw_categories = data if isinstance(data, list) else data.get("facets", [])
-    return [FacetCategory.from_dict(f) for f in raw_categories]
+    categories: list[FacetCategory] = []
+    for position, entry in enumerate(raw_categories):
+        if not isinstance(entry, dict):
+            raise PicSureQueryError(
+                f"{_FACETS_PATH} answered with a facet category at index "
+                f"{position} that is a {type(entry).__name__}, not an object: "
+                f"{entry!r}. Each category is a JSON object with a 'name', a "
+                f"'display' and a 'facets' array."
+            )
+        categories.append(FacetCategory.from_dict(entry))
+    return categories
 
 
 _SHOW_ALL_FACETS_COLUMNS = [

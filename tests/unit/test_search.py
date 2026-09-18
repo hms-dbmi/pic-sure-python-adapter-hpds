@@ -22,6 +22,7 @@ from picsure.errors import (
     PicSureAuthorizationError,
     PicSureConnectionError,
     PicSureConsentDeniedError,
+    PicSureQueryError,
     PicSureValidationError,
 )
 
@@ -809,6 +810,64 @@ class TestFetchFacets:
         respx.post(FACETS_URL).mock(return_value=httpx.Response(500))
         with pytest.raises(PicSureConnectionError, match="facets"):
             fetch_facets(_make_client())
+
+
+class TestFetchFacetsMalformedPayload:
+    @respx.mock
+    def test_a_string_where_a_category_belongs_stays_in_the_hierarchy(self):
+        respx.post(FACETS_URL).mock(
+            return_value=httpx.Response(200, json=["dataset_id"])
+        )
+
+        with pytest.raises(PicSureQueryError, match="not an object"):
+            fetch_facets(_make_client())
+
+    @respx.mock
+    def test_the_message_names_the_route_and_what_arrived(self):
+        respx.post(FACETS_URL).mock(
+            return_value=httpx.Response(200, json=["dataset_id"])
+        )
+
+        with pytest.raises(PicSureQueryError) as info:
+            fetch_facets(_make_client())
+
+        assert _FACETS_PATH in str(info.value)
+        assert "'dataset_id'" in str(info.value)
+
+    @respx.mock
+    def test_a_string_inside_a_wrapped_categories_array_is_refused(self):
+        respx.post(FACETS_URL).mock(
+            return_value=httpx.Response(200, json={"facets": [7]})
+        )
+
+        with pytest.raises(PicSureQueryError, match="index 0"):
+            fetch_facets(_make_client())
+
+    @respx.mock
+    def test_a_string_where_an_option_belongs_stays_in_the_hierarchy(self):
+        respx.post(FACETS_URL).mock(
+            return_value=httpx.Response(
+                200,
+                json=[
+                    {
+                        "name": "dataset_id",
+                        "display": "Dataset",
+                        "facets": ["phs000007"],
+                    }
+                ],
+            )
+        )
+
+        with pytest.raises(PicSureQueryError, match="dataset_id"):
+            fetch_facets(_make_client())
+
+    @respx.mock
+    def test_a_well_formed_payload_is_unchanged(self, facets_response):
+        respx.post(FACETS_URL).mock(
+            return_value=httpx.Response(200, json=facets_response)
+        )
+
+        assert len(fetch_facets(_make_client())) == 3
 
 
 _EXPECTED_COLUMNS = [

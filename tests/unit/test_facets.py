@@ -1,7 +1,7 @@
 import pytest
 
 from picsure._models.facet import Facet, FacetCategory, FacetSet
-from picsure.errors import PicSureValidationError
+from picsure.errors import PicSureQueryError, PicSureValidationError
 
 
 class TestFacet:
@@ -257,3 +257,51 @@ class TestFacetSet:
         fs = self._make_facet_set()
         with pytest.raises(PicSureValidationError, match="not a valid facet category"):
             fs.clear("nonexistent")
+
+
+class TestFacetCategoryMalformedOptions:
+    def test_a_string_option_raises_a_query_error(self):
+        with pytest.raises(PicSureQueryError, match="not an object"):
+            FacetCategory.from_dict(
+                {"name": "dataset_id", "display": "Dataset", "facets": ["phs000007"]}
+            )
+
+    def test_the_message_names_the_category_the_index_and_the_value(self):
+        with pytest.raises(PicSureQueryError) as info:
+            FacetCategory.from_dict(
+                {
+                    "name": "dataset_id",
+                    "display": "Dataset",
+                    "facets": [{"name": "phs000007", "count": 1}, "phs000179"],
+                }
+            )
+
+        message = str(info.value)
+        assert "'dataset_id'" in message
+        assert "index 1" in message
+        assert "'phs000179'" in message
+
+    def test_a_string_in_the_legacy_categories_key_is_refused(self):
+        with pytest.raises(PicSureQueryError, match="index 0"):
+            FacetCategory.from_dict(
+                {"name": "data_type", "display": "Type", "categories": ["categorical"]}
+            )
+
+    def test_a_non_list_option_array_is_still_tolerated(self):
+        category = FacetCategory.from_dict(
+            {"name": "dataset_id", "display": "Dataset", "facets": None}
+        )
+
+        assert category.options == []
+
+    def test_a_well_formed_category_is_unchanged(self):
+        category = FacetCategory.from_dict(
+            {
+                "name": "dataset_id",
+                "display": "Dataset",
+                "facets": [{"name": "phs000007", "count": 3}],
+            }
+        )
+
+        assert category.options[0].value == "phs000007"
+        assert category.options[0].count == 3
