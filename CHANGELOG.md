@@ -68,6 +68,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `picsure.connect(timeout=...)` sets the per-request deadline for this session's data operations; defaults to ten minutes.
 - `picsure.connect(validate=...)` opts out of the connect-time validation request for offline or mocked use; defaults to `True`.
 - `Session.user_email` and `Session.token_expiration` read-only properties expose the connected account and the token deadline without exposing the token.
+- `picsure.SecretToken` wraps a PIC-SURE API token so it renders as a fixed placeholder instead of its own value: in an f-string, in a `repr`, and in every frame Python puts on a rendered traceback. Build one with `picsure.SecretToken(raw_token)` and read the value back with `.reveal()`. `connect()` already accepted one as `token` and named the type in its signature, but the class itself was only reachable by importing past an underscore, so a caller could not hold a token in the wrapper before connecting. It is deliberately not a `str` subclass, so a call site that treats it as one fails loudly rather than formatting the token into output.
 
 ## [2.0.0] - 2026-06-15
 

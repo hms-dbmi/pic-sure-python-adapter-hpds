@@ -25,6 +25,7 @@ from picsure._services.query_build import (
 )
 from picsure._services.query_edit import removeSubQuery, replaceClause
 from picsure._transport.platforms import Platform
+from picsure._transport.secret import SecretToken
 from picsure.errors import (
     PicSureAuthenticationError,
     PicSureAuthError,
@@ -84,6 +85,7 @@ __all__ = [
     "Platform",
     "Query",
     "QueryType",
+    "SecretToken",
     "Session",
     "VariantFrequency",
     "VariantSeverity",

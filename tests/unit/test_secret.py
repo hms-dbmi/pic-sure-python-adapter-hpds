@@ -380,3 +380,25 @@ class TestTokenHelpersDoNotLeakIntoTracebacks:
 
         rendered = render_traceback(excinfo, showlocals=showlocals)
         assert longest_token_run(rendered) <= MAX_INCIDENTAL_RUN
+
+
+class TestSecretTokenIsPublic:
+    """connect() names SecretToken in its signature, so a caller can name it too."""
+
+    def test_importable_from_the_package_root(self):
+        import picsure
+
+        assert picsure.SecretToken is SecretToken
+
+    def test_listed_in_all(self):
+        import picsure
+
+        assert "SecretToken" in picsure.__all__
+
+    def test_connect_accepts_the_exported_class(self):
+        import inspect
+
+        import picsure
+
+        annotation = inspect.signature(picsure.connect).parameters["token"].annotation
+        assert "SecretToken" in str(annotation)
