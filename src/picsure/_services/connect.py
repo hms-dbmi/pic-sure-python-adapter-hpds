@@ -457,13 +457,16 @@ def _resolve_consents(
         return []
 
     if not validate:
-        _warn_unscoped(info, detected=False)
+        _warn_unscoped(
+            info, reason="consent scoping could not be checked with validate=False"
+        )
         return []
 
     try:
         consents = fetch_consents(client)
-    except PicSureError:
-        consents = []
+    except PicSureError as exc:
+        _warn_unscoped(info, reason=_probe_failure_reason(exc))
+        return []
 
     if consents:
         _note(
@@ -473,24 +476,43 @@ def _resolve_consents(
         )
         return consents
 
-    _warn_unscoped(info, detected=True)
+    _warn_unscoped(info, reason="this deployment reports no consents for your account")
     return []
 
 
-def _warn_unscoped(info: PlatformInfo, *, detected: bool) -> None:
+def _probe_failure_reason(exc: PicSureError) -> str:
+    """Describe why the consent probe could not answer, naming the HTTP status.
+
+    The public error carries the transport failure as its cause, and the
+    transport error carries the status the server answered with. A
+    failure with no status, such as a body that is not JSON, is named by
+    its error class instead.
+    """
+    status = getattr(exc.__cause__, "status_code", None)
+    if isinstance(status, int):
+        return (
+            f"consent scoping could not be checked, the consent lookup answered "
+            f"HTTP {status}"
+        )
+    return (
+        f"consent scoping could not be checked, the consent lookup failed with "
+        f"{type(exc).__name__}"
+    )
+
+
+def _warn_unscoped(info: PlatformInfo, *, reason: str) -> None:
     """Say which capabilities are off on a URL connection, and how to fix it.
 
     Named arguments rather than prose: the reader needs the one thing to
     type, not a description of the problem.
+
+    Args:
+        info: The resolved platform the warning is about.
+        reason: Why consent scoping is off, as a clause the warning quotes.
     """
-    reason = (
-        "this deployment reports no consents for your account"
-        if detected
-        else "consent scoping could not be checked"
-    )
-    missing = [f"consent scoping is off ({reason}) — include_consents=True"]
+    missing = [f"consent scoping is off ({reason}), pass include_consents=True"]
     if not info.supports_genomic:
-        missing.append("genomic operations are off — supports_genomic=True")
+        missing.append("genomic operations are off, pass supports_genomic=True")
     joined = "; ".join(missing)
     _warn(
         f"connecting to {info.url} by URL, so its capabilities are assumed "

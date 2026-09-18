@@ -164,3 +164,14 @@ class TestFetchConsentsRefusalIsNotAvailability:
             fetch_consents(_make_client())
         assert isinstance(exc_info.value, PicSureConnectionError)
         assert not isinstance(exc_info.value, PicSureTLSError)
+
+
+class TestFetchConsentsMalformedBody:
+    @respx.mock
+    def test_non_json_200_raises_a_connection_error_not_a_decode_error(self):
+        respx.get(CONSENTS_URL).mock(
+            return_value=httpx.Response(200, text="<html>captive portal</html>")
+        )
+        with pytest.raises(PicSureConnectionError) as exc_info:
+            fetch_consents(_make_client())
+        assert "/psama/user/me/consents" in str(exc_info.value)

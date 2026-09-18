@@ -1056,3 +1056,50 @@ class TestConnectFrameHoldsNoPlainToken:
 
         assert _email_from_jwt(SecretToken(TOKEN)) == "researcher@university.edu"
         assert _token_expiration_from_jwt(SecretToken(TOKEN)) == "2026-06-15T00:00:00Z"
+
+
+class TestConsentProbeFailureIsReported:
+    """A probe that fails says so and names the status; only a real empty list
+    says the deployment reports no consents.
+    """
+
+    @respx.mock
+    @pytest.mark.parametrize("status", [401, 403, 503])
+    def test_failed_probe_says_it_could_not_check_and_names_the_status(
+        self, capsys, status
+    ):
+        _mock_validation()
+        respx.get(f"{BASE_URL}{_CONSENTS_PATH}").mock(
+            return_value=httpx.Response(status, text="refused")
+        )
+
+        session = connect(platform=BASE_URL, token=TOKEN)
+
+        err = capsys.readouterr().err
+        assert session.consents == []
+        assert "could not be checked" in err
+        assert str(status) in err
+        assert "reports no consents" not in err
+
+    @respx.mock
+    def test_genuine_empty_list_says_the_deployment_reports_no_consents(self, capsys):
+        _mock_validation()
+        _mock_consents(payload={"consents": {}})
+
+        connect(platform=BASE_URL, token=TOKEN)
+
+        err = capsys.readouterr().err
+        assert "reports no consents" in err
+        assert "could not be checked" not in err
+
+    @respx.mock
+    def test_non_json_consents_body_is_a_probe_failure_not_a_crash(self, capsys):
+        _mock_validation()
+        respx.get(f"{BASE_URL}{_CONSENTS_PATH}").mock(
+            return_value=httpx.Response(200, text="<html>portal</html>")
+        )
+
+        session = connect(platform=BASE_URL, token=TOKEN)
+
+        assert session.consents == []
+        assert "could not be checked" in capsys.readouterr().err
