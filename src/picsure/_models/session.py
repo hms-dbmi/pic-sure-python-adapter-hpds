@@ -409,11 +409,21 @@ class Session:
 
         Raises:
             PicSureValidationError: If the session was connected to an
-                open-access platform.
+                open-access platform, or the server rejects the submit,
+                poll or download with a 4xx other than 401, 403 and 404.
+            PicSureAuthenticationError: If the token is rejected (HTTP
+                401).
+            PicSureAuthorizationError: If the account may not run the
+                export (HTTP 403), including a consent denial.
+            PicSureQueryError: If any of the three routes answers 404, if
+                the server finishes the query with ``status=ERROR``, or if
+                it answers the submit with no query id or one that is not
+                a UUID, or a poll with no status field.
             PicSureConnectionError: If the export does not finish within
-                its ten-minute budget, and for the other transport
-                failures :func:`picsure._services.export.export_pfb`
-                documents.
+                its ten-minute budget, if the server cannot be reached or
+                rate limits the request, if it answers 5xx (as
+                :class:`~picsure.errors.PicSureServerError`), or if the
+                output file cannot be written.
         """
         if self._backend == "open":
             raise PicSureValidationError(
