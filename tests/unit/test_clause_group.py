@@ -4,6 +4,7 @@ import pytest
 
 from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
+from picsure.errors import PicSureValidationError
 
 
 class TestGroupOperator:
@@ -221,3 +222,23 @@ class TestClauseGroupImmutability:
 
         with pytest.raises(AttributeError):
             group.clauses.append(_sex_clause())
+
+
+class TestClauseGroupInputTypes:
+    def test_accepts_a_generator_of_clauses(self):
+        group = ClauseGroup(
+            clauses=(clause for clause in [_sex_clause(), _age_clause()]),
+            operator=GroupOperator.AND,
+        )
+
+        assert group.clauses == (_sex_clause(), _age_clause())
+
+    def test_bare_clause_is_refused_naming_the_expected_type(self):
+        with pytest.raises(PicSureValidationError, match="Clause or ClauseGroup"):
+            ClauseGroup(clauses=_sex_clause(), operator=GroupOperator.AND)
+
+    def test_bare_group_is_refused_naming_what_was_passed(self):
+        inner = ClauseGroup(clauses=(_sex_clause(),), operator=GroupOperator.OR)
+
+        with pytest.raises(PicSureValidationError, match="bare ClauseGroup"):
+            ClauseGroup(clauses=inner, operator=GroupOperator.AND)

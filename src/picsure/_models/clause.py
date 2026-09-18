@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import Enum
 
@@ -53,15 +53,16 @@ class Clause:
 
     **Immutability.** The dataclass is frozen and its collection fields are
     tuples, so a clause is hashable and usable as a dict key or set member.
-    ``keys`` and ``categories`` accept any iterable of strings, or a bare
-    string meaning one element, and store a tuple. A list field would have
+    ``keys`` and ``categories`` accept any sequence of strings, or a bare
+    string meaning one element, and always store a tuple. Any iterable
+    works at runtime. A list field would have
     left the frozen declaration only skin-deep, with ``hash()`` raising on a
     supposedly immutable value object.
     """
 
-    keys: tuple[str, ...]
+    keys: Sequence[str]
     type: PhenotypicFilterType
-    categories: tuple[str, ...] | None = None
+    categories: Sequence[str] | None = None
     min: float | None = None
     max: float | None = None
 

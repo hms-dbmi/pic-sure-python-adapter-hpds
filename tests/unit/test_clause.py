@@ -239,3 +239,22 @@ class TestClauseImmutability:
 
         with pytest.raises(AttributeError):
             clause.keys.append("\\other\\")
+
+
+class TestClauseInputTypes:
+    def test_accepts_a_generator_of_keys(self):
+        clause = Clause(
+            keys=(path for path in ["\\p1\\", "\\p2\\"]),
+            type=PhenotypicFilterType.ANYRECORD,
+        )
+
+        assert clause.keys == ("\\p1\\", "\\p2\\")
+
+    def test_accepts_a_list_of_categories(self):
+        clause = Clause(
+            keys=["\\p\\"],
+            type=PhenotypicFilterType.FILTER,
+            categories=["Male", "Female"],
+        )
+
+        assert clause.categories == ("Male", "Female")
