@@ -235,10 +235,11 @@ def _unpaged_ceiling_error(matched: int | None) -> PicSureValidationError:
     return PicSureValidationError(
         f"The dictionary search {matched_repr}, above the "
         f"{_MAX_UNPAGED_ROWS}-row limit for a single unpaged call. Read the "
-        "results a page at a time -- pass page=0, then page=1, and so on, "
-        "using the `has_more` and `total_elements` entries of each returned "
-        "DataFrame's `.attrs` to know when to stop. Supplying `term` or "
-        "`facets` will also reduce the match count."
+        "results a page at a time by passing page=0, then page=1, and so on, "
+        "and set page_size to choose the rows per request. Each returned "
+        "DataFrame's .attrs carries has_more and total_elements, which say "
+        "when to stop. Supplying term or facets will also reduce the match "
+        "count."
     )
 
 

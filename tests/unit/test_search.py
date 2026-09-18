@@ -522,6 +522,20 @@ class TestSearchPagination:
             searchDictionary(_make_client())
 
     @respx.mock
+    def test_ceiling_error_names_page_and_page_size(self):
+        respx.post(_concepts_url(_DEFAULT_PAGE_SIZE, page=0)).mock(
+            return_value=httpx.Response(
+                200, json=_page(_rows(0, 500), total=250_000, last=False, size=500)
+            )
+        )
+        with pytest.raises(PicSureValidationError) as exc_info:
+            searchDictionary(_make_client())
+        message = str(exc_info.value)
+        assert "page=0" in message
+        assert "page_size" in message
+        assert "--" not in message
+
+    @respx.mock
     def test_explicit_page_is_exempt_from_the_ceiling(self):
         respx.post(_concepts_url(500, page=0)).mock(
             return_value=httpx.Response(

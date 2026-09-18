@@ -263,6 +263,61 @@ class TestSessionSearch:
         body = __import__("json").loads(route.calls[0].request.content)
         assert body["consents"] == ["phs000007.c1"]
 
+    @respx.mock
+    def test_search_forwards_page_and_page_size(self, search_response):
+        route = respx.post(
+            f"{BASE_URL}{_CONCEPTS_PATH}?page_number=2&page_size=50"
+        ).mock(return_value=httpx.Response(200, json=search_response))
+
+        session = _make_live_session()
+        df = session.searchDictionary("sex", page=2, page_size=50)
+
+        assert len(route.calls) == 1
+        assert route.calls[0].request.url.params["page_number"] == "2"
+        assert route.calls[0].request.url.params["page_size"] == "50"
+        assert df.attrs["page"] == 2
+        assert df.attrs["page_size"] == 50
+
+    @respx.mock
+    def test_search_without_page_collects_every_page(self):
+        first = respx.post(_CONCEPTS_URL).mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "content": [{"conceptPath": "\\a\\", "name": "a"}],
+                    "totalElements": 2,
+                    "last": False,
+                },
+            )
+        )
+        second = respx.post(
+            f"{BASE_URL}{_CONCEPTS_PATH}?page_number=1&page_size={_DEFAULT_PAGE_SIZE}"
+        ).mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "content": [{"conceptPath": "\\b\\", "name": "b"}],
+                    "totalElements": 2,
+                    "last": True,
+                },
+            )
+        )
+
+        session = _make_live_session()
+        df = session.searchDictionary()
+
+        assert first.called
+        assert second.called
+        assert len(df) == 2
+        assert df.attrs["page"] is None
+        assert df.attrs["pages_fetched"] == 2
+        assert df.attrs["has_more"] is False
+
+    def test_search_rejects_bad_page_before_any_request(self):
+        session = _make_live_session()
+        with pytest.raises(PicSureValidationError, match="zero-based"):
+            session.searchDictionary("sex", page=-1)
+
 
 class TestSessionFacets:
     @respx.mock
