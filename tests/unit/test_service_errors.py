@@ -56,7 +56,7 @@ class TestUnauthenticated:
         )
         assert str(result) == (
             "Your PIC-SURE token was rejected on the dictionary search (HTTP 401). "
-            "The token is missing, malformed, or expired — this is not a "
+            "The token is missing, malformed, or expired. This is not a "
             "permissions problem and not a server outage. Copy a fresh token from "
             "the PIC-SURE user interface and pass it as picsure.connect(token=...)."
             " The server said: Token is invalid or expired"

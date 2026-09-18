@@ -166,7 +166,7 @@ def _refusal_error(
     if exc.status_code == 401:
         return PicSureAuthenticationError(
             f"Your PIC-SURE token was rejected on {operation} (HTTP 401). The "
-            f"token is missing, malformed, or expired — this is not a permissions "
+            f"token is missing, malformed, or expired. This is not a permissions "
             f"problem and not a server outage. {_NEW_TOKEN_ADVICE}"
             f"{_server_said(exc.body)}"
         )
