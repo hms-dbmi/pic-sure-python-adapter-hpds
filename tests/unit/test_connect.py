@@ -1131,7 +1131,7 @@ class TestUserFacingMessagesHaveNoEmDashes:
 
         connect(platform=BASE_URL, token=TOKEN)
 
-        assert "—" not in capsys.readouterr().err
+        assert "\u2014" not in capsys.readouterr().err
 
     @respx.mock
     def test_not_picsure_error(self):
@@ -1142,7 +1142,7 @@ class TestUserFacingMessagesHaveNoEmDashes:
         with pytest.raises(PicSureConnectionError) as exc_info:
             connect(platform=BASE_URL, token=TOKEN)
 
-        assert "—" not in str(exc_info.value)
+        assert "\u2014" not in str(exc_info.value)
 
 
 class TestValidateFalseOnConsentGatedPlatforms:
