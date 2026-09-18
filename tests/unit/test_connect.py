@@ -1141,3 +1141,23 @@ class TestUserFacingMessagesHaveNoEmDashes:
             connect(platform=BASE_URL, token=TOKEN)
 
         assert "—" not in str(exc_info.value)
+
+
+class TestValidateFalseOnConsentGatedPlatforms:
+    @respx.mock
+    def test_validate_false_still_fetches_consents_and_sends_nothing_else(self):
+        from picsure._transport.platforms import Platform
+
+        host = Platform.BDC_DEV_AUTHORIZED.url
+        consents = _mock_consents(host)
+
+        session = connect(
+            platform=Platform.BDC_DEV_AUTHORIZED, token=TOKEN, validate=False
+        )
+
+        assert session.consents == ["phs000007.c1", "phs001013.c1"]
+        assert consents.call_count == 1
+        assert len(respx.calls) == 1
+
+    def test_docstring_says_consent_gated_platforms_still_fetch(self):
+        assert "consent" in connect.__doc__.split("validate:")[1].split("Returns:")[0]

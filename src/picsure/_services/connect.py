@@ -133,9 +133,12 @@ def connect(
             Session. ``True`` (default) checks the token's shape and
             expiry locally, then sends one ``GET /psama/user/me`` to
             confirm the deployment is reachable and, when a token was
-            given, that the server accepts it. Pass ``False`` for offline
-            or mocked use; nothing is sent and nothing is checked, so the
-            returned Session may not work.
+            given, that the server accepts it. ``False`` skips those
+            local checks, that request, and the consent-scoping probe a
+            custom URL would otherwise get, so the returned Session may
+            not work. A consent-gated platform still fetches its consent
+            list, because dictionary searches on it cannot be built
+            without one.
 
     Returns:
         A Session you can use to search, build queries, and export data.
