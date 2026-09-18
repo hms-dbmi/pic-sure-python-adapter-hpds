@@ -1123,6 +1123,35 @@ class TestValidationNotFound:
         assert BASE_URL in message
         assert "404" in message
 
+    @respx.mock
+    def test_404_without_a_token_still_connects(self):
+        """An open deployment may not map /psama/user/me at all.
+
+        There is no token to verify, so the only thing the check can
+        honestly assert is that something answered, and a 404 is an
+        answer. Failing here would refuse a working open platform.
+        """
+        from picsure._transport.platforms import Platform
+
+        route = _mock_validation(
+            Platform.BDC_DEV_OPEN.url, status=404, payload={"errorType": "not_found"}
+        )
+
+        session = connect(platform=Platform.BDC_DEV_OPEN)
+
+        assert route.called
+        assert session.user_email == "anonymous"
+        assert session.consents == []
+
+    @respx.mock
+    def test_404_on_a_custom_open_url_still_connects(self):
+        route = _mock_validation(status=404, payload={"errorType": "not_found"})
+
+        session = connect(platform=BASE_URL, requires_auth=False)
+
+        assert route.called
+        assert session.user_email == "anonymous"
+
 
 class TestUserFacingMessagesHaveNoEmDashes:
     @respx.mock

@@ -20,6 +20,7 @@ from picsure.errors import (
     PicSureAuthError,
     PicSureConnectionError,
     PicSureQueryError,
+    PicSureServerError,
     PicSureValidationError,
 )
 
@@ -31,6 +32,9 @@ NAMED_DATASET_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
 LIST_URL = f"{BASE_URL}{_NAMED_DATASET_COLLECTION_PATH}"
 SUBMIT_URL = f"{BASE_URL}{query_prefix('auth', v3=True)}/query"
 SAVE_URL = f"{BASE_URL}{_NAMED_DATASET_COLLECTION_PATH}"
+_ITEM_URL = f"{BASE_URL}" + _NAMED_DATASET_ITEM_PATH.format(
+    named_dataset_id=NAMED_DATASET_ID
+)
 
 
 def _client() -> PicSureClient:
@@ -39,6 +43,24 @@ def _client() -> PicSureClient:
 
 def _clause() -> Clause:
     return Clause(keys=["\\a\\"], type=PhenotypicFilterType.FILTER, categories=["x"])
+
+
+def _mock_overwrite_listing() -> respx.Route:
+    """Mock a listing with one record named "fun", so overwrite has a target."""
+    return respx.get(LIST_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "uuid": NAMED_DATASET_ID,
+                    "name": "fun",
+                    "queryId": "qid-old",
+                    "archived": False,
+                    "metadata": {},
+                }
+            ],
+        )
+    )
 
 
 class TestSaveQueryByNameHappyPath:
@@ -574,6 +596,44 @@ class TestSaveQueryByNameTransportErrors:
                 "fun",
                 backend="auth",
             )
+
+    @respx.mock
+    def test_overwrite_put_500_raises_server_error_naming_the_update(self):
+        """A failed overwrite must not be reported as a completed save.
+
+        The bodiless-write handler directly above this one returns on an
+        empty body, so a genuine failure on the PUT has to be seen to fail:
+        swallowing it would hand back a query id for a record still
+        pointing at the previous query.
+        """
+        _mock_overwrite_listing()
+        respx.post(SUBMIT_URL).mock(
+            return_value=httpx.Response(200, json={"picsureResultId": QUERY_ID})
+        )
+        put = respx.put(_ITEM_URL).mock(return_value=httpx.Response(500, text="boom"))
+
+        with pytest.raises(PicSureServerError) as excinfo:
+            save_query_by_name(
+                _client(), _clause(), "fun", backend="auth", overwrite=True
+            )
+
+        assert put.called
+        assert "the saved-query update" in str(excinfo.value)
+
+    @respx.mock
+    def test_overwrite_put_401_raises_an_auth_error(self):
+        _mock_overwrite_listing()
+        respx.post(SUBMIT_URL).mock(
+            return_value=httpx.Response(200, json={"picsureResultId": QUERY_ID})
+        )
+        put = respx.put(_ITEM_URL).mock(return_value=httpx.Response(401, text="nope"))
+
+        with pytest.raises(PicSureAuthError):
+            save_query_by_name(
+                _client(), _clause(), "fun", backend="auth", overwrite=True
+            )
+
+        assert put.called
 
     @respx.mock
     def test_submit_response_without_query_id_raises_query_error(self):
