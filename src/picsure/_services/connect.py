@@ -152,8 +152,8 @@ def connect(
         # The token is the PSAMA-issued PIC-SURE JWT (built from
         # UserClaims), so both the display email and the expiry come
         # straight from its claims — no round trip to /psama/user/me.
-        email = _email_from_jwt(secret.reveal())
-        expiration = _token_expiration_from_jwt(secret.reveal())
+        email = _email_from_jwt(secret)
+        expiration = _token_expiration_from_jwt(secret)
     else:
         email = _ANONYMOUS_EMAIL
         expiration = _ANONYMOUS_EXPIRATION
@@ -206,16 +206,20 @@ def connect(
     )
 
 
-def _decode_jwt_payload(token: str) -> dict[str, object] | None:
+def _decode_jwt_payload(token: str | SecretToken) -> dict[str, object] | None:
     """Decode a JWT's payload segment without verifying the signature.
 
-    The signature is intentionally not verified — the server enforces
+    The signature is intentionally not verified: the server enforces
     token validity; we only read display fields (email, expiry) from
     the payload.  Returns the payload dict, or ``None`` if the token is
     not a parseable JWT with a JSON-object payload.
+
+    Accepts the :class:`SecretToken` wrapper as well as a plain string,
+    and never binds the revealed value to a local, so a traceback that
+    renders this frame shows the wrapper's placeholder.
     """
     try:
-        payload_b64 = token.strip().split(".")[1]
+        payload_b64 = as_secret_token(token).reveal().split(".")[1]
     except IndexError:
         return None
 
@@ -228,7 +232,7 @@ def _decode_jwt_payload(token: str) -> dict[str, object] | None:
     return payload if isinstance(payload, dict) else None
 
 
-def _token_expiration_from_jwt(token: str) -> str:
+def _token_expiration_from_jwt(token: str | SecretToken) -> str:
     """Extract the ``exp`` claim from a JWT and format it as UTC ISO.
 
     Returns ``"unknown"`` if the token is not a parseable JWT or has no
@@ -253,7 +257,7 @@ def _token_expiration_from_jwt(token: str) -> str:
 _EMAIL_CLAIMS = ("email", "preferred_username", "sub")
 
 
-def _email_from_jwt(token: str) -> str:
+def _email_from_jwt(token: str | SecretToken) -> str:
     """Read a display email from the JWT the user supplied.
 
     Falls back through :data:`_EMAIL_CLAIMS` and finally to ``"unknown"``

@@ -1,5 +1,6 @@
 import base64
 import json
+import traceback
 import uuid
 from datetime import datetime, timezone
 
@@ -12,6 +13,7 @@ from picsure._services.connect import _token_expiration_from_jwt, connect
 from picsure._services.consents import _CONSENTS_KEY, _CONSENTS_PATH
 from picsure._transport.secret import SecretToken
 from picsure.errors import (
+    PicSureError,
     PicSureValidationError,
 )
 
@@ -386,3 +388,45 @@ class TestConnectAcceptsSecretToken:
     def test_a_blank_secret_token_on_requires_auth_raises(self):
         with pytest.raises(PicSureValidationError, match="requires a token"):
             connect(platform=BASE_URL, token=SecretToken("   "))
+
+
+def _render_with_locals(exc: BaseException) -> str:
+    """Render a traceback the way a locals-dumping formatter would."""
+    return "".join(
+        traceback.TracebackException.from_exception(exc, capture_locals=True).format()
+    )
+
+
+class TestConnectFrameHoldsNoPlainToken:
+    """A failure below connect() renders no token text, even with locals."""
+
+    @respx.mock
+    def test_a_consent_fetch_failure_renders_no_token(self):
+        respx.get(f"{BASE_URL}{_CONSENTS_PATH}").mock(
+            return_value=httpx.Response(500, text="boom")
+        )
+        with pytest.raises(PicSureError) as exc_info:
+            connect(platform=BASE_URL, token=TOKEN, include_consents=True)
+        rendered = _render_with_locals(exc_info.value)
+        assert "<picsure secret token>" in rendered
+        assert TOKEN not in rendered
+        assert TOKEN[:24] not in rendered
+
+    @respx.mock
+    def test_a_jwt_helper_failure_renders_no_token(self, monkeypatch):
+        def explode(token):
+            raise RuntimeError("claims unreadable")
+
+        monkeypatch.setattr("picsure._services.connect._email_from_jwt", explode)
+        with pytest.raises(RuntimeError) as exc_info:
+            connect(platform=BASE_URL, token=TOKEN)
+        rendered = _render_with_locals(exc_info.value)
+        assert "<picsure secret token>" in rendered
+        assert TOKEN not in rendered
+        assert TOKEN[:24] not in rendered
+
+    def test_the_jwt_helpers_accept_the_wrapper(self):
+        from picsure._services.connect import _email_from_jwt
+
+        assert _email_from_jwt(SecretToken(TOKEN)) == "researcher@university.edu"
+        assert _token_expiration_from_jwt(SecretToken(TOKEN)) == "2026-06-15T00:00:00Z"
