@@ -675,18 +675,11 @@ class PicSureClient:
                     raise
 
             if status >= 500:
-                structured_error = _structured_transport_error(status, response.text)
-                if structured_error is not None:
-                    self._emit_error(
-                        method, path, attempt, start, type(structured_error).__name__
-                    )
-                    raise _mark_emitted(structured_error)
-                # POST is non-idempotent: a 5xx after the request reached
-                # the server may have partially executed.  Only retry GETs.
-                if method == "GET" and attempt < max_retries:
+                error = _status_error(status, response.text, response)
+                if _is_resendable_server_error(method, error) and attempt < max_retries:
                     continue
-                self._emit_error(method, path, attempt, start, "TransportServerError")
-                raise _mark_emitted(TransportServerError(status, response.text))
+                self._emit_error(method, path, attempt, start, type(error).__name__)
+                raise _mark_emitted(error)
 
             return response
 
@@ -845,13 +838,35 @@ def _raise_for_status(status: int, body: str, response: httpx.Response) -> None:
     that tags the failure as already emitted.  It adds no mapping of its
     own.
 
-    ``_request`` calls this for 4xx only and handles 5xx itself, because
-    the two have different retry policies: a 5xx on a GET is re-sent
-    once, while the streaming path re-sends nothing on a 5xx, since a
-    POST the server already saw may have executed.  A 4xx is never
-    retried on either path, which is why this half can be shared.
+    ``_request`` calls this for 4xx only and keeps its own 5xx branch,
+    because the two have different retry policies: a 5xx on a GET is
+    re-sent once, while the streaming path re-sends nothing on a 5xx,
+    since a POST the server already saw may have executed.  A 4xx is
+    never retried on either path, which is why this half can be shared.
+    That branch calls :func:`_status_error` directly and reads the retry
+    decision off the exception it returns, so the mapping itself still
+    lives in one place.
     """
     raise _status_error(status, body, response)
+
+
+def _is_resendable_server_error(method: str, error: TransportError) -> bool:
+    """Whether a 5xx that mapped to ``error`` may be sent again.
+
+    A structured consent failure is the server reporting a decision it
+    could not reach, not an outage, and it maps to a class of its own
+    rather than to :class:`TransportServerError`; re-sending it changes
+    nothing, so it never is.  A plain 5xx is re-sent on a GET only,
+    because a POST the server already saw may have partially executed.
+
+    Args:
+        method: HTTP method of the request that failed.
+        error: What :func:`_status_error` mapped the response to.
+
+    Returns:
+        ``True`` when another attempt is safe and worth making.
+    """
+    return isinstance(error, TransportServerError) and method == "GET"
 
 
 def _refusal_transport_error(status: int, body: str) -> TransportError:

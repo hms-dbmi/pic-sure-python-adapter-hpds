@@ -952,6 +952,35 @@ class TestOneStatusMapperForBothPaths:
         assert str(buffered.value) == str(streamed.value)
 
     @respx.mock
+    @pytest.mark.parametrize(
+        ("status", "body"),
+        [
+            (500, "Internal Server Error"),
+            (502, '{"errorType": "consent_lookup_failed", "message": "PSAMA is down"}'),
+        ],
+        ids=["plain-5xx", "structured-5xx"],
+    )
+    def test_a_5xx_maps_the_same_on_both_paths(self, status, body):
+        """The buffered path's 5xx branch reads the same mapper as the stream.
+
+        It used to re-implement the tail of _status_error inline, so the
+        two could drift on which class or message a 5xx produced.
+        """
+        respx.post(f"{BASE_URL}/x").mock(return_value=httpx.Response(status, text=body))
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+
+        with pytest.raises(TransportError) as buffered:
+            client.post_json("/x", body={})
+        with (
+            pytest.raises(TransportError) as streamed,
+            client.post_raw_stream("/x", body={}),
+        ):
+            pass
+
+        assert type(buffered.value) is type(streamed.value)
+        assert str(buffered.value) == str(streamed.value)
+
+    @respx.mock
     def test_retry_after_reaches_both_paths(self):
         respx.post(f"{BASE_URL}/x").mock(
             return_value=httpx.Response(
