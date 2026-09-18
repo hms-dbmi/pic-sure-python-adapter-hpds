@@ -230,7 +230,26 @@ class TestPicSureClient:
 
 
 class TestJsonBodyShapes:
-    """The JSON accessors return an object or an array, and nothing else."""
+    @respx.mock
+    def test_a_body_that_is_not_json_raises_query_error_naming_the_path(self):
+        respx.get(f"{BASE_URL}/broken").mock(
+            return_value=httpx.Response(
+                200, content=b"<html>oops", headers={"content-type": "text/html"}
+            )
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+        with pytest.raises(PicSureQueryError, match="/broken") as exc_info:
+            client.get_json("/broken")
+        assert isinstance(exc_info.value.__cause__, ValueError)
+
+    @respx.mock
+    def test_decoding_failures_are_catchable_as_picsure_error(self):
+        respx.post(f"{BASE_URL}/broken").mock(
+            return_value=httpx.Response(200, content=b"not json")
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+        with pytest.raises(PicSureError):
+            client.post_json("/broken", body={})
 
     @respx.mock
     def test_get_json_returns_top_level_array(self):
@@ -245,17 +264,17 @@ class TestJsonBodyShapes:
 
     @respx.mock
     @pytest.mark.parametrize("payload", [5, "text", True])
-    def test_scalar_top_level_raises_value_error(self, payload):
+    def test_scalar_top_level_raises_query_error(self, payload):
         respx.get(f"{BASE_URL}/odd").mock(
             return_value=httpx.Response(200, json=payload)
         )
 
         client = PicSureClient(base_url=BASE_URL, token=TOKEN)
-        with pytest.raises(ValueError, match="at the top level"):
+        with pytest.raises(PicSureQueryError, match="at the top level"):
             client.get_json("/odd")
 
     @respx.mock
-    def test_json_null_top_level_raises_value_error(self):
+    def test_json_null_top_level_raises_query_error(self):
         """A literal null body decodes, so it reaches the shape check instead of failing
         in the decoder the way an empty body does.
         """
@@ -268,15 +287,15 @@ class TestJsonBodyShapes:
         )
 
         client = PicSureClient(base_url=BASE_URL, token=TOKEN)
-        with pytest.raises(ValueError, match="NoneType at the top level"):
+        with pytest.raises(PicSureQueryError, match="NoneType at the top level"):
             client.get_json("/odd")
 
     @respx.mock
-    def test_post_json_scalar_top_level_raises_value_error(self):
+    def test_post_json_scalar_top_level_raises_query_error(self):
         respx.post(f"{BASE_URL}/odd").mock(return_value=httpx.Response(200, json=7))
 
         client = PicSureClient(base_url=BASE_URL, token=TOKEN)
-        with pytest.raises(ValueError, match="at the top level"):
+        with pytest.raises(PicSureQueryError, match="at the top level"):
             client.post_json("/odd", body={})
 
     def test_json_object_passes_a_dict_through(self):

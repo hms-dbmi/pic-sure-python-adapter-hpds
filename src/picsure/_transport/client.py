@@ -289,15 +289,21 @@ def _decode_json(response: httpx.Response, path: str) -> JsonBody:
     instead of an ``AttributeError`` in whichever service indexed it.
 
     Raises:
-        ValueError: If the body decodes to something other than an object
-            or an array.  ``response.json()`` already raises ``ValueError``
-            for a body that is not JSON at all, so callers have one
-            exception type to handle for "unusable payload".
+        PicSureQueryError: If the body is not JSON, or decodes to
+            something other than an object or an array.  The decoder's
+            own ``ValueError`` is kept as the cause, so the failure stays
+            inside the public hierarchy and a caller wrapping the call in
+            ``except PicSureError`` still catches it.
     """
-    payload = response.json()
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise PicSureQueryError(
+            f"{path} returned a body that is not JSON: {exc}"
+        ) from exc
     if isinstance(payload, (dict, list)):
         return payload
-    raise ValueError(
+    raise PicSureQueryError(
         f"{path} returned a JSON {type(payload).__name__} at the top level; "
         f"expected an object or an array."
     )
@@ -420,8 +426,8 @@ class PicSureClient:
             it through :func:`json_object` rather than assume the shape.
 
         Raises:
-            ValueError: If the body is not JSON, or decodes to something
-                other than an object or an array.
+            PicSureQueryError: If the body is not JSON, or decodes to
+                something other than an object or an array.
         """
         response = self._request("GET", path, **_timeout_kwargs(timeout))
         return _decode_json(response, path)
