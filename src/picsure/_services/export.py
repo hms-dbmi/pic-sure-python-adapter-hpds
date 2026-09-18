@@ -80,18 +80,23 @@ def export_pfb(
             sessions (the caller rejects ``"open"`` before reaching here).
 
     Raises:
-        PicSureValidationError: If the server rejects the request
-            (HTTP 400 / 422 / other 4xx) at any stage.
+        PicSureValidationError: If the server rejects the submit, a poll
+            or the download with a 4xx other than 401, 403, 404 and 429.
         PicSureQueryError: If the server returns 404 for the submit,
             status, or result endpoint, answers the submit with no query
-            id or with one that is not a UUID, or answers a poll with no
-            status field.
+            id or with one that is not a UUID, answers a poll with no
+            status field, or fails the query (terminal status ``ERROR``).
         PicSureAuthenticationError: If the server returns 401.
-        PicSureAuthorizationError: If the server returns 403.
+        PicSureAuthorizationError: If the server returns 403, including a
+            consent denial, which arrives as
+            :class:`~picsure.errors.PicSureConsentDeniedError`.
         PicSureConnectionError: If the server is unreachable, rate
-            limits the request, returns 5xx after retries, fails the
-            query (terminal status ``ERROR``), does not produce a result
-            within 10 minutes, or the local disk write fails.
+            limits the request, does not produce a result within 10
+            minutes, or the local disk write fails. A 5xx after retries
+            arrives as :class:`~picsure.errors.PicSureServerError` and a
+            rejected certificate as
+            :class:`~picsure.errors.PicSureTLSError`, both subclasses of
+            it.
     """
     target = Path(path)
 
