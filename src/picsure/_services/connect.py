@@ -687,11 +687,6 @@ def _jwt_segment_count(secret: SecretToken) -> tuple[int, bool]:
     return len(segments), all(segments)
 
 
-def _token_expiry(token: str | SecretToken) -> datetime | None:
-    """Decode a JWT and read its ``exp`` claim; see :func:`_expiry_from_payload`."""
-    return _expiry_from_payload(_decode_jwt_payload(token))
-
-
 def _expiry_from_payload(payload: dict[str, object] | None) -> datetime | None:
     """Read the ``exp`` claim from a decoded JWT payload as an aware UTC datetime.
 
@@ -765,26 +760,12 @@ def _padded_payload_segment(secret: SecretToken) -> str:
     return segments[1] + "=" * (-len(segments[1]) % 4)
 
 
-def _token_expiration_from_jwt(token: str | SecretToken) -> str:
-    """Extract the ``exp`` claim from a JWT and format it as UTC ISO.
-
-    Returns ``"unknown"`` if the token is not a parseable JWT or has no
-    numeric ``exp`` claim.
-    """
-    return _format_expiry(_token_expiry(token))
-
-
 # Preference order for the display email in the connect banner.  PSAMA
 # builds the PIC-SURE token from UserClaims, which carries ``email``
 # (plus ``preferred_username`` and ``sub``).  ``email`` is not immutable
 # per RAS guidance, but we only display it, so degrade gracefully to
 # progressively less specific claims rather than fail the connect.
 _EMAIL_CLAIMS = ("email", "preferred_username", "sub")
-
-
-def _email_from_jwt(token: str | SecretToken) -> str:
-    """Decode a JWT and read its display email; see :func:`_email_from_payload`."""
-    return _email_from_payload(_decode_jwt_payload(token))
 
 
 def _email_from_payload(payload: dict[str, object] | None) -> str:
