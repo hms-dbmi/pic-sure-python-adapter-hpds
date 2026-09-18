@@ -13,18 +13,18 @@ def _requires_auth(test_platform: Platform | str) -> bool:
 
 class TestConnectLive:
     def test_connect_returns_session(self, test_token, test_platform):
-        session = picsure.connect(platform=test_platform, token=test_token.reveal())
+        session = picsure.connect(platform=test_platform, token=test_token)
         assert isinstance(session, Session)
 
     def test_connect_session_has_email(self, test_token, test_platform):
-        session = picsure.connect(platform=test_platform, token=test_token.reveal())
+        session = picsure.connect(platform=test_platform, token=test_token)
         if _requires_auth(test_platform):
             assert "@" in session._user_email
         else:
             assert session._user_email == "anonymous"
 
     def test_connect_prints_success(self, test_token, test_platform, capsys):
-        picsure.connect(platform=test_platform, token=test_token.reveal())
+        picsure.connect(platform=test_platform, token=test_token)
         captured = capsys.readouterr().out.lower()
         assert "successfully connected" in captured
         if _requires_auth(test_platform):
