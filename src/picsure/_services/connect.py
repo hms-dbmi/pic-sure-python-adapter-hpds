@@ -27,7 +27,7 @@ from uuid import uuid4
 from picsure._dev.config import DevConfig
 from picsure._dev.events import Event
 from picsure._models.session import Session
-from picsure._services._errors import translate_transport_error
+from picsure._services._errors import _NEW_TOKEN_ADVICE, translate_transport_error
 from picsure._services.consents import fetch_consents
 from picsure._transport.client import VALIDATION_TIMEOUT_SECONDS, PicSureClient
 from picsure._transport.errors import (
@@ -60,11 +60,6 @@ _PSAMA_USER_FIELDS = ("uuid", "email", "privileges")
 _CLOCK_SKEW = timedelta(seconds=60)
 
 _EXPIRY_WARNING_WINDOW = timedelta(days=1)
-
-_NEW_TOKEN_ADVICE = (
-    "Copy a fresh token from the PIC-SURE user interface and pass it as "
-    "picsure.connect(token=...)."
-)
 
 
 def connect(
@@ -227,14 +222,62 @@ def connect(
         verify=verify,
         timeout=timeout,
     )
+    try:
+        return _build_session(
+            client,
+            info,
+            secret,
+            display_name=display_name,
+            dev_config=dev_config,
+            session_id=session_id,
+            include_consents=include_consents,
+            validate=validate,
+        )
+    except BaseException:
+        client.close()
+        raise
 
+
+def _build_session(
+    client: PicSureClient,
+    info: PlatformInfo,
+    secret: SecretToken,
+    *,
+    display_name: str,
+    dev_config: DevConfig,
+    session_id: str,
+    include_consents: bool | None,
+    validate: bool,
+) -> Session:
+    """Check the token, validate the connection, and assemble the Session.
+
+    Split from :func:`connect` so that every failure after the HTTP client
+    exists passes through one place that closes it. The token payload is
+    decoded once here and shared by the expiry check and the banner email.
+
+    Args:
+        client: The HTTP client the Session will own.
+        info: The resolved platform.
+        secret: The wrapped token, empty on an anonymous connection.
+        display_name: The platform label or URL for the banner.
+        dev_config: Developer-mode configuration.
+        session_id: Correlation id sent on every request.
+        include_consents: The caller's consent preference, or ``None``.
+        validate: Whether to run the local token checks and the
+            connect-time request.
+
+    Raises:
+        PicSureError: Whatever the token checks, the connect-time request,
+            or the consent lookup raise.
+    """
     if info.requires_auth:
-        expiry = _token_expiry(secret)
+        payload = _decode_jwt_payload(secret)
+        expiry = _expiry_from_payload(payload)
         if validate:
-            _reject_unusable_token(secret, expiry)
+            _reject_unusable_token(secret, payload, expiry)
         else:
             _warn_unchecked_expiry(expiry)
-        email = _email_from_jwt(secret)
+        email = _email_from_payload(payload)
         expiration = _format_expiry(expiry)
     else:
         email = _ANONYMOUS_EMAIL
@@ -289,7 +332,11 @@ def connect(
     )
 
 
-def _reject_unusable_token(token: str | SecretToken, expiry: datetime | None) -> None:
+def _reject_unusable_token(
+    token: str | SecretToken,
+    payload: dict[str, object] | None,
+    expiry: datetime | None,
+) -> None:
     """Refuse a token that provably cannot work, before any request.
 
     Three local checks, cheapest first: the token is a JWT at all, its
@@ -308,6 +355,8 @@ def _reject_unusable_token(token: str | SecretToken, expiry: datetime | None) ->
 
     Args:
         token: The token as the caller passed it.
+        payload: The decoded JWT payload, or ``None`` when it could not
+            be decoded.
         expiry: The token's ``exp`` claim as a datetime, or ``None`` when
             it carries none.
 
@@ -326,7 +375,7 @@ def _reject_unusable_token(token: str | SecretToken, expiry: datetime | None) ->
             f"{segment_count}. No request was sent. {_NEW_TOKEN_ADVICE}"
         )
 
-    if _decode_jwt_payload(secret) is None:
+    if payload is None:
         raise PicSureAuthenticationError(
             "The token's payload segment is not base64url-encoded JSON, so it "
             f"is not a PIC-SURE token. No request was sent. {_NEW_TOKEN_ADVICE}"
@@ -601,14 +650,18 @@ def _jwt_segment_count(secret: SecretToken) -> tuple[int, bool]:
 
 
 def _token_expiry(token: str | SecretToken) -> datetime | None:
-    """Read the ``exp`` claim from a JWT as an aware UTC datetime.
+    """Decode a JWT and read its ``exp`` claim; see :func:`_expiry_from_payload`."""
+    return _expiry_from_payload(_decode_jwt_payload(token))
+
+
+def _expiry_from_payload(payload: dict[str, object] | None) -> datetime | None:
+    """Read the ``exp`` claim from a decoded JWT payload as an aware UTC datetime.
 
     Returns ``None`` when the token is not a parseable JWT, carries no
     ``exp``, carries one that is not a number, or carries one outside
     the range a datetime can represent. Each case is the same "we
     cannot tell" answer, which callers must not read as "not expired".
     """
-    payload = _decode_jwt_payload(token)
     if payload is None:
         return None
 
@@ -692,13 +745,17 @@ _EMAIL_CLAIMS = ("email", "preferred_username", "sub")
 
 
 def _email_from_jwt(token: str | SecretToken) -> str:
-    """Read a display email from the JWT the user supplied.
+    """Decode a JWT and read its display email; see :func:`_email_from_payload`."""
+    return _email_from_payload(_decode_jwt_payload(token))
+
+
+def _email_from_payload(payload: dict[str, object] | None) -> str:
+    """Read a display email from a decoded JWT payload.
 
     Falls back through :data:`_EMAIL_CLAIMS` and finally to ``"unknown"``
     if none is present, so the connect banner never breaks on a token
     whose claims vary by IdP / Okta mapping.
     """
-    payload = _decode_jwt_payload(token)
     if payload is None:
         return "unknown"
 

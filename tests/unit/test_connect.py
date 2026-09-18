@@ -1174,3 +1174,67 @@ class TestValidationDoesNotRetry:
             connect(platform=BASE_URL, token=TOKEN)
 
         assert route.call_count == 1
+
+
+class TestConnectClosesTheClientOnFailure:
+    @pytest.fixture
+    def close_spy(self, monkeypatch):
+        from picsure._transport.client import PicSureClient
+
+        closed: list[PicSureClient] = []
+        real_close = PicSureClient.close
+
+        def patched(self):
+            closed.append(self)
+            real_close(self)
+
+        monkeypatch.setattr(PicSureClient, "close", patched)
+        return closed
+
+    @respx.mock
+    def test_client_is_closed_when_the_token_is_refused(self, close_spy):
+        _mock_validation(status=401, payload={})
+
+        with pytest.raises(PicSureAuthError):
+            connect(platform=BASE_URL, token=TOKEN)
+
+        assert len(close_spy) == 1
+
+    @respx.mock
+    def test_client_is_closed_when_the_token_is_expired_locally(self, close_spy):
+        from picsure.errors import PicSureAuthenticationError
+
+        expired = _make_jwt_claims(sub="u", exp=_epoch_in(days=-2))
+
+        with pytest.raises(PicSureAuthenticationError):
+            connect(platform=BASE_URL, token=expired)
+
+        assert len(close_spy) == 1
+
+    @respx.mock
+    def test_client_stays_open_on_success(self, close_spy):
+        _mock_connect()
+
+        connect(platform=BASE_URL, token=TOKEN)
+
+        assert close_spy == []
+
+
+class TestConnectDecodesTheTokenOnce:
+    @respx.mock
+    def test_the_payload_is_decoded_a_single_time(self, monkeypatch):
+        from picsure._services import connect as connect_module
+
+        calls: list[object] = []
+        real = connect_module._decode_jwt_payload
+
+        def counting(token):
+            calls.append(token)
+            return real(token)
+
+        monkeypatch.setattr(connect_module, "_decode_jwt_payload", counting)
+        _mock_connect()
+
+        connect(platform=BASE_URL, token=TOKEN)
+
+        assert len(calls) == 1

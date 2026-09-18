@@ -321,13 +321,13 @@ def _fail(*args: object, **kwargs: object) -> None:
 def _crash_inside_token_check(monkeypatch) -> ExceptionInfo:
     """Force a failure while ``_reject_unusable_token``'s frame is live.
 
-    ``_decode_jwt_payload`` is the call it makes after counting segments,
-    so replacing it puts the frame on a traceback at the point where the
-    pre-fix code still held ``token``, ``stripped`` and ``segments``.
+    ``_jwt_segment_count`` is the first call it makes, so replacing it
+    puts the frame on a traceback at the point where the pre-fix code
+    still held ``token``, ``stripped`` and ``segments``.
     """
-    monkeypatch.setattr(connect_module, "_decode_jwt_payload", _fail)
+    monkeypatch.setattr(connect_module, "_jwt_segment_count", _fail)
     try:
-        connect_module._reject_unusable_token(SECRET_VALUE, None)
+        connect_module._reject_unusable_token(SECRET_VALUE, None, None)
     except RuntimeError:
         return ExceptionInfo.from_current()
     raise AssertionError("expected the forced failure")
