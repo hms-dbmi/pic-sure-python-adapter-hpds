@@ -61,8 +61,13 @@ def export_pfb(
        a query id.
     2. ``POST /picsure/hpds/auth/v3/query/{id}/status`` is polled with
        exponential backoff (1s, 2s, 4s, ..., capped at 60s per poll) until
-       the server reports ``AVAILABLE``.  Total elapsed time is bounded at
-       10 minutes.
+       the server reports ``AVAILABLE``.  Time spent in this loop is
+       bounded at 10 minutes, measured from the first poll and read only
+       after a poll answers, so one poll that runs to the per-request
+       deadline completes before the budget is enforced.  Steps 1 and 3
+       are outside that budget and carry the client's per-request
+       deadline alone, so the function as a whole is not bounded at 10
+       minutes.
     3. ``POST /picsure/hpds/auth/v3/query/{id}/result`` streams the
        Avro-binary PFB bytes straight to disk.
 
@@ -91,8 +96,9 @@ def export_pfb(
             consent denial, which arrives as
             :class:`~picsure.errors.PicSureConsentDeniedError`.
         PicSureConnectionError: If the server is unreachable, rate
-            limits the request, does not produce a result within 10
-            minutes, or the local disk write fails. A 5xx after retries
+            limits the request, leaves polling past its ten-minute
+            budget with the result still unavailable, or the local disk
+            write fails. A 5xx after retries
             arrives as :class:`~picsure.errors.PicSureServerError` and a
             rejected certificate as
             :class:`~picsure.errors.PicSureTLSError`, both subclasses of

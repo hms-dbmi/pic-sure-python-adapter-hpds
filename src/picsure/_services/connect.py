@@ -125,11 +125,13 @@ def connect(
             one request, not a whole operation, and two things sit
             outside it. The connect-time validation request below keeps
             its own short deadline, so a mistyped hostname fails in
-            seconds. :meth:`Session.exportAsPFB` keeps its own ten-minute
-            budget for the submit, poll and download flow as a whole,
-            which this argument neither raises nor lowers: a larger
-            ``timeout`` only lets one slow poll eat more of that fixed
-            budget.
+            seconds. :meth:`Session.exportAsPFB` puts a ten-minute
+            budget on its polling loop alone, which this argument
+            neither raises nor lowers: a larger ``timeout`` only lets
+            one slow poll eat more of that fixed budget. The export's
+            submit and download carry this deadline like any other
+            request, so an export can take longer than ten minutes end
+            to end.
         validate: Whether to verify the connection before returning a
             Session. ``True`` (default) checks the token's shape and
             expiry locally, then sends one ``GET /psama/user/me`` to

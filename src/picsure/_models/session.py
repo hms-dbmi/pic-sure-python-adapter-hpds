@@ -394,12 +394,14 @@ class Session:
         async flow is exposed only on the authorized v3 endpoints, which
         the BDC API gateway rejects without a token.
 
-        The submit, poll and download sequence is bounded as a whole at
-        ten minutes. That budget is its own, and
-        ``picsure.connect(timeout=...)`` does not change it: that
-        argument is the deadline for a single request, so raising it lets
-        one slow poll consume more of the ten minutes rather than
-        extending them.
+        The polling loop, and only the polling loop, carries a ten-minute
+        budget. The clock starts when the submit returns and is read
+        after each poll answers, so one poll that runs to the
+        per-request deadline completes before the budget is enforced.
+        The submit and the download are outside it, bounded by the
+        per-request deadline alone, which is what
+        ``picsure.connect(timeout=...)`` sets. The call as a whole can
+        therefore run longer than ten minutes.
 
         Args:
             query: A Query, Clause, or ClauseGroup.
@@ -408,7 +410,8 @@ class Session:
         Raises:
             PicSureValidationError: If the session was connected to an
                 open-access platform, or the server rejects the submit,
-                poll or download with a 4xx other than 401, 403 and 404.
+                poll or download with a 4xx other than 401, 403, 404 and
+                429.
             PicSureAuthenticationError: If the token is rejected (HTTP
                 401).
             PicSureAuthorizationError: If the account may not run the
@@ -417,8 +420,9 @@ class Session:
                 the server finishes the query with ``status=ERROR``, or if
                 it answers the submit with no query id or one that is not
                 a UUID, or a poll with no status field.
-            PicSureConnectionError: If the export does not finish within
-                its ten-minute budget, if the server cannot be reached or
+            PicSureConnectionError: If polling passes its ten-minute
+                budget with the result still unavailable, if the server
+                cannot be reached or
                 rate limits the request, if it answers 5xx (as
                 :class:`~picsure.errors.PicSureServerError`), or if the
                 output file cannot be written.

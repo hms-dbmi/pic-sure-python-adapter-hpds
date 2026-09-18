@@ -1,7 +1,7 @@
 """Internal transport-layer exception hierarchy.
 
 Every class here that carries a server response body redacts it on the
-way in, through :func:`_redact_credentials`. A service re-raises the
+way in, through :func:`redact_credentials`. A service re-raises the
 public error with ``raise translate_transport_error(...) from exc``, and
 Python renders the whole cause chain, so an unredacted transport message
 would print a server-echoed token one frame above the redacted public
@@ -32,7 +32,7 @@ _CREDENTIAL_PATTERNS = (
 _REDACTED = "<redacted token>"
 
 
-def _redact_credentials(text: str) -> str:
+def redact_credentials(text: str) -> str:
     """Replace anything shaped like a credential in server-supplied text.
 
     A PIC-SURE response can echo the request's bearer token back in an
@@ -59,6 +59,12 @@ def _redact_credentials(text: str) -> str:
     bearer value made only of letters is therefore not redacted, which
     no PIC-SURE token is, every one of them being a JWT.
 
+    Public rather than underscored because
+    :mod:`picsure._services._errors` applies it a second time on the way
+    into a user-facing message, and a name that says "private to this
+    module" crossing a package boundary reads as a mistake rather than
+    as the deliberate second pass it is.
+
     Args:
         text: Server-supplied text, typically a response body.
 
@@ -84,7 +90,7 @@ class TransportAuthenticationError(TransportError):
 
     def __init__(self, status_code: int, body: str) -> None:
         self.status_code = status_code
-        self.body = _redact_credentials(body)
+        self.body = redact_credentials(body)
         super().__init__(f"HTTP {status_code}: {self.body[:200]}")
 
 
@@ -96,7 +102,7 @@ class TransportServerError(TransportError):
 
     def __init__(self, status_code: int, body: str) -> None:
         self.status_code = status_code
-        self.body = _redact_credentials(body)
+        self.body = redact_credentials(body)
         super().__init__(f"HTTP {status_code}: {self.body[:200]}")
 
 
@@ -138,9 +144,9 @@ class _TransportStructuredError(TransportError):
         server_message: str,
     ) -> None:
         self.status_code = status_code
-        self.body = _redact_credentials(body)
+        self.body = redact_credentials(body)
         self.error_type = error_type
-        self.server_message = _redact_credentials(server_message)
+        self.server_message = redact_credentials(server_message)
         super().__init__(f"HTTP {status_code} {error_type}: {self.server_message}")
 
 
@@ -175,7 +181,7 @@ class TransportValidationError(TransportError):
 
     def __init__(self, status_code: int, body: str) -> None:
         self.status_code = status_code
-        self.body = _redact_credentials(body)
+        self.body = redact_credentials(body)
         super().__init__(f"HTTP {status_code}: {self.body[:200]}")
 
 
@@ -188,7 +194,7 @@ class TransportNotFoundError(TransportError):
 
     def __init__(self, status_code: int, body: str) -> None:
         self.status_code = status_code
-        self.body = _redact_credentials(body)
+        self.body = redact_credentials(body)
         super().__init__(f"HTTP {status_code}: {self.body[:200]}")
 
 
@@ -205,7 +211,7 @@ class TransportRateLimitError(TransportError):
         self, status_code: int, body: str, retry_after: int | None = None
     ) -> None:
         self.status_code = status_code
-        self.body = _redact_credentials(body)
+        self.body = redact_credentials(body)
         self.retry_after = retry_after
         suffix = f" (retry after {retry_after}s)" if retry_after is not None else ""
         super().__init__(f"HTTP {status_code}{suffix}: {self.body[:200]}")

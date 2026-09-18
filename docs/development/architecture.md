@@ -118,7 +118,7 @@ src/picsure/
 | `query_save.py`  | `save_query_by_name(client, query, name, *, backend, overwrite)`. Submits the query via `POST /picsure/hpds/auth/v3/query`, then `POST`s a new record to `/picsure/operations/dataset/named` (or `PUT`-updates an existing one at `/picsure/operations/dataset/named/{id}` when `overwrite=True`). No trailing slash: Spring 6 answers one with a 404. Validates `name` against the backend `NamedDataset` pattern client-side. Refused on open-access (`open` backend) deployments. |
 | `_hpds_paths.py` | `query_prefix(backend, *, v3)`, `search_values_path(backend)`, the query-lifecycle builders (`query_submit_path`, `query_status_path`, `query_result_path`, `query_metadata_path`) and `named_dataset_item_path(id)`, the single place a route shape is built and the single place a value is percent-escaped into a path segment. `query_id_from_submit_response` and `canonical_server_id` check that an identifier the server chose is a UUID and return it in canonical form, unescaped, because the same id is also a request-body value and a public return value; the path builders escape it once on the way into a path, so a response cannot re-point an authenticated request at another route. `BACKENDS` is checked before `backend` is interpolated, and `Session` imports that set rather than keeping a second copy. The `/picsure` context prefix is part of the path the client sends: the gateway routes `/hpds/**` verbatim without stripping it. The registry-era `{resourceId}` path segment is gone from both. |
 | `export.py`      | `export_pfb` is the async PFB flow (submit → poll with exponential backoff capped at 60s, 10-minute total deadline → stream result to a `.part` file → atomic rename). Plus `export_csv` and `export_tsv` for in-memory DataFrames, which translate a local write failure to `PicSureConnectionError` and a non-DataFrame argument to `PicSureValidationError` rather than leaking `OSError` / `AttributeError`. |
-| `genomic_search.py` | `search_genomic_values(client, ...)` backing `Session.searchGenomicValues`. GETs `/picsure/hpds/{backend}/search/values` with the annotation key and a page/size, and returns a one-column DataFrame of values with the server's paging in `df.attrs`. A 200 with an empty body means the key is not a genomic annotation on this deployment. |
+| `genomic_search.py` | `search_genomic_values(client, ...)` backing `Session.searchGenomicValues`. GETs `/picsure/hpds/{backend}/search/values` with the annotation key and a page/size, and returns a one-column DataFrame of values with the server's paging in `df.attrs`. A 200 with an empty body means the key is not a genomic annotation on this deployment; any other bodiless status names itself instead, since an expired gateway session redirects with no body and the annotation key is not what failed. |
 | `genomic_data.py`  | `genomicConsequences()` reads the bundled `_data/variant_consequences.json` into a DataFrame of `severity` / `consequence` rows. No network call. |
 | `consents.py`    | `fetch_consents(client)`. Reads `/psama/user/me/consents` and pulls the `\\_consents\\` study-consent list sent in `/picsure/dictionary/*` request bodies on authorized deployments. |
 
@@ -146,9 +146,16 @@ PicSureError
 │   └── PicSureServerError              # 5xx: the request arrived and failed
 │       └── PicSureConsentLookupError   # 502 consent_lookup_failed
 ├── PicSureQueryError                   # server rejected the query
-│   └── EmptyBodyError                  # 200 with a zero-length body
+│   └── EmptyBodyError                  # any status under 400, zero-length body
 └── PicSureValidationError              # invalid input to a picsure function
 ```
+
+Every status below 400 reaches `EmptyBodyError`, not only a 200: the
+client translates 4xx and 5xx and does not follow redirects, so a `302`
+to an SSO login on an expired gateway session arrives as a bodiless
+response too. `EmptyBodyError.status_code` is what tells the two apart,
+and `_services/_errors.bodiless_response_succeeded` is where both
+consumers ask.
 
 `EmptyBodyError` is the one class here that `__init__.py.__all__` does
 not export. It is raised by `_transport/client.py::_decode_json` and
@@ -174,7 +181,7 @@ environment variable (`1`/`true`/`yes`) or per-call with the
 
 | Module          | What it owns                                                                |
 |-----------------|-----------------------------------------------------------------------------|
-| `config.py`     | `DevConfig` — reads `PICSURE_DEV_MODE` and `PICSURE_DEV_MAX_EVENTS`, attaches a stderr handler to the `picsure` logger when on, and owns the `EventBuffer`. |
+| `config.py`     | `DevConfig`. Reads `PICSURE_DEV_MODE` and `PICSURE_DEV_MAX_EVENTS`, and owns the `EventBuffer`. It attaches no log handler: `_services/connect.py::_install_default_handler` is what puts the stderr handler on the `picsure` logger, and only when `connect()` finds dev mode on. |
 | `buffer.py`     | `EventBuffer` — thread-safe FIFO of `Event`s with a fixed cap (oldest drops on overflow). |
 | `events.py`     | `Event` dataclass — one record per HTTP call, public method, connect, or error. Captures timestamp, kind, name, duration, and a small structured payload. |
 | `timing.py`     | `@timed` decorator. Public `Session` methods wear this; emits an event on success and (tagged) on failure. |
