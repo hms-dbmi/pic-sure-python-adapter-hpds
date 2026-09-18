@@ -28,8 +28,8 @@ class DictionaryEntry:
 
     - ``concept_path``/``name``/``display``/``description`` — identity and
       labels, always present.
-    - ``data_type`` — ``"categorical"`` or ``"continuous"`` (from ``type``), passed
-      through exactly as the server sends it.
+    - ``data_type``: ``"categorical"`` or ``"continuous"`` (from ``type``),
+      passed through exactly as the server sends it.
     - ``study_id`` — dbGaP study accession (from ``dataset``).
     - ``values`` — categorical value list; empty for Continuous concepts.
     - ``min``/``max`` — continuous-range bounds; ``None`` for Categorical
