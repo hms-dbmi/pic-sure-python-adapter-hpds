@@ -57,7 +57,6 @@ _VARIANT_RESULT_TYPES = frozenset(
 _DATAFRAME_RESULT_TYPES = frozenset({"DATAFRAME", "DATAFRAME_TIMESERIES"})
 
 _PREVIEW_BYTES = 200
-_SCAN_BYTES = 64 * 1024
 
 _COUNT_EXACT = re.compile(r"^(\d+)$")
 _COUNT_NOISY = re.compile(r"^(\d+)\s*\u00b1\s*(\d+)$")
@@ -501,33 +500,18 @@ def _parse_dataframe(source: Path) -> pd.DataFrame:
 
     Takes a path rather than the response bytes so pandas reads the file
     incrementally and the raw body is never held alongside the frame.
+    An empty or whitespace-only body is a legitimate "no rows" answer,
+    which pandas reports as ``EmptyDataError``; it becomes an empty
+    DataFrame rather than a parse failure.
     """
-    if _holds_only_whitespace(source):
-        return pd.DataFrame()
     try:
         return pd.read_csv(source, encoding="utf-8")
-    except (
-        UnicodeDecodeError,
-        pd.errors.ParserError,
-        pd.errors.EmptyDataError,
-    ) as exc:
+    except pd.errors.EmptyDataError:
+        return pd.DataFrame()
+    except (UnicodeDecodeError, pd.errors.ParserError) as exc:
         raise PicSureQueryError(
             f"Server returned a malformed CSV response: {_download_preview(source)!r}"
         ) from exc
-
-
-def _holds_only_whitespace(source: Path) -> bool:
-    """Whether a download contains no non-whitespace byte.
-
-    An empty or whitespace-only body is a legitimate "no rows" answer
-    rather than a parse failure.  Scans in chunks and stops at the first
-    real byte, so a full-size result costs a single read.
-    """
-    with source.open("rb") as handle:
-        while chunk := handle.read(_SCAN_BYTES):
-            if chunk.strip():
-                return False
-    return True
 
 
 def _download_preview(source: Path) -> bytes:
