@@ -283,12 +283,18 @@ class Session:
         ``page``, ``size``) is preserved on ``df.attrs``. Raise ``size`` to
         pull more results per call, or step ``page`` to walk the full set.
 
+        Paging here is **one-based**: the first page is ``page=1``. This
+        is not the convention :meth:`searchDictionary` uses, where
+        ``page`` is zero-based and the page size argument is called
+        ``page_size``. The two routes are served by different backends
+        and each keeps the convention its own API documents.
+
         Args:
             genomicConceptPath: The genomic key, e.g. ``"Gene_with_variant"``
                 or ``"Variant_consequence_calculated"``.
             query: Optional case-insensitive search term to narrow results
                 (e.g. ``"BRCA"``). Empty returns the first page of all values.
-            page: 1-based page number.
+            page: One-based page number, so the first page is ``page=1``.
             size: Page size (number of values per call).
 
         Returns:
@@ -296,7 +302,9 @@ class Session:
 
         Raises:
             PicSureValidationError: If the session is not on a genomic-capable
-                platform, or the key is empty.
+                platform, if the key is empty, or if ``page`` or ``size`` is
+                not an integer of 1 or greater. All are checked before any
+                request is sent.
 
         Example:
             >>> df = session.searchGenomicValues("Gene_with_variant", query="BRCA")

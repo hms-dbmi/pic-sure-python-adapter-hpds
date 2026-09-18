@@ -76,6 +76,45 @@ def test_blank_key_raises():
         search_genomic_values(client, "   ", backend="auth")
 
 
+class TestGenomicValuesPagingValidation:
+    """Paging arguments are checked before anything is urlencoded.
+
+    Paging on this route is one-based, unlike the dictionary search's
+    zero-based ``page``, so ``page=0`` is out of range here.
+    """
+
+    @pytest.mark.parametrize(
+        ("kwargs", "expected"),
+        [
+            ({"page": 0}, "`page` must be 1 or greater"),
+            ({"page": -1}, "`page` must be 1 or greater"),
+            ({"size": 0}, "`size` must be 1 or greater"),
+            ({"size": -1}, "`size` must be 1 or greater"),
+            ({"page": "2"}, "`page` must be an integer"),
+            ({"page": 1.5}, "`page` must be an integer"),
+            ({"page": True}, "`page` must be an integer"),
+            ({"size": "50"}, "`size` must be an integer"),
+            ({"size": False}, "`size` must be an integer"),
+        ],
+    )
+    def test_out_of_range_or_wrong_type_raises_before_any_request(
+        self, kwargs, expected
+    ):
+        client = _FakeClient({"results": []})
+
+        with pytest.raises(PicSureValidationError, match=expected):
+            search_genomic_values(client, "Gene_with_variant", backend="auth", **kwargs)
+
+        assert client.last_path is None
+
+    def test_the_first_page_is_one_not_zero(self):
+        client = _FakeClient({"results": ["BRCA1"], "page": 1, "total": 1})
+
+        search_genomic_values(client, "Gene_with_variant", backend="auth", page=1)
+
+        assert "page=1" in client.last_path
+
+
 @respx.mock
 def test_consent_denied_raises_typed_error():
     respx.get(GENOMIC_VALUES_URL).mock(

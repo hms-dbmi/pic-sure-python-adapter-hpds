@@ -13,6 +13,34 @@ from picsure.errors import PicSureQueryError, PicSureValidationError
 _GENOMIC_VALUES_OPERATION = "the genomic value lookup"
 
 
+def _validate_paging(page: int, size: int) -> None:
+    """Reject paging arguments before they are urlencoded onto the wire.
+
+    The sibling dictionary search validates its own paging arguments, so
+    an unusable value never becomes an HTTP round trip there either. The
+    floor is 1 for both because this route's paging is one-based.
+
+    Args:
+        page: One-based page number.
+        size: Rows per page.
+
+    Raises:
+        PicSureValidationError: If either argument is not an integer, is
+            a ``bool``, or is below 1.
+    """
+    if not isinstance(page, int) or isinstance(page, bool):
+        raise PicSureValidationError("`page` must be an integer.")
+    if page < 1:
+        raise PicSureValidationError(
+            f"`page` must be 1 or greater (got {page}); genomic value paging is "
+            "one-based, unlike searchDictionary's zero-based `page`."
+        )
+    if not isinstance(size, int) or isinstance(size, bool):
+        raise PicSureValidationError("`size` must be an integer.")
+    if size < 1:
+        raise PicSureValidationError(f"`size` must be 1 or greater (got {size}).")
+
+
 def search_genomic_values(
     client: PicSureClient,
     genomic_concept_path: str,
@@ -31,8 +59,22 @@ def search_genomic_values(
     preserved on ``df.attrs``: ``total``, ``page``, ``size``,
     ``genomic_concept_path``.
 
+    Args:
+        client: Authenticated HTTP client.
+        genomic_concept_path: The annotation key to list values for, e.g.
+            ``"Gene_with_variant"``.
+        backend: ``"auth"`` or ``"open"``, selecting the HPDS route.
+        query: Optional substring the returned values must match.
+        page: **One-based** page number, so the first page is ``page=1``.
+            This differs from :func:`picsure._services.search.searchDictionary`,
+            whose ``page`` is zero-based.
+        size: Rows per page. Named ``size`` here and ``page_size`` in the
+            dictionary search.
+
     Raises:
-        PicSureValidationError: If ``genomic_concept_path`` is blank.
+        PicSureValidationError: If ``genomic_concept_path`` is blank, or
+            if ``page`` or ``size`` is not an integer of 1 or greater.
+            Both are checked before any request is sent.
         PicSureQueryError: If the endpoint is absent, if the server answers
             with the empty body it sends for a concept that is not a genomic
             annotation, if the body is not JSON, or if the payload is not a
@@ -43,6 +85,7 @@ def search_genomic_values(
         raise PicSureValidationError(
             "genomicConceptPath must be a non-empty string (e.g. 'Gene_with_variant')."
         )
+    _validate_paging(page, size)
 
     params = urlencode(
         {

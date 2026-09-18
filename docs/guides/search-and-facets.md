@@ -156,6 +156,10 @@ up valid values for any genomic key before building a filter.
 matching values. Results are paginated; metadata (total, page, size) is on
 `df.attrs`.
 
+This route's paging is **one-based**, so the first page is `page=1`, and
+its page-size argument is called `size`. `searchDictionary` above is
+zero-based with `page_size`. The two are served by different backends.
+
 ```python
 # Find genes matching "BRCA"
 df = session.searchGenomicValues("Gene_with_variant", query="BRCA")
