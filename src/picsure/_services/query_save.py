@@ -28,8 +28,10 @@ if TYPE_CHECKING:
 _NAMED_DATASET_COLLECTION_PATH = "/picsure/operations/dataset/named"
 _NAMED_DATASET_ITEM_PATH = "/picsure/operations/dataset/named/{named_dataset_id}"
 
-_NAME_PATTERN = re.compile(r"\A[\w\d \-\\/?+=\[\]\.():\"']+\Z", re.ASCII)
-_NAME_ALLOWED_CHAR = re.compile(r"[\w\d \-\\/?+=\[\]\.():\"']", re.ASCII)
+_NAME_PUNCTUATION = "-\\/?+=[].():\"'"
+_NAME_CHARACTER_CLASS = r"\w\d " + "".join(re.escape(c) for c in _NAME_PUNCTUATION)
+_NAME_PATTERN = re.compile(rf"\A[{_NAME_CHARACTER_CLASS}]+\Z", re.ASCII)
+_NAME_ALLOWED_CHAR = re.compile(rf"[{_NAME_CHARACTER_CLASS}]", re.ASCII)
 _NAME_MAX_LEN = 255
 
 
@@ -168,8 +170,11 @@ def _update_named_dataset(
 def _validate_name(name: str) -> None:
     r"""Reject a name the server's @Pattern would reject, before any query runs.
 
-    ``_NAME_PATTERN`` mirrors the ``@Pattern`` on ``NamedDatasetRequestDto.name``
-    in pic-sure-operations-service. That annotation carries no flags, so Java's
+    ``_NAME_PUNCTUATION`` is the one list of punctuation the server's
+    ``@Pattern`` on ``NamedDatasetRequestDto.name`` in
+    pic-sure-operations-service accepts; the regex, the per-character check
+    and the message text are all derived from it. That annotation carries no
+    flags, so Java's
     ``\w`` is ASCII-only and the mirror compiles with ``re.ASCII``; Python's
     Unicode-aware ``\w`` would otherwise admit names such as "café" that the
     server rejects with a 400. ``_NAME_MAX_LEN`` is the width of the
@@ -196,7 +201,7 @@ def _validate_name(name: str) -> None:
         raise PicSureValidationError(
             f"`name` contains characters the server rejects: {rendered}. "
             "Allowed: ASCII letters, digits, underscore, space, and "
-            "- \\ / ? + = [ ] . ( ) : \" '. Accented and non-Latin "
+            f"{' '.join(_NAME_PUNCTUATION)}. Accented and non-Latin "
             "characters are not accepted. Rename the query and retry; "
             "no query was submitted."
         )

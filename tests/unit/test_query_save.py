@@ -9,8 +9,10 @@ import respx
 from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._services._hpds_paths import query_prefix
 from picsure._services.query_save import (
+    _NAME_PUNCTUATION,
     _NAMED_DATASET_COLLECTION_PATH,
     _NAMED_DATASET_ITEM_PATH,
+    _validate_name,
     save_query_by_name,
 )
 from picsure._transport.client import PicSureClient
@@ -447,3 +449,23 @@ class TestSaveQueryByNameTransportErrors:
                 "fun",
                 backend="auth",
             )
+
+
+class TestNameAllowListIsOneConstant:
+    def test_every_listed_punctuation_character_is_accepted(self):
+        for char in _NAME_PUNCTUATION:
+            _validate_name(f"cohort{char}1")
+
+    def test_message_lists_every_allowed_punctuation_character(self):
+        with pytest.raises(PicSureValidationError) as excinfo:
+            _validate_name("bad|name")
+
+        message = str(excinfo.value)
+        for char in _NAME_PUNCTUATION:
+            assert f" {char} " in message or f" {char}." in message
+
+    def test_message_still_reads_as_before(self):
+        with pytest.raises(PicSureValidationError) as excinfo:
+            _validate_name("bad|name")
+
+        assert "- \\ / ? + = [ ] . ( ) : \" '." in str(excinfo.value)
