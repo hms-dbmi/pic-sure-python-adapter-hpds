@@ -38,10 +38,15 @@ def fetch_consents(client: PicSureClient) -> list[str]:
             and if the response body could not be read as the
             ``UserConsents`` object, which on this route points at the
             base URL rather than at the response. That covers a body that
-            is not JSON and a body that is JSON but not an object; both
-            are decode failures of the same route and carry the same
-            class, so moving the narrowing step does not change what a
-            caller catches.
+            is not JSON and a body that is JSON but not an object, a
+            top-level array for instance. Narrowing inside the ``try``
+            changed the second case, which used to raise
+            :class:`~picsure.errors.PicSureQueryError`. The two classes
+            are siblings under ``PicSureError`` and neither catches the
+            other, and ``connect()`` calls this function unguarded on a
+            consent-gated platform, so an ``except PicSureQueryError``
+            around ``picsure.connect(...)`` no longer catches an array
+            here.
     """
     try:
         response = json_object(client.get_json(_CONSENTS_PATH), path=_CONSENTS_PATH)
