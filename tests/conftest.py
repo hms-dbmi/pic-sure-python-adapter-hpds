@@ -13,17 +13,6 @@ def profile_response() -> dict:
 
 
 @pytest.fixture()
-def resources_response() -> dict[str, str]:
-    """Sample registry ``/info/resources`` response ({uuid: name, ...}).
-
-    Registry-era. The v3 gateway routes by URL path and this endpoint is
-    no longer called by the adapter; the fixture is kept only for tests
-    that need an arbitrary object payload.
-    """
-    return json.loads((_FIXTURES_DIR / "resources.json").read_text())
-
-
-@pytest.fixture()
 def search_response() -> dict:
     """Sample ``POST /picsure/dictionary/concepts`` response.
 

@@ -10,7 +10,6 @@ tests/
 ├── conftest.py                # shared fixtures (load JSON/CSV files in tests/fixtures/)
 ├── fixtures/                  # canned server responses
 │   ├── profile.json
-│   ├── resources.json
 │   ├── dictionary_search.json
 │   ├── facets_response.json
 │   └── query_participant.csv

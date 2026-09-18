@@ -93,7 +93,6 @@ src/picsure/
 | `session.py`       | `Session` class. Holds the HTTP client, the consent list, the HPDS backend selection, and the dev-mode config. Public methods (`searchDictionary`, `runQuery`, `runQueryByID`, `loadQueryByID`, `saveQueryByName`, `exportAsPFB`, `exportCSV`, `exportTSV`, `facets`, `showAllFacets`, …) delegate to `_services/*`. |
 | `clause.py`        | `Clause` dataclass + `PhenotypicFilterType` enum (`FILTER`, `ANYRECORD`, `REQUIRE`). Each `Clause.to_query_json()` emits the v3 `PhenotypicClause` shape. Frozen with tuple fields (`keys`, `categories`), so a clause is hashable and usable as a dict key; the constructor accepts any iterable of strings and stores a tuple. |
 | `clause_group.py`  | `ClauseGroup` dataclass + `GroupOperator` enum (`AND`, `OR`). Recursively serializes to a v3 `PhenotypicSubquery`. Frozen with a `tuple` of children, so a group is hashable, nested groups included. |
-| `resource.py`      | `Resource` dataclass (`uuid`, `name`, `description`) with a `from_dict` constructor. Retained for the `getResourceID` / `setResourceIDByName` surface; the resource registry it used to be populated from has been removed. |
 | `query.py`         | `Query` dataclass: a `phenotypicFilter` (`Clause | ClauseGroup | None`), `includeConcepts` (output concept paths), and `genomicFilters` (a `tuple[GenomicFilter, ...]`, applied conjunctively alongside the phenotypic filter). `runQuery` also accepts a bare `Clause` / `ClauseGroup` (filter; its variables are returned as output columns). `concept_paths()` on each collects the filter's variables to fold into `select`. |
 | `query_type.py`    | `QueryType` enum (`COUNT`, `PARTICIPANT`, `TIMESTAMP`, `CROSS_COUNT`, `VARIANT_COUNT`, `VARIANT_LIST`, `VCF_EXCERPT`, `AGGREGATE_VCF_EXCERPT`). Public API also accepts equivalent lowercase strings. |
 | `count_result.py`  | `CountResult` dataclass — preserves `value`, `margin`, `cap`, `raw`. Encodes exact / noisy / suppressed shapes from open-access backends. `obfuscated` property is a convenience. |
@@ -123,7 +122,7 @@ src/picsure/
 | Module         | What it owns                                                                  |
 |----------------|-------------------------------------------------------------------------------|
 | `client.py`    | `PicSureClient`. Wraps `httpx.Client` with Bearer-token auth, the `request-source: Authorized|Open` gateway header, a ten-minute default request timeout (`DATA_TIMEOUT_SECONDS`, overridable via `connect(timeout=...)`) alongside the short `VALIDATION_TIMEOUT_SECONDS` the connect-time credential check uses, one retry on connection errors and 5xx for GETs (POSTs are not retried on 5xx because they are non-idempotent), and a streaming variant `post_raw_stream` for binary payloads, `post_raw_to_file` to stream a response into a `.part` staging file promoted by `os.replace`, plus `put_json` for the `saveQueryByName` overwrite path. `_raise_for_status` translates 4xx into the `Transport*Error` set. |
-| `errors.py`    | Internal `TransportError` hierarchy: `TransportAuthenticationError` (401/403), `TransportValidationError` (400/422/other 4xx), `TransportNotFoundError` (404), `TransportRateLimitError` (429, parses `Retry-After`), `TransportServerError` (5xx), `TransportConnectionError` (DNS / timeout / refused). |
+| `errors.py`    | Internal `TransportError` hierarchy: `TransportAuthenticationError` (401/403), `TransportValidationError` (400/422/other 4xx), `TransportNotFoundError` (404), `TransportRateLimitError` (429, parses `Retry-After`), `TransportServerError` (5xx), `TransportConnectionError` (DNS / timeout / refused), `TransportTLSError` (a certificate this machine will not trust, raised before the request is sent), and the structured pair `TransportConsentDeniedError` / `TransportConsentLookupError`, built from a response body carrying `errorType: consent_denied` or `consent_lookup_failed`. Also the credential redaction every class here applies to a response body before storing it or quoting it into a message, so a token the server echoed cannot reach a traceback through the cause chain. |
 | `platforms.py` | `Platform` enum (`BDC_AUTHORIZED`, `BDC_OPEN`, `BDC_DEV_*`, `BDC_PREDEV_*`, `NHANES_AUTHORIZED`, `NHANES_OPEN`) and `resolve_platform()`. A `Platform` member carries URL, display label, whether dictionary calls need consents, whether the platform requires a token, and whether it serves genomic data; `resolve_platform` also accepts a raw `http(s)://` URL for unlisted deployments. |
 
 ### `errors.py` (top level)
@@ -133,17 +132,25 @@ want to catch is here:
 
 ```
 PicSureError
-├── PicSureAuthError         # bad/expired token, missing permissions
-├── PicSureConnectionError   # cannot reach the server
-├── PicSureQueryError        # server rejected the query
-└── PicSureValidationError   # invalid input to a picsure function
+├── PicSureAuthError                    # the server answered and refused you
+│   ├── PicSureAuthenticationError      # 401: the token itself is the problem
+│   └── PicSureAuthorizationError       # 403: this account may not do it
+│       └── PicSureConsentDeniedError   # 403 consent_denied: approvals do not cover it
+├── PicSureConnectionError              # no usable response came back
+│   ├── PicSureTLSError                 # the certificate was not trusted
+│   └── PicSureServerError              # 5xx: the request arrived and failed
+│       └── PicSureConsentLookupError   # 502 consent_lookup_failed
+├── PicSureQueryError                   # server rejected the query
+└── PicSureValidationError              # invalid input to a picsure function
 ```
 
-`PicSureError` is the catch-all. Services translate
-`TransportError` subclasses into these per-call (the mapping is not
-1:1 — context matters; e.g. a 404 from `runQuery` becomes
-`PicSureQueryError`, while a 404 from a dictionary lookup becomes
-`PicSureValidationError`).
+`PicSureError` is the catch-all, and the nesting is the contract: a
+caller who wants every refusal catches `PicSureAuthError`, and one who
+only cares about a denied consent catches `PicSureConsentDeniedError`.
+Services do not each invent a mapping. They route every transport
+failure through `_services/_errors.translate_transport_error`, so one
+status produces one public type and one message everywhere. The table
+under "Error model" below is that function.
 
 ### `_dev/` — dev-mode internals
 
@@ -190,21 +197,39 @@ without a corresponding CHANGELOG entry.
 ## Error model
 
 A call site's error contract is whatever subclass of `PicSureError`
-it documents in its docstring (typically all four). The transport
-layer never raises `PicSureError` directly — it raises the internal
-`TransportError` subclasses, and each service translates those into
-the user-facing type that makes sense in context.
+it documents in its docstring. An HTTP answer the adapter did not want
+becomes an internal `TransportError` first, and
+`_services/_errors.translate_transport_error` turns that into the
+public type. Two paths skip the transport hierarchy and raise a
+`PicSureError` from inside `_transport/` directly: `_decode_json` and
+`json_object` raise `PicSureQueryError` (or its `EmptyBodyError`
+subclass) for a body that is empty, not JSON, or not the shape the
+route promised, and the CA-bundle resolution raises
+`PicSureValidationError` for a `verify` path that does not exist and
+`PicSureTLSError` for one OpenSSL cannot load. Everything else reaches
+the user through the translator.
 
-The mapping for `_transport/errors.py`:
+The mapping, which is one function and therefore the same for every
+service:
 
-| HTTP status / event       | Transport exception              | Typical translation                |
-|---------------------------|----------------------------------|------------------------------------|
-| 401, 403                  | `TransportAuthenticationError`   | `PicSureAuthError`                 |
-| 400, 422, other 4xx       | `TransportValidationError`       | `PicSureQueryError` or `PicSureValidationError` depending on whose input was wrong |
-| 404                       | `TransportNotFoundError`         | usually `PicSureQueryError` (path missing) |
-| 429                       | `TransportRateLimitError`        | `PicSureConnectionError` with a `retry_after` note  |
-| 5xx (after one retry)     | `TransportServerError`           | `PicSureConnectionError`           |
-| DNS / timeout / refused   | `TransportConnectionError`       | `PicSureConnectionError`           |
+| HTTP status / event                     | Transport exception             | Public exception             |
+|-----------------------------------------|---------------------------------|------------------------------|
+| 403 with `errorType: consent_denied`    | `TransportConsentDeniedError`   | `PicSureConsentDeniedError`  |
+| 502 with `errorType: consent_lookup_failed` | `TransportConsentLookupError` | `PicSureConsentLookupError` |
+| 401                                     | `TransportAuthenticationError`  | `PicSureAuthenticationError` |
+| 403                                     | `TransportAuthenticationError`  | `PicSureAuthorizationError`  |
+| 400, 422, other 4xx                     | `TransportValidationError`      | `PicSureValidationError`     |
+| 404                                     | `TransportNotFoundError`        | `PicSureQueryError`          |
+| 429                                     | `TransportRateLimitError`       | `PicSureConnectionError` carrying the `Retry-After` value |
+| rejected certificate                    | `TransportTLSError`             | `PicSureTLSError`            |
+| 5xx (after one retry)                   | `TransportServerError`          | `PicSureServerError`         |
+| DNS / timeout / refused                 | `TransportConnectionError`      | `PicSureConnectionError`     |
+
+The status is the whole input, so a 404 reads the same from `runQuery`
+and from a dictionary lookup. A service that wants different wording
+for a case of its own catches that transport class before the
+translator sees it, as `genomic_search.py` does for the 404 and the
+empty body, rather than mapping the status a second way.
 
 `_transport/client.py::_raise_for_status` is the single 4xx mapper
 shared by `_request` and `post_raw_stream`, so both code paths agree.
