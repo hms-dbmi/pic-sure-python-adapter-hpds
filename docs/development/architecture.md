@@ -178,7 +178,7 @@ environment variable (`1`/`true`/`yes`) or per-call with the
 | `buffer.py`     | `EventBuffer` — thread-safe FIFO of `Event`s with a fixed cap (oldest drops on overflow). |
 | `events.py`     | `Event` dataclass — one record per HTTP call, public method, connect, or error. Captures timestamp, kind, name, duration, and a small structured payload. |
 | `timing.py`     | `@timed` decorator. Public `Session` methods wear this; emits an event on success and (tagged) on failure. |
-| `redaction.py`  | Strips secrets before logging or buffering (PSAMA `token`, dataframe-shaped result bodies, etc.). |
+| `redaction.py`  | `body_is_sensitive` classifies a request body as participant-bearing (`DATAFRAME`, `DATAFRAME_TIMESERIES`, `DATAFRAME_PFB`, `VCF_EXCERPT`) so the `http` event for that call carries a `redacted: "participant"` label. Attaching the label is its whole effect: no request or response body is ever serialized into an event, so nothing here scrubs a secret out of anything. |
 | `reporting.py`  | Helpers that turn the buffered events into DataFrames for inspection. |
 
 Dev-mode adds observability; it does not change behaviour. Production

@@ -1,20 +1,30 @@
-"""Redaction of request bodies and headers for dev-mode event logging.
+"""Classify a request body as participant-bearing, for dev-mode labelling.
 
-``_SENSITIVE_RESULT_TYPES`` names the result types whose request body asks
-the backend for per-patient rows: the two dataframe types, the PFB export,
-and the VCF excerpt, whose response carries one genotype column per
-patient. A body asking for any of them is never serialized into a
-dev-mode event; only its size is recorded.
+:func:`body_is_sensitive` answers one question: does this request body
+ask the backend for per-patient rows? The transport client calls it for
+every request it records, and a ``True`` puts ``redacted:
+"participant"`` in that event's metadata. Attaching the label is the
+module's whole effect.
+
+No request body and no response body is ever serialized into a dev-mode
+event, whatever this module answers. An event carries a path, a method,
+a status, byte counts and a duration, so the label marks which calls
+carried participant-scoped work rather than standing in for a body that
+would otherwise have been written down. Nothing here scrubs a secret out
+of anything, and nothing here is on the path a token takes.
+
+``_SENSITIVE_RESULT_TYPES`` names the result types whose request body
+asks for per-patient rows: the two dataframe types, the PFB export, and
+the VCF excerpt, whose response carries one genotype column per patient.
 
 The aggregate variant result types (``AGGREGATE_VCF_EXCERPT``,
 ``VARIANT_COUNT_FOR_QUERY`` and ``VARIANT_LIST_FOR_QUERY``) are left off
 the list on purpose. Their output is variant-level, with no patient row
-in it, so the request body is as loggable as a count.
+in it, so the request body is as ordinary as a count.
 """
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 _SENSITIVE_RESULT_TYPES = {
@@ -24,94 +34,37 @@ _SENSITIVE_RESULT_TYPES = {
     "VCF_EXCERPT",
 }
 
-# PSAMA's /user/me returns the user's JWT in a `token` field alongside
-# `email` and other identity fields.  Treat any of these as secrets when
-# they appear in a PSAMA-pathed body.
-_PSAMA_SENSITIVE_KEYS = frozenset(
-    {
-        "email",
-        "token",
-        "access_token",
-        "refresh_token",
-        "password",
-        "secret",
-        "apikey",
-        "api_key",
-    }
-)
-
-
-def redact_headers(headers: dict[str, str]) -> dict[str, str]:
-    """Return a copy of headers with Authorization masked."""
-    out = dict(headers)
-    for key in list(out.keys()):
-        if key.lower() == "authorization":
-            out[key] = "Bearer ***"
-    return out
-
-
-def redact_for_log(
-    path: str,
-    method: str,
-    body: dict[str, Any] | list[Any] | None,
-) -> str | None:
-    """Return a safe string repr of a body, or None if it must not be logged.
-
-    Returning None signals "body is sensitive — log size only."
-    """
-    if body is None:
-        return ""
-
-    if _is_psama_path(path):
-        return json.dumps(_redact_psama_secrets(body))
-
-    # Suppress based on body SHAPE, not path: the async PFB export posts the
-    # same participant-bearing query body to /hpds/auth/v3/query (and
-    # /status, /result), none of which end in /query/sync.
-    if _body_is_participant_like(body):
-        return None
-
-    # Default: safe to log
-    return json.dumps(body, default=str)
-
 
 def body_is_sensitive(
     path: str,
     method: str,
     body: dict[str, Any] | list[Any] | None,
 ) -> bool:
-    """Cheap predicate: would ``redact_for_log`` refuse to serialize this body?
+    """Whether the event for this request should be labelled participant-bearing.
 
-    Callers that only need the yes/no decision can use this to avoid the
-    full ``json.dumps`` round-trip in ``redact_for_log``.
+    Args:
+        path: Request path, carried on the event this labels.
+        method: HTTP method, carried likewise.
+        body: The JSON request body, or ``None``.
+
+    Returns:
+        ``True`` when the body asks the backend for per-patient rows.
     """
     if body is None:
         return False
     return _body_is_participant_like(body)
 
 
-def _is_psama_path(path: str) -> bool:
-    return path.startswith("/psama/")
-
-
 def _body_is_participant_like(body: Any) -> bool:
+    """Read the body's ``expectedResultType`` and look it up in the set.
+
+    Decided on the body's shape rather than on the path, because the
+    async PFB export posts the same participant-bearing query body to
+    ``/hpds/auth/v3/query`` and to its ``/status`` and ``/result``
+    siblings, none of which end in ``/query/sync``.
+    """
     query = body.get("query") if isinstance(body, dict) else None
     if not isinstance(query, dict):
         return False
     result_type = query.get("expectedResultType")
     return result_type in _SENSITIVE_RESULT_TYPES
-
-
-def _redact_psama_secrets(body: Any) -> Any:
-    if isinstance(body, dict):
-        return {
-            k: (
-                "***"
-                if k.lower() in _PSAMA_SENSITIVE_KEYS and isinstance(v, str)
-                else _redact_psama_secrets(v)
-            )
-            for k, v in body.items()
-        }
-    if isinstance(body, list):
-        return [_redact_psama_secrets(item) for item in body]
-    return body

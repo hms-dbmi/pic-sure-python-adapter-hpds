@@ -1,140 +1,73 @@
-from picsure._dev.redaction import (
-    body_is_sensitive,
-    redact_for_log,
-    redact_headers,
-)
+from picsure._dev.redaction import body_is_sensitive
+
+_QUERY_PATH = "/picsure/hpds/auth/v3/query/sync"
 
 
-def test_redact_headers_masks_authorization():
-    headers = {
-        "Authorization": "Bearer secret-abc123",
-        "Content-Type": "application/json",
-    }
-    out = redact_headers(headers)
-    assert out["Authorization"] == "Bearer ***"
-    assert out["Content-Type"] == "application/json"
-
-
-def test_redact_headers_case_insensitive():
-    headers = {"authorization": "Bearer x"}
-    out = redact_headers(headers)
-    assert out["authorization"] == "Bearer ***"
-
-
-def test_redact_headers_preserves_when_no_auth():
-    headers = {"Content-Type": "application/json"}
-    assert redact_headers(headers) == headers
-
-
-def test_redact_search_body_is_preserved():
+def test_search_body_is_not_participant_like():
     body = {"query": "blood pressure", "searchQueryType": "ALL"}
-    out = redact_for_log("/picsure/search/abc", "POST", body)
-    assert out is not None
-    assert "blood pressure" in out
+    assert not body_is_sensitive("/picsure/search/abc", "POST", body)
 
 
-def test_redact_psama_body_strips_email():
-    body = {"email": "user@example.com", "expirationDate": "2026-06-15"}
-    out = redact_for_log("/psama/user/me", "GET", body)
-    assert out is not None
-    assert "user@example.com" not in out
-    assert "***" in out
-
-
-def test_redact_psama_body_strips_token():
-    body = {"uuid": "u-1", "email": "u@x.com", "token": "eyJhbGciOiJI.payload.sig"}
-    out = redact_for_log("/psama/user/me", "GET", body)
-    assert out is not None
-    assert "eyJhbGciOiJI" not in out
-    assert "u@x.com" not in out
-
-
-def test_redact_psama_body_strips_credential_aliases():
-    body = {
-        "access_token": "at",
-        "refresh_token": "rt",
-        "password": "pw",
-        "apiKey": "k",
-    }
-    out = redact_for_log("/psama/login", "POST", body)
-    assert out is not None
-    for secret in ("at", "rt", "pw", "k"):
-        assert f'"{secret}"' not in out
-
-
-def test_redact_participant_query_returns_none():
+def test_dataframe_query_is_participant_like():
     body = {"query": {"expectedResultType": "DATAFRAME", "fields": []}}
-    out = redact_for_log("/picsure/query/sync", "POST", body)
-    assert out is None
+    assert body_is_sensitive("/picsure/query/sync", "POST", body)
 
 
-def test_redact_count_query_is_preserved():
+def test_count_query_is_not_participant_like():
     body = {"query": {"expectedResultType": "COUNT", "fields": []}}
-    out = redact_for_log("/picsure/query/sync", "POST", body)
-    assert out is not None
-    assert "COUNT" in out
+    assert not body_is_sensitive("/picsure/query/sync", "POST", body)
 
 
-def test_redact_empty_body_returns_empty_string():
-    out = redact_for_log("/picsure/search/abc", "POST", None)
-    assert out == ""
+def test_absent_body_is_not_participant_like():
+    assert not body_is_sensitive("/picsure/search/abc", "POST", None)
 
 
-def test_redact_pfb_export_returns_none():
+def test_list_body_is_not_participant_like():
+    assert not body_is_sensitive("/picsure/dictionary/facets", "POST", [{"query": {}}])
+
+
+def test_pfb_export_is_participant_like():
     body = {"query": {"expectedResultType": "DATAFRAME_PFB"}}
-    out = redact_for_log("/picsure/query/sync", "POST", body)
-    assert out is None
+    assert body_is_sensitive("/picsure/query/sync", "POST", body)
 
 
-def test_redact_async_pfb_query_returns_none():
-    # The async PFB export posts the same participant-bearing body to
-    # /picsure/v3/query (no /query/sync suffix). Must still be suppressed.
+def test_async_pfb_query_is_participant_like():
+    """The async PFB export posts the same body to a path with no suffix.
+
+    The decision is made on the body's shape, not on the path, so
+    /picsure/v3/query is classified the same as /query/sync.
+    """
     body = {"query": {"expectedResultType": "DATAFRAME_PFB", "fields": []}}
-    out = redact_for_log("/picsure/v3/query", "POST", body)
-    assert out is None
+    assert body_is_sensitive("/picsure/v3/query", "POST", body)
 
 
-def test_redact_async_count_query_is_preserved():
-    # COUNT bodies are not participant-like and remain loggable on async paths.
+def test_async_count_query_is_not_participant_like():
     body = {"query": {"expectedResultType": "COUNT", "fields": []}}
-    out = redact_for_log("/picsure/v3/query", "POST", body)
-    assert out is not None
-    assert "COUNT" in out
+    assert not body_is_sensitive("/picsure/v3/query", "POST", body)
 
 
-def test_redact_info_resources_is_preserved():
+def test_info_resources_body_is_not_participant_like():
     body = {"uuid-1": "hpds"}
-    out = redact_for_log("/picsure/info/resources", "GET", body)
-    assert out is not None
-    assert "hpds" in out
+    assert not body_is_sensitive("/picsure/info/resources", "GET", body)
 
 
-def test_redact_vcf_excerpt_query_returns_none():
+def test_vcf_excerpt_query_is_participant_like():
     """A VCF excerpt carries one genotype column per patient."""
     body = {"query": {"expectedResultType": "VCF_EXCERPT", "fields": []}}
-    assert redact_for_log("/picsure/hpds/auth/v3/query/sync", "POST", body) is None
-    assert body_is_sensitive("/picsure/hpds/auth/v3/query/sync", "POST", body)
+    assert body_is_sensitive(_QUERY_PATH, "POST", body)
 
 
-def test_redact_aggregate_vcf_excerpt_query_is_preserved():
+def test_aggregate_vcf_excerpt_query_is_not_participant_like():
     """Aggregate output is variant-level, with no patient row in it."""
     body = {"query": {"expectedResultType": "AGGREGATE_VCF_EXCERPT", "fields": []}}
-    out = redact_for_log("/picsure/hpds/auth/v3/query/sync", "POST", body)
-    assert out is not None
-    assert "AGGREGATE_VCF_EXCERPT" in out
-    assert not body_is_sensitive("/picsure/hpds/auth/v3/query/sync", "POST", body)
+    assert not body_is_sensitive(_QUERY_PATH, "POST", body)
 
 
-def test_redact_variant_count_query_is_preserved():
+def test_variant_count_query_is_not_participant_like():
     body = {"query": {"expectedResultType": "VARIANT_COUNT_FOR_QUERY", "fields": []}}
-    out = redact_for_log("/picsure/hpds/auth/v3/query/sync", "POST", body)
-    assert out is not None
-    assert "VARIANT_COUNT_FOR_QUERY" in out
-    assert not body_is_sensitive("/picsure/hpds/auth/v3/query/sync", "POST", body)
+    assert not body_is_sensitive(_QUERY_PATH, "POST", body)
 
 
-def test_redact_variant_list_query_is_preserved():
+def test_variant_list_query_is_not_participant_like():
     body = {"query": {"expectedResultType": "VARIANT_LIST_FOR_QUERY", "fields": []}}
-    out = redact_for_log("/picsure/hpds/auth/v3/query/sync", "POST", body)
-    assert out is not None
-    assert "VARIANT_LIST_FOR_QUERY" in out
+    assert not body_is_sensitive(_QUERY_PATH, "POST", body)
