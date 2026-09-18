@@ -109,9 +109,7 @@ def _find_existing_by_name(
     try:
         response = client.get_json(_NAMED_DATASET_COLLECTION_PATH)
     except TransportError as exc:
-        raise translate_transport_error(
-            exc, operation="list"
-        ) from exc
+        raise translate_transport_error(exc, operation="list") from exc
     if isinstance(response, list):
         items: list[object] = response
     elif isinstance(response, dict):
@@ -135,9 +133,7 @@ def _create_named_dataset(client: PicSureClient, *, query_id: str, name: str) ->
     try:
         client.post_json(_NAMED_DATASET_COLLECTION_PATH, body=body)
     except TransportError as exc:
-        raise translate_transport_error(
-            exc, operation="save"
-        ) from exc
+        raise translate_transport_error(exc, operation="save") from exc
 
 
 def _update_named_dataset(
@@ -159,9 +155,7 @@ def _update_named_dataset(
     try:
         client.put_json(path, body=body)
     except TransportError as exc:
-        raise translate_transport_error(
-            exc, operation="update"
-        ) from exc
+        raise translate_transport_error(exc, operation="update") from exc
 
 
 def _validate_name(name: str) -> None:
@@ -186,9 +180,7 @@ def _submit_and_extract_id(
             client.post_json(submit_path, body=body), path=submit_path
         )
     except TransportError as exc:
-        raise translate_transport_error(
-            exc, operation="submit"
-        ) from exc
+        raise translate_transport_error(exc, operation="submit") from exc
     for field in ("picsureResultId", "resourceResultId", "queryId"):
         v = response.get(field)
         if isinstance(v, str) and v:

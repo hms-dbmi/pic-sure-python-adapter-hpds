@@ -185,9 +185,7 @@ def fetch_facets(
     try:
         data = client.post_json(_FACETS_PATH, body=body)
     except (TransportConsentDeniedError, TransportConsentLookupError) as exc:
-        raise translate_transport_error(
-            exc, operation="fetch facets"
-        ) from exc
+        raise translate_transport_error(exc, operation="fetch facets") from exc
     except (TransportValidationError, TransportNotFoundError) as exc:
         raise _translate_dictionary_4xx(exc, "fetch facets") from exc
     except TransportRateLimitError as exc:

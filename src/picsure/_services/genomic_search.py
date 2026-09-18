@@ -60,9 +60,7 @@ def search_genomic_values(
     try:
         data = client.get_json(path)
     except (TransportConsentDeniedError, TransportConsentLookupError) as exc:
-        raise translate_transport_error(
-            exc, operation="fetch"
-        ) from exc
+        raise translate_transport_error(exc, operation="fetch") from exc
     except TransportAuthenticationError as exc:
         raise PicSureAuthError(
             f"Authentication failed fetching genomic values "
