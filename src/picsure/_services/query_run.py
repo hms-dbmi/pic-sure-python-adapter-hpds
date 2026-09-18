@@ -376,6 +376,23 @@ def _summarize_request(body: dict[str, object]) -> _RequestSummary | None:
     )
 
 
+def _non_negative(count: int, text: str) -> int:
+    """Return ``count`` unless it is negative, which no PIC-SURE count is.
+
+    Args:
+        count: The integer the server sent.
+        text: The response body, quoted in the error.
+
+    Raises:
+        PicSureQueryError: If ``count`` is below zero.
+    """
+    if count < 0:
+        raise PicSureQueryError(
+            f"Expected a non-negative count, but got {count} in: '{text[:200]}'"
+        )
+    return count
+
+
 def _parse_cross_count(raw: bytes) -> dict[str, CountResult]:
     """Parse a CROSS_COUNT response into a mapping of concept path → count.
 
@@ -384,11 +401,12 @@ def _parse_cross_count(raw: bytes) -> dict[str, CountResult]:
     (aggregate-obfuscated response, e.g. ``"42"``, ``"11309 \u00b13"``,
     or ``"< 10"``). Both are parsed into :class:`CountResult`.
 
-    Malformed JSON, non-object top-level values, and malformed count
-    values all raise :class:`PicSureQueryError`.
+    Malformed JSON, non-object top-level values, malformed count values,
+    and negative counts all raise :class:`PicSureQueryError`.
     """
+    text = raw.decode("utf-8")
     try:
-        data = json.loads(raw.decode("utf-8"))
+        data = json.loads(text)
     except json.JSONDecodeError as exc:
         preview = raw[:200]
         raise PicSureQueryError(
@@ -404,7 +422,9 @@ def _parse_cross_count(raw: bytes) -> dict[str, CountResult]:
         # bool is an int subclass in Python; guard against True/False
         # masquerading as valid counts.
         if isinstance(v, int) and not isinstance(v, bool):
-            result[key] = CountResult(value=v, margin=None, cap=None, raw=str(v))
+            result[key] = CountResult(
+                value=_non_negative(v, text), margin=None, cap=None, raw=str(v)
+            )
         else:
             result[key] = _parse_count_string(str(v))
     return result
@@ -533,7 +553,9 @@ def _variant_count_from_payload(
             f"got: '{text[:200]}'"
         )
     if isinstance(count, int):
-        return CountResult(value=count, margin=None, cap=None, raw=text)
+        return CountResult(
+            value=_non_negative(count, text), margin=None, cap=None, raw=text
+        )
     if isinstance(count, str):
         return replace(_parse_count_string(count), raw=text)
     raise PicSureQueryError(

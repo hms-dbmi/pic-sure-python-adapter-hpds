@@ -1250,6 +1250,14 @@ class TestRunQueryVariantCountEndToEnd:
         assert "buildGenomicFilter" in message
 
     @respx.mock
+    def test_negative_count_is_rejected(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b'{"count":-1,"message":"x"}')
+        )
+        with pytest.raises(PicSureQueryError, match="non-negative"):
+            run_query(_make_client(), _genomic_query(), "variant_count", backend="auth")
+
+    @respx.mock
     def test_json_object_without_a_count_raises(self):
         respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b'{"message":"hi"}')
@@ -1448,3 +1456,10 @@ class TestVariantParserDefensiveBranches:
         ragged_rows = b'CHROM\tPOS\n7\t100000\n"unclosed\tquote\t\t\t\n'
         with pytest.raises(PicSureQueryError, match="malformed VCF excerpt"):
             _parse_vcf_excerpt(ragged_rows)
+
+
+def test_cross_count_negative_value_is_rejected():
+    from picsure._services.query_run import _parse_cross_count
+
+    with pytest.raises(PicSureQueryError, match="non-negative"):
+        _parse_cross_count(b'{"\\\\a\\\\": -1}')
