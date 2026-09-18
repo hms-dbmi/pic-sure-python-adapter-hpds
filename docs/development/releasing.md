@@ -123,8 +123,14 @@ and it routes there automatically.
 ```bash
 git tag -a vX.Y.Zrc1 -m "Release candidate X.Y.Zrc1"
 git push origin vX.Y.Zrc1        # -> TestPyPI, via release.yml
-pip install --index-url https://test.pypi.org/simple/ picsure==X.Y.Zrc1
+pip install --index-url https://test.pypi.org/simple/ \
+    --extra-index-url https://pypi.org/simple/ picsure==X.Y.Zrc1
 ```
+
+TestPyPI hosts the candidate and nothing it depends on: no `pandas`,
+no `httpx`, and a `fastavro` too old to satisfy the pin. The extra
+index lets pip take those from PyPI while the candidate itself still
+comes from TestPyPI, the only index that has it.
 
 Only reach for a manual `uv build` / `uv publish` if the workflow
 itself is broken, and prefer fixing the workflow.
