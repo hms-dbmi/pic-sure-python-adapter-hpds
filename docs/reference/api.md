@@ -13,6 +13,13 @@ Complete reference for all public functions, classes, and types in the
     options:
       members: true
 
+### SecretToken
+
+::: picsure.SecretToken
+    options:
+      members:
+        - reveal
+
 ## Query Construction
 
 ::: picsure.buildClause
@@ -30,6 +37,10 @@ Complete reference for all public functions, classes, and types in the
 ## Genomic Utilities
 
 ::: picsure.genomicConsequences
+
+## Developer Mode
+
+::: picsure.set_dev_mode
 
 ## Types
 
@@ -62,6 +73,12 @@ Complete reference for all public functions, classes, and types in the
 ### Query
 
 ::: picsure.Query
+
+### QueryType
+
+::: picsure.QueryType
+    options:
+      members: true
 
 ### FacetSet
 

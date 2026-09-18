@@ -74,12 +74,18 @@ dropped.
 
 ### Exclude Values
 
-For faster searches on large dictionaries, set `include_values=False`
-to omit the `values` column:
+Set `include_values=False` to leave the `values` column out of the
+returned DataFrame:
 
 ```python
 results = session.searchDictionary("age", include_values=False)
 ```
+
+The flag never reaches the wire. It is read once, after the full payload
+has been downloaded and parsed, to pick which columns the DataFrame
+carries, so the request bytes, the round trips and the wall time are the
+same either way. To make a search on a large dictionary cheaper, narrow
+it with `term` or `facets`, or read it a page at a time with `page`.
 
 ## Facet Filtering
 
