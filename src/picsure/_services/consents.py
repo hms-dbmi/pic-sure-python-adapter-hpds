@@ -3,6 +3,7 @@ from __future__ import annotations
 from picsure._services._errors import translate_transport_error
 from picsure._transport.client import PicSureClient, json_object
 from picsure._transport.errors import TransportError
+from picsure.errors import PicSureConnectionError
 
 _CONSENTS_PATH = "/psama/user/me/consents"
 _CONSENTS_KEY = "\\_consents\\"
@@ -34,11 +35,19 @@ def fetch_consents(client: PicSureClient) -> list[str]:
         PicSureAuthorizationError: If the account may not read its own
             consents (HTTP 403).
         PicSureConnectionError: If PSAMA could not be reached or failed.
+        PicSureQueryError: If the body is not JSON or not a JSON object,
+            raised by the shared response decoder.
     """
     try:
         payload = client.get_json(_CONSENTS_PATH)
     except TransportError as exc:
         raise translate_transport_error(exc, operation=_CONSENTS_OPERATION) from exc
+    except ValueError as exc:
+        raise PicSureConnectionError(
+            f"{_CONSENTS_PATH} answered with a body that is not JSON, so the "
+            f"consent list could not be read. This usually means the URL is not "
+            f"a PIC-SURE deployment root."
+        ) from exc
 
     response = json_object(payload, path=_CONSENTS_PATH)
     consents_map = response.get("consents")

@@ -133,7 +133,7 @@ class FacetSet:
         """Add values to a facet category.
 
         Args:
-            category: The facet category name (e.g. "study_ids").
+            category: The facet category name (e.g. "dataset_id").
             values: One or more values to select.
 
         Raises:

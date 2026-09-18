@@ -122,9 +122,6 @@ Complete reference for all public functions, classes, and types in the
         - exportAsPFB
         - exportCSV
         - exportTSV
-        - getResourceID
-        - setResourceID
-        - setResourceIDByName
         - close
         - __enter__
         - __exit__

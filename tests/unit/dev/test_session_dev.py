@@ -4,13 +4,11 @@ import httpx
 import respx
 
 from picsure._dev.config import DevConfig
-from picsure._models.resource import Resource
 from picsure._models.session import Session
 from picsure._services._hpds_paths import query_prefix
 from picsure._transport.client import PicSureClient
 
 BASE_URL = "https://test.example.com"
-RESOURCE_UUID = "uuid-1"
 
 
 def _make_session(dev_enabled: bool) -> Session:
@@ -20,8 +18,6 @@ def _make_session(dev_enabled: bool) -> Session:
         client=client,
         user_email="u@e",
         token_expiration="N/A",
-        resources=[Resource(uuid=RESOURCE_UUID, name="hpds", description="")],
-        resource_uuid=RESOURCE_UUID,
         consents=[],
         dev_config=cfg,
     )

@@ -432,6 +432,7 @@ class PicSureClient:
         path: str,
         *,
         timeout: float | None = None,
+        retry: bool = True,
     ) -> JsonBody:
         """Send GET request and return the parsed JSON object or array.
 
@@ -441,6 +442,9 @@ class PicSureClient:
                 session-wide one.  Used by the connect-time validation
                 call, which must fail fast on an unreachable host rather
                 than wait out the long data deadline.
+            retry: Whether a transport failure or 5xx may be sent once
+                more.  ``False`` caps the call at a single attempt, so a
+                caller's deadline is the whole cost of the call.
 
         Returns:
             The decoded body.  Callers that require an object should pass
@@ -450,7 +454,7 @@ class PicSureClient:
             PicSureQueryError: If the body is not JSON, or decodes to
                 something other than an object or an array.
         """
-        response = self._request("GET", path, **_timeout_kwargs(timeout))
+        response = self._request("GET", path, retry=retry, **_timeout_kwargs(timeout))
         return _decode_json(response, path)
 
     def post_json(self, path: str, body: RequestBody | None = None) -> JsonBody:
@@ -611,12 +615,26 @@ class PicSureClient:
             retry=int(response.extensions.get("picsure_retry", 0)),
         )
 
-    def _request(self, method: str, path: str, **kwargs: object) -> httpx.Response:
+    def _request(
+        self, method: str, path: str, *, retry: bool = True, **kwargs: object
+    ) -> httpx.Response:
+        """Send one request, retrying once where a resend is safe.
+
+        Args:
+            method: HTTP method.
+            path: Request path, relative to the client's base URL.
+            retry: ``False`` allows a single attempt regardless of method.
+            kwargs: Forwarded to ``httpx.Client.request``.
+
+        Raises:
+            TransportError: The failure the last attempt ended in.
+        """
         last_exc: Exception | None = None
         raw_body = kwargs.get("json")
         body = raw_body if isinstance(raw_body, dict) else None
+        max_retries = _MAX_RETRIES if retry else 0
 
-        for attempt in range(_MAX_RETRIES + 1):
+        for attempt in range(max_retries + 1):
             start = time.monotonic()
             try:
                 response = self._http.request(method, path, **kwargs)  # type: ignore[arg-type]
@@ -628,7 +646,7 @@ class PicSureClient:
                 # method; failures after the request was fully sent (the
                 # server may have processed it) retry for GETs only.  See
                 # _should_retry for the per-exception classification.
-                if _should_retry(method, exc) and attempt < _MAX_RETRIES:
+                if _should_retry(method, exc) and attempt < max_retries:
                     continue
                 raise _mark_emitted(_connection_error(exc, self._host)) from exc
 
@@ -653,7 +671,7 @@ class PicSureClient:
                     raise _mark_emitted(structured_error)
                 # POST is non-idempotent: a 5xx after the request reached
                 # the server may have partially executed.  Only retry GETs.
-                if method == "GET" and attempt < _MAX_RETRIES:
+                if method == "GET" and attempt < max_retries:
                     continue
                 self._emit_error(method, path, attempt, start, "TransportServerError")
                 raise _mark_emitted(TransportServerError(status, response.text))
