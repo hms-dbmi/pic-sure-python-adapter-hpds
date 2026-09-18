@@ -131,13 +131,24 @@ def _contains(node: Clause | ClauseGroup, target: Clause | ClauseGroup) -> bool:
     return any(_contains(child, target) for child in node.clauses)
 
 
+_DESCRIBE_PATH_LIMIT = 5
+
+
 def _describe(node: Clause | ClauseGroup) -> str:
-    """Name a clause or group by the concept paths it references."""
+    """Name a clause or group by the concept paths it references.
+
+    At most the first five paths are listed, followed by a count of the
+    rest, so a large group target keeps the message readable.
+    """
     kind = "clause" if isinstance(node, Clause) else "clause group"
     paths = node.concept_paths()
     if not paths:
         return f"that {kind}"
-    return f"the {kind} on {', '.join(repr(path) for path in paths)}"
+    shown = ", ".join(repr(path) for path in paths[:_DESCRIBE_PATH_LIMIT])
+    hidden = len(paths) - _DESCRIBE_PATH_LIMIT
+    if hidden > 0:
+        return f"the {kind} on {shown} and {hidden} more"
+    return f"the {kind} on {shown}"
 
 
 def _no_match_message(function: str, target: Clause | ClauseGroup) -> str:

@@ -307,3 +307,34 @@ def test_replace_clause_preserves_genomic_filters():
     result = replaceClause(q, c1, c2)
     assert isinstance(result, Query)
     assert result.genomicFilters == (gf,)
+
+
+class TestNoMatchMessageLength:
+    def test_lists_at_most_five_paths_then_a_count(self):
+        q = buildClauseGroup([_clause("\\a\\", "x")], operator=GroupOperator.AND)
+        missing = buildClauseGroup(
+            [_clause(f"\\p{i}\\", "x") for i in range(7)], operator=GroupOperator.OR
+        )
+
+        with pytest.raises(PicSureValidationError) as info:
+            removeSubQuery(q, missing)
+
+        message = str(info.value)
+        for i in range(5):
+            assert f"\\p{i}\\" in message
+        assert "\\p5\\" not in message
+        assert "\\p6\\" not in message
+        assert "and 2 more" in message
+
+    def test_exactly_five_paths_are_all_listed_without_a_count(self):
+        q = buildClauseGroup([_clause("\\a\\", "x")], operator=GroupOperator.AND)
+        missing = buildClauseGroup(
+            [_clause(f"\\p{i}\\", "x") for i in range(5)], operator=GroupOperator.OR
+        )
+
+        with pytest.raises(PicSureValidationError) as info:
+            removeSubQuery(q, missing)
+
+        message = str(info.value)
+        assert "\\p4\\" in message
+        assert " more" not in message
