@@ -1,7 +1,7 @@
 import base64
 import json
-import traceback
 import ssl
+import traceback
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -22,10 +22,10 @@ from picsure._transport.client import (
 )
 from picsure._transport.secret import SecretToken
 from picsure.errors import (
-    PicSureError,
     PicSureAuthenticationError,
     PicSureAuthError,
     PicSureConnectionError,
+    PicSureError,
     PicSureTLSError,
     PicSureValidationError,
 )
@@ -1030,6 +1030,7 @@ class TestConnectFrameHoldsNoPlainToken:
 
     @respx.mock
     def test_a_consent_fetch_failure_renders_no_token(self):
+        _mock_validation()
         respx.get(f"{BASE_URL}{_CONSENTS_PATH}").mock(
             return_value=httpx.Response(500, text="boom")
         )
@@ -1045,7 +1046,7 @@ class TestConnectFrameHoldsNoPlainToken:
         def explode(token):
             raise RuntimeError("claims unreadable")
 
-        monkeypatch.setattr("picsure._services.connect._email_from_jwt", explode)
+        monkeypatch.setattr("picsure._services.connect._decode_jwt_payload", explode)
         with pytest.raises(RuntimeError) as exc_info:
             connect(platform=BASE_URL, token=TOKEN)
         rendered = _render_with_locals(exc_info.value)
@@ -1057,7 +1058,7 @@ class TestConnectFrameHoldsNoPlainToken:
         from picsure._services.connect import _email_from_jwt
 
         assert _email_from_jwt(SecretToken(TOKEN)) == "researcher@university.edu"
-        assert _token_expiration_from_jwt(SecretToken(TOKEN)) == "2026-06-15T00:00:00Z"
+        assert _token_expiration_from_jwt(SecretToken(TOKEN)) == EXPECTED_EXPIRY
 
 
 class TestConsentProbeFailureIsReported:
