@@ -140,8 +140,9 @@ def connect(
 
     Raises:
         PicSureValidationError: If the platform is not recognized, the
-            flags contradict each other, or a token is missing where one
-            is required.
+            flags contradict each other, a token is missing where one is
+            required, ``dev_mode`` is not a bool, or ``verify`` is neither
+            a bool nor the path of an existing CA bundle.
         PicSureAuthenticationError: If the token is not a JWT or has
             already expired (checked locally, before any request).
         PicSureAuthError: If the server refuses the token (HTTP 401/403).
@@ -205,6 +206,7 @@ def connect(
             "use an open-access platform (e.g. Platform.BDC_OPEN)."
         )
 
+    _reject_bad_flags(dev_mode, verify)
     dev_config = DevConfig.from_env(override=dev_mode)
     if dev_config.enabled:
         _install_default_handler()
@@ -330,6 +332,35 @@ def _build_session(
         supports_genomic=info.supports_genomic,
         session_id=session_id,
     )
+
+
+def _reject_bad_flags(dev_mode: object, verify: object) -> None:
+    """Refuse ``dev_mode`` and ``verify`` values of the wrong type.
+
+    Runs before any client is built, so nothing is sent. A string such
+    as ``"FALSE"`` used to enable dev mode, because any non-``None``
+    override counted as the flag.
+
+    Args:
+        dev_mode: The caller's ``dev_mode`` argument.
+        verify: The caller's ``verify`` argument.
+
+    Raises:
+        PicSureValidationError: If ``dev_mode`` is not ``True``, ``False``
+            or ``None``, or ``verify`` is not a bool, a string, or ``None``.
+    """
+    if dev_mode is not None and not isinstance(dev_mode, bool):
+        raise PicSureValidationError(
+            f"dev_mode must be True, False or None, not "
+            f"{type(dev_mode).__name__} {dev_mode!r}. A string is never read "
+            f"as a flag. Pass the bool, or set the PICSURE_DEV_MODE environment "
+            f"variable to turn developer mode on."
+        )
+    if verify is not None and not isinstance(verify, (bool, str)):
+        raise PicSureValidationError(
+            f"verify must be True, False or the path of a CA bundle, not "
+            f"{type(verify).__name__} {verify!r}."
+        )
 
 
 def _reject_unusable_token(

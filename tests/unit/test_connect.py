@@ -1238,3 +1238,33 @@ class TestConnectDecodesTheTokenOnce:
         connect(platform=BASE_URL, token=TOKEN)
 
         assert len(calls) == 1
+
+
+class TestConnectArgumentValidation:
+    @respx.mock
+    def test_string_dev_mode_is_rejected_naming_the_type(self):
+        with pytest.raises(PicSureValidationError) as exc_info:
+            connect(platform=BASE_URL, token=TOKEN, dev_mode="FALSE")
+
+        message = str(exc_info.value)
+        assert "dev_mode" in message
+        assert "str" in message
+        assert len(respx.calls) == 0
+
+    @respx.mock
+    def test_string_verify_that_is_not_a_path_is_rejected_before_any_request(self):
+        with pytest.raises(PicSureValidationError) as exc_info:
+            connect(platform=BASE_URL, token=TOKEN, verify="false")
+
+        assert "'false'" in str(exc_info.value)
+        assert len(respx.calls) == 0
+
+    @respx.mock
+    def test_non_bool_non_string_verify_is_rejected_naming_the_type(self):
+        with pytest.raises(PicSureValidationError) as exc_info:
+            connect(platform=BASE_URL, token=TOKEN, verify=0)
+
+        message = str(exc_info.value)
+        assert "verify" in message
+        assert "int" in message
+        assert len(respx.calls) == 0
