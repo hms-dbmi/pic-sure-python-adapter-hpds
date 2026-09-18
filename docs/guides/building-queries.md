@@ -229,7 +229,7 @@ authoritative vocabulary for a given deployment.
 
 | You pass | Sent as | Why |
 |---|---|---|
-| a `VariantSeverity` bucket (`HIGH` / `MEDIUM` / `LOW`) | a `Variant_consequence_calculated` filter | The buckets are this adapter's own grouping, so they are expanded into the consequences they cover. |
+| a `VariantSeverity` member (`VariantSeverity.HIGH` / `MEDIUM` / `LOW`) or its label (`"High Severity"` / `"Medium Severity"` / `"Low Severity"`) | a `Variant_consequence_calculated` filter | The buckets are this adapter's own grouping, so they are expanded into the consequences they cover. |
 | a backend impact value (`HIGH`, `MODERATE`, `LOW`, `MODIFIER`) | a `Variant_severity` filter, unchanged | The backend does carry a `Variant_severity` annotation (VEP's `IMPACT` field) and applies the key verbatim. |
 
 ```python
@@ -262,6 +262,11 @@ values reach `MODIFIER`, which no bucket covers. The four impact values are
 `HIGH`, `MODERATE`, `LOW`, and `MODIFIER`;
 `session.searchGenomicValues("Variant_severity")` reports which of them a
 given deployment actually holds.
+
+Values are matched exactly, apart from surrounding whitespace. A near miss is
+rejected with the accepted spelling in the message: `"High"` is neither the
+impact value `HIGH` nor the label `"High Severity"`, and `MEDIUM` is not an
+impact value, `MODERATE` is.
 
 ### Genomic-only query
 

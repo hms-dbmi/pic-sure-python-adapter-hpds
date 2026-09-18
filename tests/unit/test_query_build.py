@@ -484,17 +484,50 @@ class TestVariantSeverityImpactValues:
         assert gf.key == "Variant_severity"
         assert gf.values == ("HIGH", "MODERATE")
 
-    def test_impact_matching_ignores_case_and_whitespace(self):
+    def test_impact_matching_strips_whitespace_only(self):
         from picsure import buildGenomicFilter
 
-        gf = buildGenomicFilter("Variant_severity", values=["  high ", "Moderate"])
+        gf = buildGenomicFilter("Variant_severity", values=["  HIGH ", "MODERATE"])
         assert gf.key == "Variant_severity"
         assert gf.values == ("HIGH", "MODERATE")
+
+    @pytest.mark.parametrize(
+        ("value", "spelling"),
+        [("High", "HIGH"), ("low", "LOW"), ("low severity", "Low Severity")],
+    )
+    def test_case_mismatch_is_rejected_with_the_accepted_spelling(
+        self, value, spelling
+    ):
+        from picsure import PicSureValidationError, buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError) as exc_info:
+            buildGenomicFilter("Variant_severity", values=value)
+
+        message = str(exc_info.value)
+        assert f"{value!r} is not a valid variant severity" in message
+        assert f"The accepted spelling is {spelling!r}" in message
+        assert "HIGH, MODERATE, LOW, MODIFIER" in message
+
+    def test_medium_is_rejected_pointing_at_moderate(self):
+        from picsure import PicSureValidationError, buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError) as exc_info:
+            buildGenomicFilter("Variant_severity", values="MEDIUM")
+
+        assert "The accepted spelling is 'MODERATE'" in str(exc_info.value)
+
+    def test_unknown_value_gets_no_spelling_hint(self):
+        from picsure import PicSureValidationError, buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError) as exc_info:
+            buildGenomicFilter("Variant_severity", values="Catastrophic")
+
+        assert "accepted spelling" not in str(exc_info.value)
 
     def test_duplicate_impacts_are_collapsed(self):
         from picsure import buildGenomicFilter
 
-        gf = buildGenomicFilter("Variant_severity", values=["HIGH", "high", "HIGH"])
+        gf = buildGenomicFilter("Variant_severity", values=["HIGH", " HIGH", "HIGH"])
         assert gf.values == ("HIGH",)
 
     def test_modifier_is_unreachable_through_severity_buckets(self):

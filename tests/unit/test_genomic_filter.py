@@ -1,3 +1,5 @@
+import pytest
+
 from picsure._models.genomic_filter import (
     GenomicFilter,
     VariantFrequency,
@@ -158,11 +160,12 @@ class TestImpactVocabulary:
         for impact in known_impacts():
             assert normalize_impact(impact) == impact
 
-    def test_normalize_impact_ignores_case_and_whitespace(self):
+    def test_normalize_impact_strips_whitespace_but_keeps_case(self):
         from picsure._models.genomic_filter import normalize_impact
 
-        assert normalize_impact("high") == "HIGH"
-        assert normalize_impact("  Modifier  ") == "MODIFIER"
+        assert normalize_impact("  MODIFIER  ") == "MODIFIER"
+        assert normalize_impact("high") is None
+        assert normalize_impact("Modifier") is None
 
     def test_normalize_impact_rejects_a_severity_bucket(self):
         from picsure._models.genomic_filter import normalize_impact
@@ -174,6 +177,23 @@ class TestImpactVocabulary:
 
         assert normalize_impact("Catastrophic") is None
         assert normalize_impact("") is None
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("high", "HIGH"),
+            ("  Modifier ", "MODIFIER"),
+            ("MEDIUM", "MODERATE"),
+            ("medium", "MODERATE"),
+            ("high severity", "High Severity"),
+            ("Catastrophic", None),
+            ("", None),
+        ],
+    )
+    def test_suggest_severity_spelling(self, value, expected):
+        from picsure._models.genomic_filter import suggest_severity_spelling
+
+        assert suggest_severity_spelling(value) == expected
 
     def test_impact_values_and_severity_buckets_are_disjoint(self):
         from picsure._models.genomic_filter import known_impacts, known_severities

@@ -13,6 +13,7 @@ from picsure._models.genomic_filter import (
     known_severities,
     normalize_impact,
     severity_consequences,
+    suggest_severity_spelling,
 )
 from picsure._models.query import Query
 from picsure.errors import PicSureValidationError
@@ -256,6 +257,10 @@ def buildGenomicFilter(  # noqa: N802
         On observed data the two routes select the same patients, but only the
         impact values can express ``MODIFIER``, which no bucket covers.
 
+        Values are matched exactly apart from surrounding whitespace. A near
+        miss such as ``"High"`` or ``"MEDIUM"`` is rejected with the accepted
+        spelling in the message.
+
     Raises:
         PicSureValidationError: If ``key`` is empty, unrecognized, or a
             variant-spec (SNP) key; if ``values`` is empty or contains blank
@@ -336,13 +341,14 @@ def _build_severity_filter(values: tuple[str, ...]) -> GenomicFilter:
     impacts: list[str] = []
     buckets: list[str] = []
     for value in values:
-        impact = normalize_impact(value)
+        candidate = value.strip()
+        impact = normalize_impact(candidate)
         if impact is not None:
             impacts.append(impact)
-        elif value in known_severities():
-            buckets.append(value)
+        elif candidate in known_severities():
+            buckets.append(candidate)
         else:
-            raise PicSureValidationError(_severity_value_message(value))
+            raise PicSureValidationError(_severity_value_message(candidate))
 
     if impacts and buckets:
         raise PicSureValidationError(
@@ -370,12 +376,18 @@ def _build_severity_filter(values: tuple[str, ...]) -> GenomicFilter:
 
 
 def _severity_value_message(value: str) -> str:
-    """Explain both accepted ``Variant_severity`` vocabularies for a bad value."""
+    """Explain both accepted ``Variant_severity`` vocabularies for a bad value.
+
+    When ``value`` is a near miss, the message leads with the accepted
+    spelling so the fix is a one-word edit.
+    """
+    spelling = suggest_severity_spelling(value)
+    hint = f" The accepted spelling is {spelling!r}." if spelling else ""
     return (
-        f"{value!r} is not a valid variant severity. Pass either a backend "
-        f"impact value ({', '.join(known_impacts())}) — what "
-        "searchGenomicValues('Variant_severity') returns, sent on the "
-        "'Variant_severity' key as-is — or a severity bucket "
+        f"{value!r} is not a valid variant severity.{hint} Pass either a "
+        f"backend impact value ({', '.join(known_impacts())}), which is what "
+        "searchGenomicValues('Variant_severity') returns and is sent on the "
+        "'Variant_severity' key unchanged, or a severity bucket "
         f"({', '.join(known_severities())}), which is expanded into the "
         "matching 'Variant_consequence_calculated' values. A single filter "
         "cannot mix the two."

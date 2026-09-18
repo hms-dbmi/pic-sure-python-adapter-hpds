@@ -110,19 +110,43 @@ def known_impacts() -> tuple[str, ...]:
 
 
 def normalize_impact(value: str) -> str | None:
-    """Return the canonical impact label for ``value``, or ``None``.
+    """Return ``value`` as an impact label, or ``None`` if it is not one.
 
-    Matching ignores case and surrounding whitespace, so a value copied out
-    of a ``searchGenomicValues`` DataFrame is accepted either way.
+    Only surrounding whitespace is forgiven. The match is case-sensitive, so
+    a mistyped bucket label such as ``"High"`` is rejected instead of being
+    routed silently to the ``Variant_severity`` key.
 
     Args:
         value: A candidate ``Variant_severity`` value.
 
     Returns:
-        The upper-case impact label, or ``None`` if ``value`` is not one.
+        The impact label, or ``None`` if ``value`` is not one.
     """
-    candidate = value.strip().upper()
+    candidate = value.strip()
     return candidate if candidate in _IMPACT_VALUES else None
+
+
+_SEVERITY_ALIASES: dict[str, str] = {"MEDIUM": "MODERATE"}
+
+
+def suggest_severity_spelling(value: str) -> str | None:
+    """Return the accepted spelling that a near-miss severity value points at.
+
+    A value that matches an impact label or a severity bucket except for
+    case, or ``MEDIUM`` standing in for the impact ``MODERATE``, maps to the
+    spelling the builder accepts.
+
+    Args:
+        value: The rejected ``Variant_severity`` value.
+
+    Returns:
+        The accepted spelling, or ``None`` when nothing comes close.
+    """
+    folded = value.strip().casefold()
+    for accepted in (*_IMPACT_VALUES, *known_severities()):
+        if accepted.casefold() == folded:
+            return accepted
+    return _SEVERITY_ALIASES.get(folded.upper())
 
 
 def severity_consequences(severity: str) -> tuple[str, ...]:
