@@ -1,4 +1,44 @@
+"""Internal transport-layer exception hierarchy.
+
+Every class here that carries a server response body redacts it on the
+way in, through :func:`_redact_credentials`. A service re-raises the
+public error with ``raise translate_transport_error(...) from exc``, and
+Python renders the whole cause chain, so an unredacted transport message
+would print a server-echoed token one frame above the redacted public
+one. Redacting at construction keeps both the message and the stored
+``body`` clean wherever the exception is rendered.
+"""
+
 from __future__ import annotations
+
+import re
+
+_CREDENTIAL_PATTERNS = (
+    re.compile(r"[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{6,}"),
+    re.compile(r"(?i)\bbearer\s+\S+"),
+)
+_REDACTED = "<redacted token>"
+
+
+def _redact_credentials(text: str) -> str:
+    """Replace anything shaped like a credential in server-supplied text.
+
+    A PIC-SURE response can echo the request's bearer token back in an
+    error body. Keeping that body on an exception, or quoting it into a
+    message, would put the token into every traceback and log line that
+    renders the exception. Two shapes are replaced: a JWT (three
+    base64url segments) and a ``Bearer <value>`` header fragment.
+
+    Args:
+        text: Server-supplied text, typically a response body.
+
+    Returns:
+        The same text with every credential-shaped run replaced by
+        ``<redacted token>``.
+    """
+    for pattern in _CREDENTIAL_PATTERNS:
+        text = pattern.sub(_REDACTED, text)
+    return text
 
 
 class TransportError(Exception):
@@ -6,25 +46,35 @@ class TransportError(Exception):
 
 
 class TransportAuthenticationError(TransportError):
-    """HTTP 401 or 403 from the server."""
+    """HTTP 401 or 403 from the server.
+
+    The stored ``body`` is redacted, because a refusal is the response
+    most likely to echo the credential that was refused.
+    """
 
     def __init__(self, status_code: int, body: str) -> None:
         self.status_code = status_code
-        self.body = body
-        super().__init__(f"HTTP {status_code}: {body[:200]}")
+        self.body = _redact_credentials(body)
+        super().__init__(f"HTTP {status_code}: {self.body[:200]}")
 
 
 class TransportServerError(TransportError):
-    """HTTP 5xx from the server after retries."""
+    """HTTP 5xx from the server after retries.
+
+    The stored ``body`` is redacted.
+    """
 
     def __init__(self, status_code: int, body: str) -> None:
         self.status_code = status_code
-        self.body = body
-        super().__init__(f"HTTP {status_code}: {body[:200]}")
+        self.body = _redact_credentials(body)
+        super().__init__(f"HTTP {status_code}: {self.body[:200]}")
 
 
 class _TransportStructuredError(TransportError):
-    """Base class for server responses with a documented error payload."""
+    """Base class for server responses with a documented error payload.
+
+    The stored ``body`` and ``server_message`` are both redacted.
+    """
 
     def __init__(
         self,
@@ -34,10 +84,10 @@ class _TransportStructuredError(TransportError):
         server_message: str,
     ) -> None:
         self.status_code = status_code
-        self.body = body
+        self.body = _redact_credentials(body)
         self.error_type = error_type
-        self.server_message = server_message
-        super().__init__(f"HTTP {status_code} {error_type}: {server_message}")
+        self.server_message = _redact_credentials(server_message)
+        super().__init__(f"HTTP {status_code} {error_type}: {self.server_message}")
 
 
 class TransportConsentDeniedError(_TransportStructuredError):
@@ -65,25 +115,27 @@ class TransportValidationError(TransportError):
     """HTTP 400 / 422 / other 4xx from the server.
 
     The server rejected the request as malformed or otherwise invalid.
-    Callers should surface this as a user-facing validation error.
+    Callers should surface this as a user-facing validation error. The
+    stored ``body`` is redacted.
     """
 
     def __init__(self, status_code: int, body: str) -> None:
         self.status_code = status_code
-        self.body = body
-        super().__init__(f"HTTP {status_code}: {body[:200]}")
+        self.body = _redact_credentials(body)
+        super().__init__(f"HTTP {status_code}: {self.body[:200]}")
 
 
 class TransportNotFoundError(TransportError):
     """HTTP 404 from the server.
 
-    The requested path or resource does not exist on the server.
+    The requested path or resource does not exist on the server. The
+    stored ``body`` is redacted.
     """
 
     def __init__(self, status_code: int, body: str) -> None:
         self.status_code = status_code
-        self.body = body
-        super().__init__(f"HTTP {status_code}: {body[:200]}")
+        self.body = _redact_credentials(body)
+        super().__init__(f"HTTP {status_code}: {self.body[:200]}")
 
 
 class TransportRateLimitError(TransportError):
@@ -92,13 +144,14 @@ class TransportRateLimitError(TransportError):
     The server throttled the request.  ``retry_after`` captures the
     ``Retry-After`` header value when it is an integer number of
     seconds; HTTP-date values and missing headers leave it ``None``.
+    The stored ``body`` is redacted.
     """
 
     def __init__(
         self, status_code: int, body: str, retry_after: int | None = None
     ) -> None:
         self.status_code = status_code
-        self.body = body
+        self.body = _redact_credentials(body)
         self.retry_after = retry_after
         suffix = f" (retry after {retry_after}s)" if retry_after is not None else ""
-        super().__init__(f"HTTP {status_code}{suffix}: {body[:200]}")
+        super().__init__(f"HTTP {status_code}{suffix}: {self.body[:200]}")

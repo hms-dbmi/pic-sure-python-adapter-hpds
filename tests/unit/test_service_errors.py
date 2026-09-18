@@ -5,6 +5,8 @@ researcher reads when a call fails, so they are pinned exactly rather
 than matched loosely.
 """
 
+import traceback
+
 import pytest
 
 from picsure._services._errors import (
@@ -390,6 +392,48 @@ class TestNoTokenLeakage:
             )
         )
         assert "The server said: Query name must be ASCII." in message
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            TransportAuthenticationError(401, f"Token rejected: Bearer {TOKEN}"),
+            TransportValidationError(400, f"bad request {TOKEN}"),
+            TransportNotFoundError(404, f"no route for {TOKEN}"),
+            TransportRateLimitError(429, f"slow down {TOKEN}", retry_after=5),
+            TransportServerError(500, f"boom {TOKEN}"),
+            TransportConsentDeniedError(
+                403, f'{{"m":"{TOKEN}"}}', "consent_denied", f"denied for {TOKEN}"
+            ),
+            TransportConsentLookupError(
+                502, f'{{"m":"{TOKEN}"}}', "consent_lookup_failed", f"failed {TOKEN}"
+            ),
+        ],
+    )
+    def test_the_transport_error_itself_carries_no_token(self, exc):
+        assert self.TOKEN not in str(exc)
+        assert self.TOKEN not in exc.body
+        assert "<redacted token>" in exc.body
+
+    def test_a_chained_traceback_carries_no_token(self):
+        """The cause frame is rendered too, so it must be clean as well."""
+        transport = TransportAuthenticationError(
+            401, f'{{"message":"Token rejected: Bearer {self.TOKEN}"}}'
+        )
+        rendered = ""
+        try:
+            try:
+                raise transport
+            except TransportAuthenticationError as exc:
+                raise translate_transport_error(
+                    exc, operation="the connect-time credential check"
+                ) from exc
+        except PicSureError:
+            rendered = traceback.format_exc()
+
+        assert "<redacted token>" in rendered
+        assert self.TOKEN not in rendered
+        for segment in self.TOKEN.split("."):
+            assert segment not in rendered
 
 
 class TestTranslatorReturnsPublicErrors:
