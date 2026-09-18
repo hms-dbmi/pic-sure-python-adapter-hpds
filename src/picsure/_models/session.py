@@ -150,20 +150,38 @@ class Session:
         *,
         facets: FacetSet | None = None,
         include_values: bool = True,
+        page: int | None = None,
+        page_size: int | None = None,
     ) -> pd.DataFrame:
         """Search the PIC-SURE data dictionary.
+
+        Omitting ``page`` collects every matching concept by walking the
+        server's pages in ``page_size`` chunks. Passing ``page`` returns
+        that one zero-based page and nothing else. Either way the
+        returned DataFrame's ``attrs`` carries ``total_elements``,
+        ``has_more``, ``page``, ``page_size`` and ``pages_fetched``.
 
         Args:
             term: Search term. Empty string returns all variables.
             facets: Optional FacetSet to narrow results by category.
             include_values: If False, omit variable values from results.
+            page: Zero-based page to return. ``None`` (the default)
+                collects every page.
+            page_size: Rows per HTTP request. Defaults to 500.
 
         Returns:
             DataFrame of matching data dictionary entries.
 
+        Raises:
+            PicSureValidationError: If ``page`` or ``page_size`` is out of
+                range, or if an unpaged search matches more concepts than
+                one call may collect.
+
         Example:
             >>> df = session.searchDictionary("blood pressure")
             >>> df_filtered = session.searchDictionary("sex", facets=my_facets)
+            >>> first = session.searchDictionary("sex", page=0, page_size=100)
+            >>> first.attrs["has_more"]
         """
         from picsure._services.search import searchDictionary as _searchDictionary
 
@@ -173,6 +191,8 @@ class Session:
             facets=facets,
             include_values=include_values,
             consents=self._consents,
+            page=page,
+            page_size=page_size,
         )
 
     @timed("session.facets")
