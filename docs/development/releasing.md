@@ -26,11 +26,17 @@ prefixed with `_` (the `_models/`, `_services/`, `_transport/`, and
 
 There is no version field to read or edit. `pyproject.toml` declares
 `dynamic = ["version"]` with `[tool.hatch.version] source = "vcs"`, so
-`hatch-vcs` derives the version from the git tag at build time — the
-tag *is* the version. Between tags it derives a dev version from the
-commit distance. This is why every workflow checks out with
-`fetch-depth: 0`: a shallow clone has no tags and the build cannot
-name itself.
+`hatch-vcs` derives the version from the git tag at build time. The
+tag is the version. Between tags it derives a dev version from the
+commit distance (see Post-release).
+
+Every workflow checks out with `fetch-depth: 0` because a shallow
+clone does not fail the build, it mislabels it. With no tag in reach,
+`hatch-vcs` warns and falls back to `0.1.devN+g<sha>`, and `uv build`
+succeeds with a `picsure-0.1.dev1+g<sha>` wheel that a publish job
+would upload. Any checkout that builds the package needs full history
+and tags: `fetch-depth: 0` in CI, and `git fetch --tags --unshallow`
+on a local clone that was made shallow.
 
 ## Pre-release checklist
 
