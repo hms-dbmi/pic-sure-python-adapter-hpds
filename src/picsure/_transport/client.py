@@ -46,7 +46,7 @@ from picsure._transport.errors import (
     TransportValidationError,
 )
 from picsure._transport.secret import SecretToken, as_secret_token
-from picsure.errors import PicSureQueryError, PicSureValidationError
+from picsure.errors import PicSureQueryError, PicSureTLSError, PicSureValidationError
 
 if TYPE_CHECKING:
     from picsure._dev.config import DevConfig
@@ -84,6 +84,7 @@ def _resolve_verify(verify: bool | str | None) -> bool | ssl.SSLContext:
 
     Raises:
         PicSureValidationError: If a CA-bundle path does not exist.
+        PicSureTLSError: If it exists but cannot be loaded as a CA bundle.
     """
     if isinstance(verify, str):
         return _ca_bundle_context(verify, source=f"verify={verify!r}")
@@ -109,9 +110,9 @@ def _ca_bundle_context(path: str, *, source: str) -> ssl.SSLContext:
 
     Raises:
         PicSureValidationError: If the path does not exist.
-        ssl.SSLError: If it exists but holds no certificate OpenSSL can
-            read, which is the same failure httpx used to raise when it
-            loaded the path itself.
+        PicSureTLSError: If the path exists but OpenSSL cannot load a
+            certificate from it, because it is not PEM, is empty, or
+            cannot be read.
     """
     if not os.path.exists(path):
         raise PicSureValidationError(
@@ -121,9 +122,18 @@ def _ca_bundle_context(path: str, *, source: str) -> ssl.SSLContext:
             f"verify=True to use the system trust store, or verify=False to "
             f"skip verification on a self-signed deployment."
         )
-    if os.path.isdir(path):
-        return ssl.create_default_context(capath=path)
-    return ssl.create_default_context(cafile=path)
+    try:
+        if os.path.isdir(path):
+            return ssl.create_default_context(capath=path)
+        return ssl.create_default_context(cafile=path)
+    except (ssl.SSLError, OSError) as exc:
+        raise PicSureTLSError(
+            f"The CA bundle {path!r} could not be loaded, so TLS verification "
+            f"cannot be configured (from {source}): {exc}. Point it at a PEM "
+            f"file (or an OpenSSL CA directory) that this machine can read, "
+            f"pass verify=True to use the system trust store, or verify=False "
+            f"to skip verification on a self-signed deployment."
+        ) from exc
 
 
 # Transport failures where the request provably never reached the server --

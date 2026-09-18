@@ -32,7 +32,13 @@ from picsure._transport.errors import (
     TransportTLSError,
     TransportValidationError,
 )
-from picsure.errors import PicSureError, PicSureQueryError, PicSureValidationError
+from picsure.errors import (
+    PicSureConnectionError,
+    PicSureError,
+    PicSureQueryError,
+    PicSureTLSError,
+    PicSureValidationError,
+)
 
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token-abc123"
@@ -1039,7 +1045,7 @@ class TestVerifyCaBundlePath:
 
 
 class TestVerifyMissingCaBundle:
-    """RL-19: a bad CA path must name itself, not raise a bare OS error."""
+    """A bad CA path must name itself, not raise a bare OS error."""
 
     def test_missing_path_raises_the_package_error(self, tmp_path):
         missing = tmp_path / "nope" / "ca.pem"
@@ -1069,6 +1075,39 @@ class TestVerifyMissingCaBundle:
         message = str(exc_info.value)
         assert "verify=True" in message
         assert "verify=False" in message
+
+
+class TestVerifyUnreadableCaBundle:
+    """A CA file that exists but cannot be loaded is a TLS configuration error."""
+
+    def test_a_non_pem_file_raises_the_tls_error_naming_the_path(self, tmp_path):
+        bad = tmp_path / "ca.pem"
+        bad.write_bytes(b"this is not a certificate")
+        with pytest.raises(PicSureTLSError) as exc_info:
+            PicSureClient(base_url=BASE_URL, verify=str(bad))
+        message = str(exc_info.value)
+        assert str(bad) in message
+        assert "verify" in message
+
+    def test_an_empty_file_raises_the_tls_error_not_a_bare_ssl_error(self, tmp_path):
+        empty = tmp_path / "ca.pem"
+        empty.write_bytes(b"")
+        with pytest.raises(PicSureTLSError):
+            PicSureClient(base_url=BASE_URL, verify=str(empty))
+
+    def test_an_unreadable_env_path_names_the_env_var(self, monkeypatch, tmp_path):
+        bad = tmp_path / "ca.pem"
+        bad.write_bytes(b"garbage")
+        monkeypatch.setenv("PICSURE_SSL_VERIFY", str(bad))
+        with pytest.raises(PicSureTLSError) as exc_info:
+            PicSureClient(base_url=BASE_URL)
+        assert "PICSURE_SSL_VERIFY" in str(exc_info.value)
+
+    def test_the_tls_error_is_a_connection_error(self, tmp_path):
+        bad = tmp_path / "ca.pem"
+        bad.write_bytes(b"garbage")
+        with pytest.raises(PicSureConnectionError):
+            PicSureClient(base_url=BASE_URL, verify=str(bad))
 
 
 class TestVerifyRejectedCertificate:
