@@ -30,7 +30,11 @@ from picsure._models.session import Session
 from picsure._services._errors import translate_transport_error
 from picsure._services.consents import fetch_consents
 from picsure._transport.client import VALIDATION_TIMEOUT_SECONDS, PicSureClient
-from picsure._transport.errors import TransportConnectionError, TransportError
+from picsure._transport.errors import (
+    TransportConnectionError,
+    TransportError,
+    TransportNotFoundError,
+)
 from picsure._transport.platforms import Platform, resolve_platform
 from picsure._transport.secret import SecretToken, as_secret_token
 from picsure.errors import (
@@ -144,9 +148,10 @@ def connect(
             already expired (checked locally, before any request).
         PicSureAuthError: If the server refuses the token (HTTP 401/403).
         PicSureTLSError: If the server's certificate cannot be verified.
-        PicSureConnectionError: If the server cannot be reached, or
-            answers the validation request with something that is not a
-            PIC-SURE user record.
+        PicSureConnectionError: If the server cannot be reached, answers
+            the validation request with something that is not a PIC-SURE
+            user record, or answers it with HTTP 404, which means the URL
+            is not a PIC-SURE deployment root.
 
     Example:
         >>> import picsure
@@ -387,33 +392,53 @@ def _validate_connection(client: PicSureClient, info: PlatformInfo) -> str | Non
         PicSureError: Translated from the transport failure: a rejected
             token, an unverifiable certificate, an unreachable host.
         PicSureConnectionError: If the server answers ``200`` with
-            something that is not a PIC-SURE user record.
+            something that is not a PIC-SURE user record, or answers
+            ``404`` to a request that carried a token.
     """
     try:
         payload = client.get_json(_VALIDATION_PATH, timeout=VALIDATION_TIMEOUT_SECONDS)
     except TransportConnectionError as exc:
         raise translate_transport_error(exc, operation=_VALIDATION_OPERATION) from exc
+    except TransportNotFoundError as exc:
+        if not info.requires_auth:
+            return None
+        raise PicSureConnectionError(
+            _not_picsure_message(info.url, answer=f"HTTP {exc.status_code}")
+        ) from exc
     except TransportError as exc:
         if not info.requires_auth:
             return None
         raise translate_transport_error(exc, operation=_VALIDATION_OPERATION) from exc
     except ValueError as exc:
-        raise PicSureConnectionError(_not_picsure_message(info.url)) from exc
+        raise PicSureConnectionError(
+            _not_picsure_message(info.url, answer=_NOT_A_USER_RECORD)
+        ) from exc
 
     if not isinstance(payload, dict) or not any(
         field in payload for field in _PSAMA_USER_FIELDS
     ):
-        raise PicSureConnectionError(_not_picsure_message(info.url))
+        raise PicSureConnectionError(
+            _not_picsure_message(info.url, answer=_NOT_A_USER_RECORD)
+        )
 
     email = payload.get("email")
     return email.strip() if isinstance(email, str) and email.strip() else None
 
 
-def _not_picsure_message(url: str) -> str:
-    """Explain a 200 that is not a PIC-SURE user record."""
+_NOT_A_USER_RECORD = "HTTP 200, but the response is not a PIC-SURE user record"
+
+
+def _not_picsure_message(url: str, *, answer: str) -> str:
+    """Explain an answer to the credential check that no PIC-SURE root gives.
+
+    Args:
+        url: The deployment URL the caller connected to.
+        answer: What came back, such as ``"HTTP 404"`` or
+            :data:`_NOT_A_USER_RECORD`.
+    """
     return (
-        f"{url} answered {_VALIDATION_PATH} with HTTP 200, but the response is "
-        f"not a PIC-SURE user record — this URL may not be a PIC-SURE endpoint. "
+        f"{url} answered {_VALIDATION_PATH} with {answer}, so this URL may not "
+        f"be a PIC-SURE endpoint. "
         f"Check that it is the deployment root (e.g. "
         f"https://picsure.biodatacatalyst.nhlbi.nih.gov) rather than a path "
         f"inside the API or an unrelated host, or pass a Platform member "

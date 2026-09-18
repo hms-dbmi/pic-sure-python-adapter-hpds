@@ -1103,3 +1103,41 @@ class TestConsentProbeFailureIsReported:
 
         assert session.consents == []
         assert "could not be checked" in capsys.readouterr().err
+
+
+class TestValidationNotFound:
+    @respx.mock
+    def test_404_with_a_token_is_a_connection_error_naming_the_url(self):
+        from picsure.errors import PicSureConnectionError, PicSureQueryError
+
+        _mock_validation(status=404, payload={"errorType": "not_found"})
+
+        with pytest.raises(PicSureConnectionError) as exc_info:
+            connect(platform=BASE_URL, token=TOKEN)
+
+        assert not isinstance(exc_info.value, PicSureQueryError)
+        message = str(exc_info.value)
+        assert BASE_URL in message
+        assert "404" in message
+
+
+class TestUserFacingMessagesHaveNoEmDashes:
+    @respx.mock
+    def test_unscoped_warning(self, capsys):
+        _mock_validation()
+        _mock_consents(payload={"consents": {}})
+
+        connect(platform=BASE_URL, token=TOKEN)
+
+        assert "—" not in capsys.readouterr().err
+
+    @respx.mock
+    def test_not_picsure_error(self):
+        from picsure.errors import PicSureConnectionError
+
+        _mock_validation(payload={"unexpected": True})
+
+        with pytest.raises(PicSureConnectionError) as exc_info:
+            connect(platform=BASE_URL, token=TOKEN)
+
+        assert "—" not in str(exc_info.value)
