@@ -1,3 +1,17 @@
+"""Redaction of request bodies and headers for dev-mode event logging.
+
+``_SENSITIVE_RESULT_TYPES`` names the result types whose request body asks
+the backend for per-patient rows: the two dataframe types, the PFB export,
+and the VCF excerpt, whose response carries one genotype column per
+patient. A body asking for any of them is never serialized into a
+dev-mode event; only its size is recorded.
+
+The aggregate variant result types (``AGGREGATE_VCF_EXCERPT``,
+``VARIANT_COUNT_FOR_QUERY`` and ``VARIANT_LIST_FOR_QUERY``) are left off
+the list on purpose. Their output is variant-level, with no patient row
+in it, so the request body is as loggable as a count.
+"""
+
 from __future__ import annotations
 
 import json
@@ -7,6 +21,7 @@ _SENSITIVE_RESULT_TYPES = {
     "DATAFRAME",
     "DATAFRAME_TIMESERIES",
     "DATAFRAME_PFB",
+    "VCF_EXCERPT",
 }
 
 # PSAMA's /user/me returns the user's JWT in a `token` field alongside

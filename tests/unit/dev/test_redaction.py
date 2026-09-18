@@ -1,4 +1,8 @@
-from picsure._dev.redaction import redact_for_log, redact_headers
+from picsure._dev.redaction import (
+    body_is_sensitive,
+    redact_for_log,
+    redact_headers,
+)
 
 
 def test_redact_headers_masks_authorization():
@@ -103,3 +107,34 @@ def test_redact_info_resources_is_preserved():
     out = redact_for_log("/picsure/info/resources", "GET", body)
     assert out is not None
     assert "hpds" in out
+
+
+def test_redact_vcf_excerpt_query_returns_none():
+    """A VCF excerpt carries one genotype column per patient."""
+    body = {"query": {"expectedResultType": "VCF_EXCERPT", "fields": []}}
+    assert redact_for_log("/picsure/hpds/auth/v3/query/sync", "POST", body) is None
+    assert body_is_sensitive("/picsure/hpds/auth/v3/query/sync", "POST", body)
+
+
+def test_redact_aggregate_vcf_excerpt_query_is_preserved():
+    """Aggregate output is variant-level, with no patient row in it."""
+    body = {"query": {"expectedResultType": "AGGREGATE_VCF_EXCERPT", "fields": []}}
+    out = redact_for_log("/picsure/hpds/auth/v3/query/sync", "POST", body)
+    assert out is not None
+    assert "AGGREGATE_VCF_EXCERPT" in out
+    assert not body_is_sensitive("/picsure/hpds/auth/v3/query/sync", "POST", body)
+
+
+def test_redact_variant_count_query_is_preserved():
+    body = {"query": {"expectedResultType": "VARIANT_COUNT_FOR_QUERY", "fields": []}}
+    out = redact_for_log("/picsure/hpds/auth/v3/query/sync", "POST", body)
+    assert out is not None
+    assert "VARIANT_COUNT_FOR_QUERY" in out
+    assert not body_is_sensitive("/picsure/hpds/auth/v3/query/sync", "POST", body)
+
+
+def test_redact_variant_list_query_is_preserved():
+    body = {"query": {"expectedResultType": "VARIANT_LIST_FOR_QUERY", "fields": []}}
+    out = redact_for_log("/picsure/hpds/auth/v3/query/sync", "POST", body)
+    assert out is not None
+    assert "VARIANT_LIST_FOR_QUERY" in out
