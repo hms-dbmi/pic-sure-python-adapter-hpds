@@ -6,6 +6,7 @@ from picsure._dev.config import DevConfig
 from picsure._transport.client import PicSureClient
 from picsure._transport.errors import (
     TransportConnectionError,
+    TransportError,
     TransportServerError,
 )
 from picsure.errors import PicSureServerError
@@ -292,3 +293,109 @@ class TestStreamedDownloadEvents:
         self._run("participant", b"patient_id,age\nP1,42\n", cfg)
 
         assert cfg.buffer.snapshot() == []
+
+
+class _FailsMidStream(httpx.SyncByteStream):
+    """Response stream that yields one chunk, then dies like a reset."""
+
+    def __iter__(self):
+        yield b"first-chunk"
+        raise httpx.ReadError("Connection reset by peer")
+
+
+class TestStreamedFailureEvents:
+    """A streamed download is accounted for like a buffered request.
+
+    The buffered path records a 4xx/5xx as an http event carrying the
+    status and then an error event, records every retried attempt, and
+    never records a success it did not finish.  The streaming path must
+    match, or dev-mode statistics silently diverge for the largest
+    downloads.
+    """
+
+    URL = f"{BASE_URL}/download"
+
+    @staticmethod
+    def _client(cfg: DevConfig) -> PicSureClient:
+        return PicSureClient(base_url=BASE_URL, token=TOKEN, dev_config=cfg)
+
+    @respx.mock
+    @pytest.mark.parametrize(
+        ("status", "error_name"),
+        [(404, "TransportNotFoundError"), (500, "TransportServerError")],
+    )
+    def test_a_status_failure_emits_http_then_error(self, status, error_name, tmp_path):
+        respx.post(self.URL).mock(return_value=httpx.Response(status, text="boom"))
+        cfg = DevConfig(enabled=True, max_events=10)
+
+        with pytest.raises(TransportError):
+            self._client(cfg).post_raw_to_file("/download", tmp_path / "out")
+
+        events = cfg.buffer.snapshot()
+        assert [e.kind for e in events] == ["http", "error"]
+        assert events[0].status == status
+        assert events[0].bytes_received == len(b"boom")
+        assert events[1].error == error_name
+
+    @respx.mock
+    def test_a_retried_attempt_is_recorded_and_the_download_carries_the_retry(
+        self, tmp_path
+    ):
+        respx.post(self.URL).mock(
+            side_effect=[
+                httpx.ConnectError("refused"),
+                httpx.Response(200, content=b"col\n1\n"),
+            ]
+        )
+        cfg = DevConfig(enabled=True, max_events=10)
+
+        self._client(cfg).post_raw_to_file("/download", tmp_path / "out")
+
+        events = cfg.buffer.snapshot()
+        assert [(e.kind, e.retry) for e in events] == [("error", 0), ("http", 1)]
+        assert events[0].error == "ConnectError"
+        assert events[1].status == 200
+        assert events[1].bytes_received == len(b"col\n1\n")
+
+    @respx.mock
+    def test_a_mid_stream_failure_emits_one_error_event(self, tmp_path):
+        respx.post(self.URL).mock(
+            return_value=httpx.Response(200, stream=_FailsMidStream())
+        )
+        cfg = DevConfig(enabled=True, max_events=10)
+
+        with pytest.raises(TransportConnectionError):
+            self._client(cfg).post_raw_to_file("/download", tmp_path / "out")
+
+        events = cfg.buffer.snapshot()
+        assert [e.kind for e in events] == ["error"]
+        assert events[0].error == "TransportConnectionError"
+
+    @respx.mock
+    def test_a_failed_rename_emits_an_error_and_no_success(self, tmp_path):
+        respx.post(self.URL).mock(return_value=httpx.Response(200, content=b"data"))
+        target = tmp_path / "out"
+        target.mkdir()
+        (target / "occupant").write_text("x")
+        cfg = DevConfig(enabled=True, max_events=10)
+
+        with pytest.raises(OSError):
+            self._client(cfg).post_raw_to_file("/download", target)
+
+        events = cfg.buffer.snapshot()
+        assert [e.kind for e in events] == ["error"]
+        assert events[0].error in {"OSError", "IsADirectoryError", "PermissionError"}
+
+    @respx.mock
+    def test_a_completed_download_emits_one_http_event_after_the_file_lands(
+        self, tmp_path
+    ):
+        respx.post(self.URL).mock(return_value=httpx.Response(200, content=b"data"))
+        cfg = DevConfig(enabled=True, max_events=10)
+        target = tmp_path / "out"
+
+        self._client(cfg).post_raw_to_file("/download", target)
+
+        events = cfg.buffer.snapshot()
+        assert [(e.kind, e.status, e.retry) for e in events] == [("http", 200, 0)]
+        assert target.read_bytes() == b"data"
