@@ -149,12 +149,12 @@ class TestRunQueryCount:
     def test_empty_response_raises(self):
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
         client = _make_client()
-        with pytest.raises(PicSureQueryError, match="empty response"):
+        with pytest.raises(PicSureQueryError, match="empty body"):
             run_query(client, _simple_clause(), "count", backend="auth")
 
 
 class TestEmptyCountBodyDiagnostic:
-    """RL-14: an empty 200 body means the query probably never ran.
+    """An empty 200 body means the query probably never ran.
 
     Verified live: a filter whose shape does not match its concept's type
     (numeric min/max on a categorical concept, or categories on a continuous
@@ -235,12 +235,32 @@ class TestEmptyCountBodyDiagnostic:
         assert "\\a\\" in message
         assert "\\b\\" in message
 
-    def test_describe_filters_tolerates_an_unexpected_body(self):
-        from picsure._services.query_run import _describe_filters
+    @respx.mock
+    def test_message_without_filters_names_the_select_paths(self):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
+        query = Query(
+            phenotypicFilter=None, includeConcepts=("\\a\\",), genomicFilters=()
+        )
+        with pytest.raises(PicSureQueryError) as exc_info:
+            run_query(_make_client(), query, "count", backend="auth")
 
-        assert _describe_filters({}) == ""
-        assert _describe_filters({"query": "not-a-dict"}) == ""
-        assert _describe_filters({"query": {}}) == "The query carried no filters."
+        message = str(exc_info.value)
+        assert "answered HTTP 200 with an empty body" in message
+        assert "carried no filters, only the select paths '\\a\\'" in message
+        assert "each select path" in message
+        assert "min/max" not in message
+
+    def test_summarize_request_tolerates_an_unexpected_body(self):
+        from picsure._services.query_run import _summarize_request
+
+        assert _summarize_request({}) is None
+        assert _summarize_request({"query": "not-a-dict"}) is None
+        summary = _summarize_request({"query": {}})
+        assert summary is not None
+        assert not summary.has_filters
+        assert (
+            summary.describe() == "The request carried no filters and no select paths."
+        )
 
 
 class TestRunQueryParticipant:
@@ -1202,6 +1222,17 @@ class TestRunQueryVariantCountEndToEnd:
         assert result.raw == "42"
 
     @respx.mock
+    def test_empty_body_names_the_request(self):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
+        with pytest.raises(PicSureQueryError) as exc_info:
+            run_query(_make_client(), _genomic_query(), "variant_count", backend="auth")
+
+        message = str(exc_info.value)
+        assert "answered HTTP 200 with an empty body" in message
+        assert "genomic filter keys 'Gene_with_variant'" in message
+        assert "not available on this PIC-SURE deployment" in message
+
+    @respx.mock
     def test_no_variant_filters_message_raises_instead_of_reporting_zero(self):
         """Live shape for a variant count with no genomic filter.
 
@@ -1395,8 +1426,8 @@ class TestVariantParserDefensiveBranches:
     def test_empty_count_message_without_context(self):
         from picsure._services.query_run import _empty_count_message
 
-        message = _empty_count_message("")
-        assert "empty response" in message
+        message = _empty_count_message(None)
+        assert "empty body" in message
         assert "  " not in message
 
     def test_no_variant_filters_message_without_context(self):
