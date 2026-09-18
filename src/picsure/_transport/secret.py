@@ -2,15 +2,15 @@
 
 Python renders the arguments and, under ``--showlocals`` or
 ``traceback.print_exc`` with a verbose formatter, the locals of *every*
-frame on a traceback -- not only the frame that raised.  A bearer token
+frame on a traceback, not only the frame that raised.  A bearer token
 held as a plain :class:`str` therefore reaches the notebook output of any
 exception that passes through a function holding it, whether or not that
 function had anything to do with the failure.
 
 :class:`SecretToken` closes that path: it renders as a fixed placeholder
 in every string context, and the value comes back only from
-:meth:`SecretToken.reveal`.  Wrapping is not on its own sufficient --
-a function that takes a plain ``str`` and wraps it still has the raw
+:meth:`SecretToken.reveal`.  Wrapping is not on its own sufficient.
+A function that takes a plain ``str`` and wraps it still has the raw
 string bound to its own parameter, which a traceback printer shows.  The
 callers here pair the wrap with ``del`` of the original binding; see
 :func:`picsure._services.connect.connect`.
@@ -30,9 +30,9 @@ class SecretToken:
     working in f-strings, ``%`` formatting and string concatenation,
     which is exactly the silent exposure this type exists to remove; a
     missed call site must fail loudly instead.  For the same reason there
-    is no ``__eq__`` against ``str`` -- compare
+    is no ``__eq__`` against ``str``.  Compare
     ``hmac.compare_digest(a.reveal(), b.reveal())`` where a token
-    comparison is genuinely needed.
+    comparison is needed.
 
     The value is stripped once, here, so :meth:`reveal` is always
     wire-ready and callers need no ``.strip()`` of their own.
@@ -60,7 +60,7 @@ class SecretToken:
         The single accessor, named so that it is obvious in review where
         a credential escapes the wrapper.  Do not bind the result to a
         local that a live frame could still hold when an exception is
-        rendered -- build it straight into the value being handed on.
+        rendered.  Build it straight into the value being handed on.
         """
         return self._value
 
@@ -84,8 +84,8 @@ class SecretToken:
         """Whether a non-empty token was supplied.
 
         Mirrors the truthiness of the stripped string, so the callers
-        that switch on "is there a token at all" -- the ``request-source``
-        header, the missing-token check in ``connect()`` -- keep reading
+        that switch on "is there a token at all", the ``request-source``
+        header and the missing-token check in ``connect()``, keep reading
         the way they did when this was a ``str``.
         """
         return bool(self._value)
@@ -119,7 +119,7 @@ class SecretToken:
     def __copy__(self) -> SecretToken:
         """Return self.
 
-        Immutable, so sharing is safe -- and returning the same wrapper
+        Immutable, so sharing is safe, and returning the same wrapper
         guarantees a copy can never decay into a plain ``str``.
         """
         return self
@@ -145,8 +145,8 @@ def as_secret_token(value: str | SecretToken) -> SecretToken:
     """Return ``value`` as a :class:`SecretToken`, wrapping only if needed.
 
     Idempotent, so a public entry point can normalise whatever it was
-    handed -- a ``str`` from a notebook or from the R adapter through
-    reticulate, or an already-wrapped token from an internal caller --
-    as its first statement.
+    handed, a ``str`` from a notebook or from the R adapter through
+    reticulate, or an already-wrapped token from an internal caller, as
+    its first statement.
     """
     return value if isinstance(value, SecretToken) else SecretToken(value)

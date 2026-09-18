@@ -3,15 +3,15 @@
 Three causes produce three distinguishable families, so a caller can tell
 them apart with an ``except`` clause alone:
 
-* :class:`PicSureAuthError` — the server answered and refused you.
+* :class:`PicSureAuthError`: the server answered and refused you.
   :class:`PicSureAuthenticationError` is a problem with the token itself;
   :class:`PicSureAuthorizationError` (and its
   :class:`PicSureConsentDeniedError` refinement) means the token is fine
   but the account may not see what was asked for.
-* :class:`PicSureConnectionError` — the adapter got no usable response.
+* :class:`PicSureConnectionError`: the adapter got no usable response.
   :class:`PicSureTLSError` and :class:`PicSureServerError` name the two
   cases worth handling separately.
-* :class:`PicSureQueryError` / :class:`PicSureValidationError` — the
+* :class:`PicSureQueryError` / :class:`PicSureValidationError`: the
   request or the response was wrong, independent of who is asking.
 """
 
@@ -33,7 +33,7 @@ class PicSureAuthError(PicSureError):
 
 
 class PicSureAuthenticationError(PicSureAuthError):
-    """HTTP 401 — the token is missing, malformed, expired, or rejected.
+    """HTTP 401: the token is missing, malformed, expired, or rejected.
 
     Nothing about the account's permissions is implied: the server never
     got far enough to check them.  A fresh token usually resolves it.
@@ -41,7 +41,7 @@ class PicSureAuthenticationError(PicSureAuthError):
 
 
 class PicSureAuthorizationError(PicSureAuthError):
-    """HTTP 403 — the token is valid, but the account is not permitted.
+    """HTTP 403: the token is valid, but the account is not permitted.
 
     Re-issuing the token will not help; the account needs the privilege
     (or the study approval) that the request requires.
@@ -49,7 +49,7 @@ class PicSureAuthorizationError(PicSureAuthError):
 
 
 class PicSureConsentDeniedError(PicSureAuthorizationError):
-    """HTTP 403 — approved consents do not cover the requested data.
+    """HTTP 403: approved consents do not cover the requested data.
 
     The specialization of :class:`PicSureAuthorizationError` the backend
     signals with ``errorType: consent_denied``.  ``status_code``,
@@ -106,7 +106,7 @@ class PicSureConsentLookupError(PicSureServerError):
 
     The backend raises this as HTTP 502 when its own consent lookup
     against PSAMA fails.  It is neither a rejected token nor a denied
-    consent — the server never established what the caller is allowed to
+    consent.  The server never established what the caller is allowed to
     see.  ``status_code``, ``body``, ``error_type``, and
     ``server_message`` carry the server's own account of the failure.
     """

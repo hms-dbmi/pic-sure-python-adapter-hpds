@@ -269,6 +269,10 @@ def pytest_terminal_summary(
     pass. This prints an explicit section next to the pass/fail line, plus the
     unset environment variables responsible, so a configuration gap is visible
     without reading per-test skip marks.
+
+    When the whole suite skipped for one reason, that reason is printed once instead of
+    once per node id, and the optional-variable notes are dropped, since they cannot
+    matter while nothing can connect.
     """
     skipped = [
         report
@@ -294,10 +298,6 @@ def pytest_terminal_summary(
 
     unconfigured = _unconfigured_reason()
     if unconfigured is not None:
-        # The whole suite skipped for one reason, so the per-test listing
-        # below would repeat that reason once per node id. Say it once and
-        # drop the optional-variable notes, which cannot matter while
-        # nothing can connect.
         terminalreporter.write_line(
             f"{len(skipped)} integration test(s) skipped: {unconfigured}"
         )

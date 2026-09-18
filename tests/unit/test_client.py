@@ -1,3 +1,12 @@
+"""Unit tests for the HTTP transport client.
+
+``_TEST_CA_PEM`` is a self-signed certificate that exists only to be
+loaded as a CA bundle. Its common name, ``_TEST_CA_NAME``, is what proves
+a path reached httpx as a trust store rather than being coerced to a
+boolean: ``verify=True`` loads the system store, which does not contain
+it.
+"""
+
 import ssl
 import warnings
 
@@ -241,8 +250,9 @@ class TestJsonBodyShapes:
 
     @respx.mock
     def test_json_null_top_level_raises_value_error(self):
-        # A literal `null` body decodes fine, so it reaches the shape check
-        # rather than failing in the decoder like an empty body does.
+        """A literal null body decodes, so it reaches the shape check instead of failing
+        in the decoder the way an empty body does.
+        """
         respx.get(f"{BASE_URL}/odd").mock(
             return_value=httpx.Response(
                 200,
@@ -844,10 +854,6 @@ class TestRefusalStatusWinsOverBody:
         assert exc_info.value.server_message == "no consent"
 
 
-# A self-signed certificate that exists only to be loaded as a CA bundle.
-# Its common name is what proves a path reached httpx as a trust store
-# rather than being coerced to a boolean: `verify=True` loads the system
-# store, which does not contain this.
 _TEST_CA_NAME = "picsure-adapter-test-ca"
 _TEST_CA_PEM = """-----BEGIN CERTIFICATE-----
 MIIDJzCCAg+gAwIBAgIUEzjJ6dTRDoWD7AU7QRhwu+5cLZwwDQYJKoZIhvcNAQEL
@@ -906,7 +912,7 @@ def ca_bundle(tmp_path):
 
 
 class TestVerifyDefaults:
-    """PYR-3: the one setting where a silent regression is a security bug."""
+    """The one setting where a silent regression is a security bug."""
 
     def test_defaults_to_verifying(self):
         client = PicSureClient(base_url=BASE_URL, token="t")
@@ -921,10 +927,11 @@ class TestVerifyDefaults:
         assert explicit.verify_mode is ssl.CERT_REQUIRED
 
     def test_verify_false_turns_verification_off(self):
+        """check_hostname has to be off too: a context that still checks the hostname
+        would fail before it ever skipped the chain.
+        """
         context = _ssl_context(PicSureClient(base_url=BASE_URL, verify=False))
         assert context.verify_mode is ssl.CERT_NONE
-        # check_hostname has to go too: a context that still checks the
-        # hostname would fail before it ever skipped the chain.
         assert context.check_hostname is False
 
     def test_verify_true_keeps_verification_on(self):
@@ -933,7 +940,7 @@ class TestVerifyDefaults:
 
 
 class TestVerifyEnvironmentFallback:
-    """PYR-3: PICSURE_SSL_VERIFY is the documented fallback."""
+    """PICSURE_SSL_VERIFY is the documented fallback."""
 
     @pytest.mark.parametrize("raw", ["false", "0", "no", "off", "FALSE", " False "])
     def test_falsey_env_matches_verify_false(self, monkeypatch, raw):
@@ -981,15 +988,15 @@ class TestVerifyEnvironmentFallback:
 
 
 class TestVerifyCaBundlePath:
-    """PYR-3: the case most likely to break silently."""
+    """The case most likely to break silently."""
 
     def test_path_is_forwarded_as_a_trust_store_not_a_boolean(self, ca_bundle):
+        """Coercing the path to True would load the system trust store, which holds many
+        CAs and not this one. Coercing it to False would leave no verification at all.
+        """
         client = PicSureClient(base_url=BASE_URL, verify=str(ca_bundle))
         context = _ssl_context(client)
 
-        # Coercing the path to True would load the system trust store,
-        # which holds many CAs and not this one; coercing it to False
-        # would leave no verification at all.
         assert _ca_common_names(context) == [_TEST_CA_NAME]
         assert context.verify_mode is ssl.CERT_REQUIRED
 
@@ -999,16 +1006,17 @@ class TestVerifyCaBundlePath:
         assert _ca_common_names(pinned) != _ca_common_names(system)
 
     def test_a_directory_is_accepted_as_a_ca_path(self, tmp_path):
-        # OpenSSL takes a hashed CA directory as well as a file, so the
-        # existence check must not insist on a regular file.
+        """OpenSSL takes a hashed CA directory as well as a file, so the existence check
+        must not insist on a regular file.
+        """
         client = PicSureClient(base_url=BASE_URL, verify=str(tmp_path))
         assert _ssl_context(client).verify_mode is ssl.CERT_REQUIRED
 
     def test_a_ca_path_is_loaded_without_a_deprecation_warning(self, ca_bundle):
-        # httpx 0.28 deprecates verify=<str>, so the path must be turned
-        # into an SSL context here.  The documented API still takes a
-        # path; only the plumbing changed.  Without this the adapter's
-        # documented verify="/path/to/ca.pem" breaks on a future httpx.
+        """httpx 0.28 deprecates verify=<str>, so the path must become an SSL context
+        here. The documented API still takes a path and only the plumbing changed;
+        without this, verify="/path/to/ca.pem" breaks on a future httpx.
+        """
         with warnings.catch_warnings():
             warnings.simplefilter("error", DeprecationWarning)
             client = PicSureClient(base_url=BASE_URL, verify=str(ca_bundle))
@@ -1064,7 +1072,7 @@ class TestVerifyMissingCaBundle:
 
 
 class TestVerifyRejectedCertificate:
-    """PYR-3: verification actually refusing a certificate.
+    """Verification refusing a certificate.
 
     respx replaces a side-effect exception's ``__cause__`` with its own
     wrapper, which destroys the chain ``_certificate_verification_failure``
@@ -1122,7 +1130,7 @@ class _CertRejectingTransport(httpx.BaseTransport):
 
 
 class TestClientTimeouts:
-    """PYR-4: ten minutes for data, seconds for the connect-time check."""
+    """Ten minutes for data, seconds for the connect-time check."""
 
     def test_defaults_to_the_data_deadline(self):
         client = PicSureClient(base_url=BASE_URL, token="t")
@@ -1155,12 +1163,12 @@ class TestClientTimeouts:
 
     @respx.mock
     def test_omitting_the_per_request_timeout_keeps_the_client_default(self):
+        """The deadline must not be None, which httpx reads as no deadline at all."""
         respx.get(f"{BASE_URL}/psama/user/me").mock(
             return_value=httpx.Response(200, json={})
         )
         client = PicSureClient(base_url=BASE_URL, token="t")
         client.get_json("/psama/user/me")
 
-        # Not None, which httpx reads as "no deadline at all".
         timeout = respx.calls[0].request.extensions["timeout"]
         assert timeout["read"] == DATA_TIMEOUT_SECONDS

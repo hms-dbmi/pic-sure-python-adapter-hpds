@@ -1,3 +1,23 @@
+"""HTTP transport for the PIC-SURE adapter.
+
+``RequestBody`` is a JSON request body. It is always an object, because
+no PIC-SURE route takes a bare array or scalar. ``JsonBody`` is a decoded
+response body, an object or an array. Most routes answer with an object,
+but ``/picsure/dictionary/facets`` and
+``/picsure/operations/dataset/named`` answer with a top-level array, so a
+general accessor cannot promise a ``dict``.
+
+Two request deadlines are kept separate. ``DATA_TIMEOUT_SECONDS`` is the
+per-request deadline for real work such as a count, a participant
+download, or an export poll. Thirty seconds was too tight, since a large
+dataset legitimately takes minutes to assemble server-side, so the default
+is ten minutes; the ``timeout`` argument of :class:`PicSureClient`
+overrides it. ``VALIDATION_TIMEOUT_SECONDS`` is the deadline for a single
+connect-time request that proves the deployment is reachable and the
+token is good. It stays short so a mistyped hostname that accepts TCP but
+never answers fails in seconds rather than waiting out the data deadline.
+"""
+
 from __future__ import annotations
 
 import json
@@ -31,31 +51,14 @@ from picsure.errors import PicSureQueryError, PicSureValidationError
 if TYPE_CHECKING:
     from picsure._dev.config import DevConfig
 
-# A JSON request body. Always an object: no PIC-SURE route takes a bare
-# array or scalar.
 RequestBody: TypeAlias = dict[str, Any]
 
-# A decoded JSON response body. Most routes answer with an object, but
-# ``/picsure/dictionary/facets`` and ``/picsure/operations/dataset/named``
-# both answer with a top-level array, so ``dict`` is not the return type of
-# a general JSON accessor.
 JsonObject: TypeAlias = dict[str, Any]
 JsonArray: TypeAlias = list[Any]
 JsonBody: TypeAlias = JsonObject | JsonArray
 
 _MAX_RETRIES = 1
 
-# Two deadlines, deliberately separate.
-#
-# DATA_TIMEOUT_SECONDS is the per-request deadline for real work: a count, a
-# participant download, an export poll.  30s was too tight -- a large dataset
-# legitimately takes minutes to assemble server-side -- so the default is ten
-# minutes.  Override it per session with ``picsure.connect(timeout=...)``.
-#
-# VALIDATION_TIMEOUT_SECONDS is the deadline for the single connect-time
-# request that proves the deployment is reachable and the token is good.  It
-# stays short on purpose: a mistyped hostname that accepts TCP but never
-# answers must fail in seconds, not sit on the ten-minute data deadline.
 DATA_TIMEOUT_SECONDS = 600.0
 VALIDATION_TIMEOUT_SECONDS = 15.0
 
@@ -100,8 +103,8 @@ def _resolve_verify(verify: bool | str | None) -> bool | ssl.SSLContext:
 def _ca_bundle_context(path: str, *, source: str) -> ssl.SSLContext:
     """Build an SSL context trusting the CA bundle at ``path``.
 
-    ``source`` names where the value came from -- the ``verify`` argument
-    or the env var -- so the reader knows which one to fix.  A directory
+    ``source`` names where the value came from, the ``verify`` argument
+    or the env var, so the reader knows which one to fix.  A directory
     is accepted: OpenSSL takes a hashed CA directory as well as a file.
 
     Raises:
@@ -269,7 +272,7 @@ def _decode_json(response: httpx.Response, path: str) -> JsonBody:
     """Decode a response body as a JSON object or array.
 
     ``httpx.Response.json`` is typed ``Any``, so a ``dict`` return
-    annotation on the accessors above was unenforced -- and wrong, since
+    annotation on the accessors above was unenforced, and wrong, since
     two PIC-SURE routes answer with a top-level array.  Narrowing here
     makes the union the accessors advertise a checked fact rather than a
     claim, and turns a scalar or ``null`` top level into a stated failure
@@ -336,7 +339,12 @@ class PicSureClient:
         parameter drops out of any rendered frame.  This matters here
         because ``_resolve_verify`` below raises on a CA-bundle path
         that does not exist, putting this frame on a traceback the user
-        sees.
+        sees.  For the same reason the ``Authorization`` header is built
+        into the mapping handed to httpx rather than added to the
+        ``headers`` local first: that local would be rendered by any
+        traceback showing this frame, whereas ``httpx.Headers`` redacts
+        ``authorization`` in its own repr, so the value is safe once it
+        is inside the client.
 
         Args:
             base_url: Deployment root the paths are resolved against.
@@ -369,12 +377,6 @@ class PicSureClient:
         if session_id:
             headers["X-Session-Id"] = session_id
         self._timeout = DATA_TIMEOUT_SECONDS if timeout is None else timeout
-        # The Authorization entry is built into the mapping handed to
-        # httpx rather than added to `headers` first: `headers` is a
-        # frame local, so a real Bearer value placed in it would be
-        # rendered by any traceback showing this frame.  httpx.Headers
-        # redacts `authorization` in its own repr, so the value is safe
-        # once it is inside the client.
         self._http = httpx.Client(
             base_url=base_url,
             headers=(
@@ -675,10 +677,10 @@ def _refusal_transport_error(status: int, body: str) -> TransportError:
 
     A ``consent_denied`` payload refines the refusal into
     :class:`TransportConsentDeniedError`, which keeps the server's own
-    ``errorType`` and message.  Every other 401 / 403 — including one
-    carrying ``consent_lookup_failed``, which the backend only ever emits
-    as a 502 — becomes a plain :class:`TransportAuthenticationError`, so
-    callers can rely on the status alone to place it.
+    ``errorType`` and message.  Every other 401 / 403 becomes a plain
+    :class:`TransportAuthenticationError`, including one carrying
+    ``consent_lookup_failed``, which the backend only ever emits as a
+    502, so callers can rely on the status alone to place it.
     """
     structured_error = _structured_transport_error(status, body)
     if isinstance(structured_error, TransportConsentDeniedError):

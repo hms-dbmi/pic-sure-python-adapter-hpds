@@ -40,7 +40,7 @@ OPERATION = "the dictionary search"
 
 
 class TestUnauthenticated:
-    """401 — the token itself is the problem."""
+    """401: the token itself is the problem."""
 
     def test_401_raises_authentication_error(self):
         result = translate_transport_error(
@@ -85,7 +85,7 @@ class TestUnauthenticated:
 
 
 class TestUnauthorized:
-    """403 — the token is fine, the permission is not."""
+    """403: the token is fine, the permission is not."""
 
     def test_403_raises_authorization_error(self):
         result = translate_transport_error(
@@ -133,7 +133,7 @@ class TestUnauthorized:
 
 
 class TestConsentDenied:
-    """403 + errorType consent_denied — a refinement of "not permitted"."""
+    """403 + errorType consent_denied: a refinement of "not permitted"."""
 
     def _translate(self):
         return translate_transport_error(
@@ -166,7 +166,7 @@ class TestConsentDenied:
 
 
 class TestConsentLookupFailed:
-    """502 + errorType consent_lookup_failed — a server-side fault."""
+    """502 + errorType consent_lookup_failed: a server-side fault."""
 
     def _translate(self):
         return translate_transport_error(
@@ -198,7 +198,7 @@ class TestConsentLookupFailed:
 
 
 class TestUnreachableServer:
-    """Nothing came back — the third cause."""
+    """Nothing came back: the third cause."""
 
     def test_connection_failure_raises_connection_error(self):
         result = translate_transport_error(

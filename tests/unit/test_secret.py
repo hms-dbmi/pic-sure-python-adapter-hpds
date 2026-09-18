@@ -4,8 +4,16 @@ The leak tests render a traceback the way pytest renders a failing test
 (``funcargs=True``, which is what ``--tb=long`` uses) and measure the
 longest contiguous run of token characters in the output.  A synthetic
 token is used, so nothing here depends on a real credential; the shape
-is what matters -- a long, high-entropy, dot-separated string whose
+is what matters: a long, high-entropy, dot-separated string whose
 substrings do not occur by chance in source text.
+
+``SECRET_VALUE`` is a well-formed synthetic JWT: three segments, a payload
+that really is base64url-encoded JSON, and long enough that any leak shows
+up as a run far longer than the two- or three-character matches ordinary
+source text produces by chance. ``MAX_INCIDENTAL_RUN`` is the longest run
+still treated as that incidental overlap rather than token material; the
+defect being regressed measured 118 characters by default and the whole
+token under ``--showlocals``.
 """
 
 from __future__ import annotations
@@ -22,10 +30,6 @@ from picsure._transport.secret import SecretToken, as_secret_token
 
 BASE_URL = "https://secret.example.com"
 
-# A well-formed synthetic JWT: three segments, a payload that really is
-# base64url-encoded JSON, and long enough that any leak shows up as a run
-# far longer than the incidental two- or three-character matches ordinary
-# source text produces by chance.  No real credential is involved.
 SECRET_VALUE = (
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImxlYWstcHJvY"
     "mVAZXhhbXBsZS5pbnZhbGlkIiwic3ViIjoic3ludGhldGljLXN1YmplY3QtZm9"
@@ -37,9 +41,6 @@ SECRET_VALUE = (
     "PD0-Pw"
 )
 
-# Anything at or below this is incidental overlap with ordinary source text,
-# not token material.  The defect being regressed measured 118 characters by
-# default and the whole token under --showlocals.
 MAX_INCIDENTAL_RUN = 8
 
 
@@ -61,10 +62,10 @@ def longest_token_run(haystack: str) -> int:
 
 class TestSecretTokenRendering:
     def test_repr_str_and_format_are_one_fixed_placeholder(self):
+        """Percent formatting is exercised on purpose: it is one of the two paths a str
+        subclass would have kept working silently.
+        """
         secret = SecretToken(SECRET_VALUE)
-        # Percent formatting is the point of the test, not a style slip:
-        # it is one of the two paths a str subclass would have kept
-        # working in silently.
         percent = "%s" % (secret,)  # noqa: UP031
         renderings = [repr(secret), str(secret), f"{secret}", percent]
 
@@ -95,8 +96,9 @@ class TestSecretTokenAccess:
         assert SecretToken(f"  {SECRET_VALUE}\n").reveal() == SECRET_VALUE
 
     def test_it_is_not_a_str_subclass(self):
-        # A str subclass would keep working silently in f-strings and %
-        # formatting, which is the exact failure mode being removed.
+        """A str subclass would keep working silently in f-strings and % formatting,
+        which is the failure mode being removed.
+        """
         assert not isinstance(SecretToken(SECRET_VALUE), str)
 
     def test_a_missed_call_site_fails_naming_reveal(self):
@@ -124,9 +126,10 @@ class TestSecretTokenAccess:
             del secret._value
 
     def test_a_missing_dunder_reports_itself_plainly(self):
-        # Protocol probes such as copy's look up dunders and expect a bare
-        # AttributeError; answering those with the reveal() advice would
-        # turn a normal negative lookup into a confusing message.
+        """Protocol probes such as copy's look up dunders and expect a bare
+        AttributeError. Answering those with the reveal() advice would turn a normal
+        negative lookup into a confusing message.
+        """
         secret = SecretToken(SECRET_VALUE)
 
         assert not hasattr(secret, "__wrapped__")
