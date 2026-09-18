@@ -7,11 +7,13 @@ import pytest
 import respx
 
 from picsure._models.clause import Clause, PhenotypicFilterType
-from picsure._services._hpds_paths import query_prefix
+from picsure._services._hpds_paths import (
+    NAMED_DATASET_COLLECTION_PATH,
+    named_dataset_item_path,
+    query_prefix,
+)
 from picsure._services.query_save import (
     _NAME_PUNCTUATION,
-    _NAMED_DATASET_COLLECTION_PATH,
-    _NAMED_DATASET_ITEM_PATH,
     _validate_name,
     save_query_by_name,
 )
@@ -29,12 +31,10 @@ TOKEN = "test-token"
 QUERY_ID = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
 NAMED_DATASET_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
 
-LIST_URL = f"{BASE_URL}{_NAMED_DATASET_COLLECTION_PATH}"
+LIST_URL = f"{BASE_URL}{NAMED_DATASET_COLLECTION_PATH}"
 SUBMIT_URL = f"{BASE_URL}{query_prefix('auth', v3=True)}/query"
-SAVE_URL = f"{BASE_URL}{_NAMED_DATASET_COLLECTION_PATH}"
-_ITEM_URL = f"{BASE_URL}" + _NAMED_DATASET_ITEM_PATH.format(
-    named_dataset_id=NAMED_DATASET_ID
-)
+SAVE_URL = f"{BASE_URL}{NAMED_DATASET_COLLECTION_PATH}"
+_ITEM_URL = f"{BASE_URL}{named_dataset_item_path(NAMED_DATASET_ID)}"
 
 
 def _client() -> PicSureClient:
@@ -181,9 +181,9 @@ class TestSaveQueryByNameBodilessWrites:
         respx.post(SUBMIT_URL).mock(
             return_value=httpx.Response(200, json={"picsureResultId": QUERY_ID})
         )
-        put = respx.put(
-            f"{BASE_URL}{_NAMED_DATASET_ITEM_PATH.format(named_dataset_id=NAMED_DATASET_ID)}"
-        ).mock(return_value=httpx.Response(204))
+        put = respx.put(f"{BASE_URL}{named_dataset_item_path(NAMED_DATASET_ID)}").mock(
+            return_value=httpx.Response(204)
+        )
 
         qid = save_query_by_name(
             _client(),
@@ -195,6 +195,57 @@ class TestSaveQueryByNameBodilessWrites:
 
         assert qid == QUERY_ID
         assert put.called
+
+    @respx.mock
+    def test_the_returned_id_is_the_canonical_uuid(self):
+        """The id goes back to the caller and into loadQueryByID, not into a path.
+
+        An escaped form would be a different string from the one the
+        operations service stored, and ``loadQueryByID`` would refuse it.
+        """
+        respx.get(LIST_URL).mock(return_value=httpx.Response(200, json=[]))
+        respx.post(SUBMIT_URL).mock(
+            return_value=httpx.Response(200, json={"picsureResultId": QUERY_ID.upper()})
+        )
+        save = respx.post(SAVE_URL).mock(return_value=httpx.Response(201))
+
+        qid = save_query_by_name(_client(), _clause(), "fun", backend="auth")
+
+        assert qid == QUERY_ID
+        assert "%" not in qid
+        assert json.loads(save.calls.last.request.content)["queryId"] == QUERY_ID
+
+    @respx.mock
+    def test_the_update_path_escapes_the_record_id_exactly_once(self):
+        """The validator hands back the uuid; the path builder escapes it.
+
+        A canonical uuid survives ``quote`` untouched, so a second escape
+        is invisible until an identifier stops being a bare uuid. The
+        assertion is on the request URL the client actually sent.
+        """
+        respx.get(LIST_URL).mock(
+            return_value=httpx.Response(
+                200,
+                json=[
+                    {
+                        "uuid": NAMED_DATASET_ID.upper(),
+                        "name": "fun",
+                        "archived": False,
+                        "metadata": {},
+                    }
+                ],
+            )
+        )
+        respx.post(SUBMIT_URL).mock(
+            return_value=httpx.Response(200, json={"picsureResultId": QUERY_ID})
+        )
+        put = respx.put(_ITEM_URL).mock(return_value=httpx.Response(204))
+
+        save_query_by_name(_client(), _clause(), "fun", backend="auth", overwrite=True)
+
+        assert put.called
+        assert put.calls.last.request.url.path.endswith(f"/named/{NAMED_DATASET_ID}")
+        assert "%25" not in str(put.calls.last.request.url)
 
     @respx.mock
     def test_create_answering_302_with_no_body_raises(self):
@@ -289,9 +340,7 @@ class TestSaveQueryByNameDuplicates:
         respx.post(SUBMIT_URL).mock(
             return_value=httpx.Response(200, json={"picsureResultId": QUERY_ID})
         )
-        put = respx.put(
-            f"{BASE_URL}{_NAMED_DATASET_ITEM_PATH.format(named_dataset_id=NAMED_DATASET_ID)}"
-        ).mock(
+        put = respx.put(f"{BASE_URL}{named_dataset_item_path(NAMED_DATASET_ID)}").mock(
             return_value=httpx.Response(
                 200,
                 json={
@@ -445,9 +494,9 @@ class TestSaveQueryByNameServerSuppliedIds:
         respx.post(SUBMIT_URL).mock(
             return_value=httpx.Response(200, json={"picsureResultId": QUERY_ID})
         )
-        put = respx.put(
-            f"{BASE_URL}{_NAMED_DATASET_ITEM_PATH.format(named_dataset_id=NAMED_DATASET_ID)}"
-        ).mock(return_value=httpx.Response(204))
+        put = respx.put(f"{BASE_URL}{named_dataset_item_path(NAMED_DATASET_ID)}").mock(
+            return_value=httpx.Response(204)
+        )
 
         qid = save_query_by_name(
             _client(), _clause(), "fun", backend="auth", overwrite=True

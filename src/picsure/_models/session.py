@@ -8,6 +8,7 @@ from picsure._dev.config import DevConfig
 from picsure._dev.reporting import events_to_df, stats_to_df
 from picsure._dev.timing import timed
 from picsure._models.query_type import QueryType
+from picsure._services._hpds_paths import BACKENDS
 from picsure.errors import PicSureValidationError
 
 if TYPE_CHECKING:
@@ -19,9 +20,6 @@ if TYPE_CHECKING:
     from picsure._models.facet import FacetSet
     from picsure._models.query import Query
     from picsure._transport.client import PicSureClient
-
-
-_BACKENDS = frozenset({"auth", "open"})
 
 
 class Session:
@@ -71,9 +69,9 @@ class Session:
         self._token_expiration = token_expiration
         self._session_id = session_id
         self._consents: list[str] = list(consents) if consents else []
-        if backend not in _BACKENDS:
+        if backend not in BACKENDS:
             raise PicSureValidationError(
-                f"backend must be one of {sorted(_BACKENDS)}, not {backend!r}. "
+                f"backend must be one of {sorted(BACKENDS)}, not {backend!r}. "
                 f"It is interpolated straight into the HPDS request path, so "
                 f"an unrecognized value would silently produce a 404 on every "
                 f"query."

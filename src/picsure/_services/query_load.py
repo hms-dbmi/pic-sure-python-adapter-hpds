@@ -14,7 +14,7 @@ from picsure._models.dictionary import coerce_float
 from picsure._models.genomic_filter import GenomicFilter, is_variant_spec
 from picsure._models.query import Query
 from picsure._services._errors import translate_transport_error
-from picsure._services._hpds_paths import query_metadata_path
+from picsure._services._hpds_paths import UUID_EXAMPLE, query_metadata_path
 from picsure._transport.errors import TransportError, TransportNotFoundError
 from picsure.errors import PicSureQueryError, PicSureValidationError
 
@@ -190,7 +190,7 @@ def _validate_query_id(query_id: str) -> str:
     except (ValueError, AttributeError, TypeError) as exc:
         raise PicSureValidationError(
             f"{query_id!r} is not a valid query ID. A PIC-SURE query ID is a "
-            "UUID, for example '3fa85f64-5717-4562-b3fc-2c963f66afa6'."
+            f"UUID, for example '{UUID_EXAMPLE}'."
         ) from exc
 
 

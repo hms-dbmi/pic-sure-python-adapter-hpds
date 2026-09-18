@@ -3,12 +3,15 @@ from __future__ import annotations
 import pytest
 
 from picsure._services._hpds_paths import (
+    canonical_server_id,
+    named_dataset_item_path,
     query_id_from_submit_response,
     query_metadata_path,
+    query_prefix,
     query_result_path,
     query_status_path,
     query_submit_path,
-    server_id_segment,
+    search_values_path,
 )
 from picsure.errors import PicSureQueryError, PicSureValidationError
 
@@ -76,13 +79,21 @@ class TestServerSuppliedIdIsRefused:
                 {"picsureResultId": "abc-123"}, operation="the export"
             )
 
+    def test_the_message_does_not_claim_no_request_was_sent(self):
+        """The value came back from the server, so a request had been sent."""
+        with pytest.raises(PicSureQueryError) as excinfo:
+            canonical_server_id("abc-123", description="The record identifier")
+
+        assert "not sent" not in str(excinfo.value)
+        assert "malformed response" in str(excinfo.value)
+
     def test_a_blank_identifier_is_refused(self):
         with pytest.raises(PicSureQueryError, match="missing or is not a string"):
-            server_id_segment("   ", description="The record identifier")
+            canonical_server_id("   ", description="The record identifier")
 
     def test_a_non_string_identifier_is_refused(self):
         with pytest.raises(PicSureQueryError, match="missing or is not a string"):
-            server_id_segment({"uuid": QUERY_ID}, description="The record identifier")
+            canonical_server_id({"uuid": QUERY_ID}, description="The record identifier")
 
 
 class TestQueryLifecyclePaths:
@@ -111,3 +122,85 @@ class TestQueryLifecyclePaths:
 
         assert "/../" not in path
         assert "%2F" in path
+
+
+class TestTheCanonicalIdIsNotAPathSegment:
+    """The validator returns the id; a path builder is what escapes it."""
+
+    def test_a_query_id_round_trips_unescaped(self):
+        assert canonical_server_id(QUERY_ID, description="The query id") == QUERY_ID
+
+    def test_an_uppercase_id_comes_back_canonical(self):
+        assert (
+            canonical_server_id(QUERY_ID.upper(), description="The query id")
+            == QUERY_ID
+        )
+
+    def test_a_named_dataset_uuid_round_trips_unescaped(self):
+        assert (
+            canonical_server_id(OTHER_ID, description="The record identifier")
+            == OTHER_ID
+        )
+
+    @pytest.mark.parametrize(
+        ("builder", "suffix"),
+        [
+            (query_status_path, "status"),
+            (query_result_path, "result"),
+            (query_metadata_path, "metadata"),
+        ],
+    )
+    def test_a_validated_id_is_escaped_exactly_once(self, builder, suffix):
+        validated = canonical_server_id(QUERY_ID, description="The query id")
+
+        assert builder("auth", validated) == (
+            f"/picsure/hpds/auth/v3/query/{QUERY_ID}/{suffix}"
+        )
+        assert "%25" not in builder("auth", validated)
+
+
+class TestNamedDatasetItemPath:
+    def test_a_uuid_reaches_the_path_unchanged(self):
+        assert named_dataset_item_path(OTHER_ID) == (
+            f"/picsure/operations/dataset/named/{OTHER_ID}"
+        )
+
+    def test_it_gains_no_trailing_slash(self):
+        assert not named_dataset_item_path(OTHER_ID).endswith("/")
+
+    def test_a_slash_cannot_leave_its_segment(self):
+        path = named_dataset_item_path(TRAVERSAL)
+
+        assert "/../" not in path
+        assert "%2F" in path
+
+
+class TestBackendIsCheckedBeforeItIsInterpolated:
+    """An unrecognized backend would otherwise 404 every request silently."""
+
+    @pytest.mark.parametrize("backend", ["", "AUTH", "auth/../open", "authorized"])
+    def test_query_prefix_refuses_it(self, backend):
+        with pytest.raises(PicSureValidationError, match="backend must be one of"):
+            query_prefix(backend, v3=True)
+
+    @pytest.mark.parametrize("backend", ["", "AUTH", "auth/../open", "authorized"])
+    def test_search_values_path_refuses_it(self, backend):
+        with pytest.raises(PicSureValidationError, match="backend must be one of"):
+            search_values_path(backend)
+
+    @pytest.mark.parametrize(
+        "builder",
+        [query_status_path, query_result_path, query_metadata_path],
+    )
+    def test_the_lifecycle_builders_refuse_it(self, builder):
+        with pytest.raises(PicSureValidationError, match="backend must be one of"):
+            builder("authorized", QUERY_ID)
+
+    def test_the_submit_path_refuses_it(self):
+        with pytest.raises(PicSureValidationError, match="backend must be one of"):
+            query_submit_path("authorized")
+
+    @pytest.mark.parametrize("backend", ["auth", "open"])
+    def test_both_real_backends_are_accepted(self, backend):
+        assert query_submit_path(backend) == f"/picsure/hpds/{backend}/v3/query"
+        assert search_values_path(backend) == (f"/picsure/hpds/{backend}/search/values")

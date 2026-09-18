@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import re
 from typing import TYPE_CHECKING
-from urllib.parse import quote
 
 from picsure._models.clause import Clause
 from picsure._models.clause_group import ClauseGroup
 from picsure._models.query import Query
 from picsure._services._errors import translate_transport_error
 from picsure._services._hpds_paths import (
+    NAMED_DATASET_COLLECTION_PATH,
+    canonical_server_id,
+    named_dataset_item_path,
     query_id_from_submit_response,
     query_submit_path,
-    server_id_segment,
 )
 from picsure._services.query_run import build_query_body
 from picsure._transport.client import json_object
@@ -24,15 +25,6 @@ from picsure.errors import (
 
 if TYPE_CHECKING:
     from picsure._transport.client import PicSureClient
-
-# The named-dataset collection lives on the operations service, not HPDS. The
-# gateway routes ``/operations/**`` there and does not strip the prefix, so the
-# client path is ``/picsure/operations/dataset/named``. There is no gateway
-# catch-all; an unrouted path falls through to the SPA and 404s. The mapping is
-# slash-less server-side, and Spring 6 404s a trailing slash -- so the item
-# path must not gain one.
-_NAMED_DATASET_COLLECTION_PATH = "/picsure/operations/dataset/named"
-_NAMED_DATASET_ITEM_PATH = "/picsure/operations/dataset/named/{named_dataset_id}"
 
 _SAVE_OPERATION = "the saved query"
 
@@ -53,8 +45,8 @@ def save_query_by_name(
 ) -> str:
     """Submit a query, then save it to the user's profile under ``name``.
 
-    Returns the PIC-SURE-generated query ID — the same id that
-    :func:`load_query` can re-fetch.
+    Returns the PIC-SURE-generated query ID in canonical UUID form, the
+    same id that :func:`load_query` can re-fetch.
 
     If a NamedDataset already exists for this user with ``name``:
         * ``overwrite=False`` (default) → raise :class:`PicSureValidationError`.
@@ -100,7 +92,7 @@ def save_query_by_name(
         )
         _update_named_dataset(
             client,
-            named_dataset_id=server_id_segment(
+            named_dataset_id=canonical_server_id(
                 existing_uuid,
                 description=f"The identifier of the named query '{name}'",
             ),
@@ -122,7 +114,7 @@ def _find_existing_by_name(
     uuid) so behavior is stable.
     """
     try:
-        response = client.get_json(_NAMED_DATASET_COLLECTION_PATH)
+        response = client.get_json(NAMED_DATASET_COLLECTION_PATH)
     except TransportError as exc:
         raise translate_transport_error(
             exc, operation="the saved-query name lookup"
@@ -195,7 +187,7 @@ def _create_named_dataset(client: PicSureClient, *, query_id: str, name: str) ->
         "metadata": {},
     }
     try:
-        client.post_json(_NAMED_DATASET_COLLECTION_PATH, body=body)
+        client.post_json(NAMED_DATASET_COLLECTION_PATH, body=body)
     except EmptyBodyError as exc:
         _confirm_bodiless_write(exc, operation=f"saving the named query '{name}'")
     except TransportError as exc:
@@ -220,8 +212,8 @@ def _update_named_dataset(
 
     Args:
         client: Authenticated HTTP client.
-        named_dataset_id: The record's identifier, already checked as a
-            UUID and escaped into one path segment.
+        named_dataset_id: The record's canonical identifier, already
+            checked as a UUID. The path builder escapes it.
         query_id: The freshly submitted query's PIC-SURE id.
         name: The record's name, resent unchanged.
         archived: The record's archived flag, preserved.
@@ -233,9 +225,7 @@ def _update_named_dataset(
         PicSureError: Whatever :func:`translate_transport_error` maps the
             transport failure to.
     """
-    path = _NAMED_DATASET_ITEM_PATH.format(
-        named_dataset_id=quote(named_dataset_id, safe="")
-    )
+    path = named_dataset_item_path(named_dataset_id)
     body = {
         "queryId": query_id,
         "name": name,
@@ -303,7 +293,8 @@ def _submit_and_extract_id(
         body: The query envelope to post.
 
     Returns:
-        The canonical query id, escaped for use as one path segment.
+        The canonical query id, unescaped: it goes into a request body
+        and back to the caller as well as into a path.
 
     Raises:
         PicSureQueryError: If the response carries no query id, or one
