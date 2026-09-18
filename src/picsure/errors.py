@@ -6,8 +6,10 @@ them apart with an ``except`` clause alone:
 * :class:`PicSureAuthError`: the server answered and refused you.
   :class:`PicSureAuthenticationError` is a problem with the token itself;
   :class:`PicSureAuthorizationError` (and its
-  :class:`PicSureConsentDeniedError` refinement) means the token is fine
-  but the account may not see what was asked for.
+  :class:`PicSureConsentDeniedError` refinement) usually means the
+  account may not see what was asked for, though PSAMA answers 403
+  rather than 401 for a stale token on some routes, so a fresh token
+  can also be the fix.
 * :class:`PicSureConnectionError`: the adapter got no usable response.
   :class:`PicSureTLSError` and :class:`PicSureServerError` name the two
   cases worth handling separately.
@@ -41,10 +43,13 @@ class PicSureAuthenticationError(PicSureAuthError):
 
 
 class PicSureAuthorizationError(PicSureAuthError):
-    """HTTP 403: the token is valid, but the account is not permitted.
+    """HTTP 403: the request was refused for this account, or the token is stale.
 
-    Re-issuing the token will not help; the account needs the privilege
-    (or the study approval) that the request requires.
+    Usually the account lacks the privilege (or the study approval) the
+    request requires, and re-issuing the token changes nothing.  PSAMA
+    answers 403 rather than 401 for a stale token on some routes, so if
+    the account should have access, try a fresh token before asking for
+    permissions.
     """
 
 
@@ -52,9 +57,10 @@ class PicSureConsentDeniedError(PicSureAuthorizationError):
     """HTTP 403: approved consents do not cover the requested data.
 
     The specialization of :class:`PicSureAuthorizationError` the backend
-    signals with ``errorType: consent_denied``.  ``status_code``,
-    ``body``, ``error_type``, and ``server_message`` carry the server's
-    own account of the refusal.
+    signals with ``errorType: consent_denied``.  Unlike a bare 403 this
+    is an explicit consent decision, so a fresh token will not change
+    it.  ``status_code``, ``body``, ``error_type``, and
+    ``server_message`` carry the server's own account of the refusal.
     """
 
     def __init__(
