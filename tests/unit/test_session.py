@@ -212,7 +212,6 @@ _FACETS_URL = f"{BASE_URL}{_FACETS_PATH}"
 # The versioned auth HPDS query-lifecycle base (submit/status/result/sync).
 _AUTH_QUERY_BASE = f"{BASE_URL}{query_prefix('auth', v3=True)}/query"
 
-# loadQueryByID/runQueryByID validate the id as a UUID before requesting it.
 _SAVED_QUERY_ID = "11111111-2222-3333-4444-555555555555"
 
 

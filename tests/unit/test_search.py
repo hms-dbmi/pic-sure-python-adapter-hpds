@@ -302,8 +302,6 @@ class TestSearch:
 
     @respx.mock
     def test_partial_page_is_followed_not_rejected(self):
-        # A page carrying last=False used to raise "truncated". It is an
-        # ordinary pagination boundary, so it must be followed instead.
         respx.post(_concepts_url(_DEFAULT_PAGE_SIZE, page=0)).mock(
             return_value=httpx.Response(
                 200, json=_page(_rows(0, 1), total=2, last=False)
@@ -321,8 +319,6 @@ class TestSearch:
 
     @respx.mock
     def test_last_missing_but_counts_match_ok(self):
-        # last absent and totalElements equal to what came back: no
-        # evidence of another page, so stop after one request.
         response = {
             "content": [{"conceptPath": "\\x\\", "name": "x"}],
             "totalElements": 1,
@@ -336,8 +332,7 @@ class TestSearch:
 
     @respx.mock
     def test_total_elements_mismatch_does_not_raise(self):
-        # last: True is authoritative even when totalElements disagrees;
-        # the old code raised "truncated" on this shape.
+        """``last: True`` wins even when ``totalElements`` disagrees with it."""
         response = {
             "content": [{"conceptPath": "\\x\\", "name": "x"}],
             "totalElements": 3,
@@ -352,8 +347,6 @@ class TestSearch:
 
     @respx.mock
     def test_no_truncation_error_message_survives(self):
-        # Guard against the PYR-12 wording coming back: the message told
-        # users to act on something they do not control.
         respx.post(_concepts_url(_DEFAULT_PAGE_SIZE, page=0)).mock(
             return_value=httpx.Response(
                 200, json=_page(_rows(0, 500), total=600, last=False, size=500)
@@ -446,7 +439,6 @@ class TestSearchPagination:
 
     @respx.mock
     def test_pages_are_disjoint_and_sum_to_total(self):
-        # Mirrors the live check against the 1777-concept dictionary.
         for n, (start, count, last) in enumerate(
             [(0, 500, False), (500, 500, False), (1000, 500, False), (1500, 277, True)]
         ):
@@ -543,8 +535,7 @@ class TestSearchPagination:
 
     @respx.mock
     def test_ceiling_enforced_on_accumulated_rows_when_total_absent(self, monkeypatch):
-        # Without totalElements the up-front check cannot fire, so the walk
-        # has to stop itself once it has collected too much.
+        """With no ``totalElements`` the walk must stop itself on its own."""
         monkeypatch.setattr(search_module, "_MAX_UNPAGED_ROWS", 5)
         for n in range(3):
             respx.post(_concepts_url(3, page=n)).mock(
@@ -582,7 +573,7 @@ class TestSearchPagination:
             searchDictionary(_make_client(), page_size=bad)
 
     def test_pagination_validated_before_any_request(self):
-        # No respx mock is installed, so any outgoing call would error.
+        """No respx mock is installed, so any outgoing request would error."""
         with pytest.raises(PicSureValidationError):
             searchDictionary(_make_client(), page=-3)
 

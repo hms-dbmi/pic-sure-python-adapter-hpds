@@ -1,3 +1,19 @@
+"""Dictionary search and facet lookups against the PIC-SURE dictionary service.
+
+``/picsure/dictionary/concepts`` answers with a Spring Data ``Page`` envelope:
+``content`` alongside ``totalElements``, ``totalPages``, ``number``, ``size``,
+``first`` and ``last``. Paging is zero-based through the ``page_number`` and
+``page_size`` query parameters.
+
+Three module constants bound that paging. ``_DEFAULT_PAGE_SIZE`` is the number
+of rows requested per call when the caller gives no ``page_size``.
+``_SERVER_MAX_PAGE_SIZE`` is the largest ``page_size`` the backend accepts,
+Java ``Integer.MAX_VALUE``; one above it overflows the int binding and comes
+back as HTTP 400. ``_MAX_UNPAGED_ROWS`` caps the rows an unpaged search
+accumulates before it refuses to continue, so a caller who omits ``page`` on a
+production-sized dictionary does not walk the whole thing into one DataFrame.
+"""
+
 from __future__ import annotations
 
 import sys
@@ -17,19 +33,8 @@ _FACETS_PATH = "/picsure/dictionary/facets"
 _SEARCH_OPERATION = "the dictionary search"
 _FACETS_OPERATION = "the dictionary facets lookup"
 
-# ``/concepts`` answers with a Spring Data ``Page`` envelope -- ``content``
-# alongside ``totalElements``, ``totalPages``, ``number``, ``size``, ``first``
-# and ``last``.  Paging is zero-based through the ``page_number`` and
-# ``page_size`` query parameters.
 _DEFAULT_PAGE_SIZE = 500
-
-# Largest ``page_size`` the backend accepts: Java ``Integer.MAX_VALUE``.  One
-# above it overflows the int binding and comes back as HTTP 400.
 _SERVER_MAX_PAGE_SIZE = 2_147_483_647
-
-# Ceiling on rows an unpaged search accumulates before it refuses to continue.
-# Without it, a caller who omits ``page`` on a production-sized dictionary
-# walks the whole thing into one DataFrame.
 _MAX_UNPAGED_ROWS = 100_000
 
 _COLUMNS_WITH_VALUES = [
@@ -83,12 +88,14 @@ def searchDictionary(  # noqa: N802
     Either way the returned DataFrame carries the page metadata in
     :attr:`pandas.DataFrame.attrs`:
 
-    - ``total_elements`` — server's total match count, or ``None`` if
-      the response omitted it
-    - ``has_more`` — whether further pages exist beyond what was returned
-    - ``page`` — the requested page, or ``None`` when every page was collected
-    - ``page_size`` — rows requested per HTTP call
-    - ``pages_fetched`` — number of HTTP calls made
+    - ``total_elements`` is the server's total match count, or ``None``
+      when the response omitted it.
+    - ``has_more`` says whether further pages exist beyond what was
+      returned.
+    - ``page`` is the requested page, or ``None`` when every page was
+      collected.
+    - ``page_size`` is the number of rows requested per HTTP call.
+    - ``pages_fetched`` is the number of HTTP calls made.
 
     Args:
         client: Authenticated HTTP client.
@@ -274,7 +281,8 @@ def fetch_facets(
 
     POSTs to ``/picsure/dictionary/facets`` with the same body shape as
     :func:`searchDictionary`.  The response is a top-level array of
-    facet categories -- not wrapped in an object, and not paginated.
+    facet categories, not wrapped in an object and not paginated. A
+    deployment that wraps the array in a ``facets`` key is accepted too.
 
     Args:
         client: Authenticated HTTP client.
@@ -300,8 +308,6 @@ def fetch_facets(
     except TransportError as exc:
         raise translate_transport_error(exc, operation=_FACETS_OPERATION) from exc
 
-    # /facets answers with a JSON array at the top level; the dict branch
-    # covers a deployment that wraps it in a ``facets`` key instead.
     raw_categories = data if isinstance(data, list) else data.get("facets", [])
     return [FacetCategory.from_dict(f) for f in raw_categories]
 
