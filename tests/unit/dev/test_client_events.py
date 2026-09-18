@@ -254,8 +254,10 @@ class TestStreamedDownloadEvents:
 
     @respx.mock
     def test_a_streamed_participant_body_is_still_marked_redacted(self):
-        # The buffered path marked these; losing the mark would make a
-        # participant-bearing body look safe to log.
+        """The buffered path marked these.
+
+        Without the mark a participant-bearing body looks safe to log.
+        """
         cfg = DevConfig(enabled=True, max_events=10)
 
         self._run("participant", b"patient_id,age\nP1,42\n", cfg)

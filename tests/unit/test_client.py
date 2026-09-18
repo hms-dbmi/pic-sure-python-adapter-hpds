@@ -1248,7 +1248,7 @@ class TestClientTimeouts:
 
 
 class TestPostRawToFile:
-    """PYR-4: a download that never holds the whole body in memory."""
+    """A download that never holds the whole body in memory."""
 
     @respx.mock
     def test_writes_the_body_to_the_target(self, tmp_path):
@@ -1276,6 +1276,7 @@ class TestPostRawToFile:
 
     @respx.mock
     def test_a_failure_leaves_nothing_at_the_target_path(self, tmp_path):
+        """A half-written download leaves neither a file nor a .part behind."""
         respx.post(f"{BASE_URL}/download").mock(
             return_value=httpx.Response(500, text="boom")
         )
@@ -1285,8 +1286,6 @@ class TestPostRawToFile:
         with pytest.raises(TransportServerError):
             client.post_raw_to_file("/download", target)
 
-        # No truncated file at the real path, and no leftover .part:
-        # a half-written export must not look like a finished one.
         assert list(tmp_path.iterdir()) == []
 
     @respx.mock
@@ -1304,11 +1303,14 @@ class TestPostRawToFile:
 
     @respx.mock
     def test_a_failed_promotion_cleans_up_the_staging_file(self, tmp_path):
+        """A non-empty directory at the target fails the rename after the write.
+
+        A file cannot replace a non-empty directory, so the failure lands
+        after the whole body was written to the staging file.
+        """
         respx.post(f"{BASE_URL}/download").mock(
             return_value=httpx.Response(200, content=b"data")
         )
-        # A non-empty directory cannot be replaced by a file, so the
-        # rename fails after the body is safely on disk.
         target = tmp_path / "out.csv"
         target.mkdir()
         (target / "occupant").write_text("x")

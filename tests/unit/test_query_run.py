@@ -1472,7 +1472,7 @@ class TestDataframeQueriesStreamToDisk:
     """Participant and timestamp results are streamed, not buffered.
 
     The buffered path held the whole CSV in memory before handing it to
-    pandas, so peak usage was the raw bytes plus the frame -- enough to
+    pandas, so peak usage was the raw bytes plus the frame, enough to
     kill a notebook kernel on a large cohort, silently.
     """
 
@@ -1511,7 +1511,7 @@ class TestDataframeQueriesStreamToDisk:
 
     @respx.mock
     def test_a_count_query_is_still_fetched_in_one_piece(self, monkeypatch):
-        # Small bodies gain nothing from streaming and must not change.
+        """Small bodies gain nothing from streaming and keep the buffered path."""
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"7"))
         targets = self._spy_on_streaming(monkeypatch)
 

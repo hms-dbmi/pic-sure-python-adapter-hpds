@@ -65,7 +65,6 @@ _MAX_RETRIES = 1
 DATA_TIMEOUT_SECONDS = 600.0
 VALIDATION_TIMEOUT_SECONDS = 15.0
 
-# Read size for streamed downloads.
 _CHUNK_BYTES = 64 * 1024
 
 # Env var controlling TLS certificate verification, used only when the caller
@@ -719,8 +718,8 @@ class PicSureClient:
 
         The buffered path uses :meth:`_emit_http`, which sizes the
         response with ``len(response.content)``.  A streamed response has
-        no ``content`` to read -- and reading it would defeat the point --
-        so the size comes from what was written to disk.
+        no ``content`` to read, and reading it would defeat the point, so
+        the size comes from what was written to disk.
         """
         cfg = self._dev_config
         if cfg is None or not cfg.enabled:

@@ -49,13 +49,13 @@ def export_pfb(
     Uses PIC-SURE's async flow on the authorized v3 routes, built from
     ``backend`` by :func:`~picsure._services._hpds_paths.query_prefix`:
 
-    1. ``POST /picsure/hpds/auth/v3/query`` — submit the query, receive a
-       query id.
-    2. ``POST /picsure/hpds/auth/v3/query/{id}/status`` — poll with
+    1. ``POST /picsure/hpds/auth/v3/query`` submits the query and returns
+       a query id.
+    2. ``POST /picsure/hpds/auth/v3/query/{id}/status`` is polled with
        exponential backoff (1s, 2s, 4s, ..., capped at 60s per poll) until
        the server reports ``AVAILABLE``.  Total elapsed time is bounded at
        10 minutes.
-    3. ``POST /picsure/hpds/auth/v3/query/{id}/result`` — stream the
+    3. ``POST /picsure/hpds/auth/v3/query/{id}/result`` streams the
        Avro-binary PFB bytes straight to disk.
 
     The output file is written atomically: bytes land at
@@ -286,10 +286,10 @@ def _write_delimited(
 
     ``DataFrame.to_csv`` raises a bare ``OSError`` for an unwritable path
     and, handed something that is not a DataFrame, an ``AttributeError``
-    naming ``to_csv`` -- neither of which a caller wrapping the call in
-    ``except PicSureError`` catches, and neither of which names the path
-    that failed. The type is checked up front rather than caught, so the
-    message can say what arrived instead.
+    naming ``to_csv``. A caller wrapping the call in ``except PicSureError``
+    catches neither, and neither names the path that failed. The type is
+    checked up front rather than caught, so the message can say what
+    arrived instead.
 
     Args:
         data: DataFrame to write.
@@ -306,7 +306,7 @@ def _write_delimited(
         raise PicSureValidationError(
             f"{method} writes a pandas DataFrame, but got "
             f"{type(data).__name__}. A count query returns a CountResult "
-            f"rather than a table -- run the query with "
+            f"rather than a table. Run the query with "
             f"type='participant' (or read CountResult.value directly) "
             f"before exporting."
         )

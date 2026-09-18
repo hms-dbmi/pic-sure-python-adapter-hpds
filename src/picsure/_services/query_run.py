@@ -50,14 +50,8 @@ _VARIANT_RESULT_TYPES = frozenset(
     }
 )
 
-# Result types that come back as a CSV cohort export rather than a short
-# JSON or count body.  These are the only ones large enough to be worth
-# streaming: a participant download for a big cohort can run to hundreds of
-# megabytes.  (VCF excerpts have their own parser and are not included.)
 _DATAFRAME_RESULT_TYPES = frozenset({"DATAFRAME", "DATAFRAME_TIMESERIES"})
 
-# How much of a download to quote back in a parse-failure message, and how
-# much to read at a time when checking whether a body is blank.
 _PREVIEW_BYTES = 200
 _SCAN_BYTES = 64 * 1024
 
@@ -153,11 +147,15 @@ def _run_dataframe_query(
 ) -> pd.DataFrame:
     """Stream a participant or timestamp result and parse it from disk.
 
+    Only the CSV cohort result types (``DATAFRAME`` and
+    ``DATAFRAME_TIMESERIES``) come through here; a participant download
+    for a big cohort can run to hundreds of megabytes, while every other
+    result type, VCF excerpts included, is a short body parsed in place.
     The buffered path holds the whole CSV in memory and then builds a
     DataFrame from it, so peak usage is the raw bytes plus the frame.
     For a large cohort that is enough to exhaust a notebook kernel,
     which presents as a dead kernel with no error rather than as a
-    failure -- and the ten-minute data deadline lets much larger results
+    failure, and the ten-minute data deadline lets much larger results
     through than the old thirty seconds did.  Streaming to a temporary
     file drops the peak to the frame alone.
     """
