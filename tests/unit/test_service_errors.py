@@ -448,9 +448,34 @@ class TestNoTokenLeakage:
         assert exc.body.endswith("}")
 
     def test_the_english_word_bearer_is_left_alone(self):
+        """The word after "bearer" is long enough to clear the length bound.
+
+        The earlier version of this test used "of", a two-character
+        word, so it passed on the length bound alone and never reached
+        the question it was named for.
+        """
+        text = "The bearer authentication scheme failed"
+
+        exc = TransportAuthenticationError(403, text)
+
+        assert exc.body == text
+
+    def test_a_short_word_after_bearer_is_left_alone(self):
         text = "The bearer of this request is not authorized"
 
         exc = TransportAuthenticationError(403, text)
+
+        assert exc.body == text
+
+    def test_a_long_all_letter_bearer_value_is_left_alone(self):
+        """Only a run carrying a non-letter is credential-shaped.
+
+        Twenty letters clear the length bound, so the non-letter
+        requirement is the only thing deciding this case.
+        """
+        text = "Bearer abcdefghijklmnopqrst rejected"
+
+        exc = TransportAuthenticationError(401, text)
 
         assert exc.body == text
 

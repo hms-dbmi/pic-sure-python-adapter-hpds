@@ -23,7 +23,10 @@ from __future__ import annotations
 import re
 
 _CREDENTIAL_PATTERNS = (
-    re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{8,}"),
+    re.compile(
+        r"(?i)\bbearer\s+(?=[A-Za-z0-9._~+/=-]{8,})"
+        r"[A-Za-z0-9._~+/=-]*[0-9._~+/=-][A-Za-z0-9._~+/=-]*"
+    ),
     re.compile(r"[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{6,}"),
 )
 _REDACTED = "<redacted token>"
@@ -44,12 +47,17 @@ def _redact_credentials(text: str) -> str:
     placeholder the JWT pass had just written. The placeholder it leaves
     behind carries no dot, so the JWT pattern cannot match it in turn.
 
-    What the header pattern matches is bounded to base64url and JWT
-    characters, at least eight of them, rather than a run of non-space.
-    A run of non-space reaches the end of a compact JSON error body,
-    whose commas carry no space, and erases the status and the path along
-    with the credential; it also matches the ordinary English word
-    "bearer" followed by any word.
+    What the header pattern matches after "bearer" is bounded three
+    ways: to base64url and JWT characters, to at least eight of them,
+    and to a run in which at least one character is not a letter. The
+    character bound keeps the match off the rest of a compact JSON error
+    body, whose commas carry no space, so the status and the path
+    survive next to the redaction. The non-letter bound is what tells a
+    credential from a word: a base64url value or a JWT carries a digit
+    or one of ``. _ ~ + / = -``, and an ordinary English word carries
+    neither, so "the bearer authentication scheme" is left intact. A
+    bearer value made only of letters is therefore not redacted, which
+    no PIC-SURE token is, every one of them being a JWT.
 
     Args:
         text: Server-supplied text, typically a response body.
