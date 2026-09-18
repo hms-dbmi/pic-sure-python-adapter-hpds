@@ -64,7 +64,7 @@ class TestFacetCategory:
 
     def test_from_dict_legacy_shape(self):
         data = {
-            "name": "study_ids",
+            "name": "dataset_id",
             "display": "Study",
             "categories": [
                 {"value": "phs000007", "count": 42},
@@ -96,7 +96,7 @@ class TestFacetSet:
     def _make_facet_set(self) -> FacetSet:
         categories = [
             FacetCategory(
-                name="study_ids",
+                name="dataset_id",
                 display="Study",
                 options=[
                     Facet(value="phs000007", count=42),
@@ -117,25 +117,25 @@ class TestFacetSet:
     def test_view_empty_on_creation(self):
         fs = self._make_facet_set()
         view = fs.view()
-        assert view == {"study_ids": [], "data_type": []}
+        assert view == {"dataset_id": [], "data_type": []}
 
     def test_add_single_value(self):
         fs = self._make_facet_set()
-        fs.add("study_ids", "phs000007")
+        fs.add("dataset_id", "phs000007")
         view = fs.view()
-        assert view["study_ids"] == ["phs000007"]
+        assert view["dataset_id"] == ["phs000007"]
         assert view["data_type"] == []
 
     def test_add_list_of_values(self):
         fs = self._make_facet_set()
-        fs.add("study_ids", ["phs000007", "phs000179"])
-        assert fs.view()["study_ids"] == ["phs000007", "phs000179"]
+        fs.add("dataset_id", ["phs000007", "phs000179"])
+        assert fs.view()["dataset_id"] == ["phs000007", "phs000179"]
 
     def test_add_multiple_calls_accumulate(self):
         fs = self._make_facet_set()
-        fs.add("study_ids", "phs000007")
-        fs.add("study_ids", "phs000179")
-        assert fs.view()["study_ids"] == ["phs000007", "phs000179"]
+        fs.add("dataset_id", "phs000007")
+        fs.add("dataset_id", "phs000179")
+        assert fs.view()["dataset_id"] == ["phs000007", "phs000179"]
 
     def test_add_invalid_category_raises(self):
         fs = self._make_facet_set()
@@ -144,7 +144,7 @@ class TestFacetSet:
 
     def test_add_invalid_category_lists_valid(self):
         fs = self._make_facet_set()
-        with pytest.raises(PicSureValidationError, match="study_ids"):
+        with pytest.raises(PicSureValidationError, match="dataset_id"):
             fs.add("nonexistent", "value")
 
     def test_to_request_facets_empty(self):
@@ -153,17 +153,17 @@ class TestFacetSet:
 
     def test_to_request_facets_with_selections(self):
         fs = self._make_facet_set()
-        fs.add("study_ids", "phs000007")
+        fs.add("dataset_id", "phs000007")
         fs.add("data_type", "categorical")
         result = fs.to_request_facets()
         assert len(result) == 2
         categories = {r["category"] for r in result}
-        assert categories == {"study_ids", "data_type"}
-        study_facet = next(r for r in result if r["category"] == "study_ids")
+        assert categories == {"dataset_id", "data_type"}
+        study_facet = next(r for r in result if r["category"] == "dataset_id")
         assert study_facet["name"] == "phs000007"
         assert study_facet["count"] == 42
         assert study_facet["categoryRef"] == {
-            "name": "study_ids",
+            "name": "dataset_id",
             "display": "Study",
             "description": "",
         }
@@ -173,20 +173,20 @@ class TestFacetSet:
 
     def test_to_request_facets_multiple_values_same_category(self):
         fs = self._make_facet_set()
-        fs.add("study_ids", ["phs000007", "phs000179"])
+        fs.add("dataset_id", ["phs000007", "phs000179"])
         result = fs.to_request_facets()
         assert len(result) == 2
         names = {r["name"] for r in result}
         assert names == {"phs000007", "phs000179"}
         for entry in result:
-            assert entry["category"] == "study_ids"
-            assert entry["categoryRef"]["name"] == "study_ids"
+            assert entry["category"] == "dataset_id"
+            assert entry["categoryRef"]["name"] == "dataset_id"
 
     def test_to_request_facets_unknown_value_falls_back(self):
         fs = self._make_facet_set()
         # Skip validation by reaching into internal state so we can
         # exercise the "not in catalog" branch.
-        fs._selected["study_ids"] = ["phs999999"]
+        fs._selected["dataset_id"] = ["phs999999"]
         result = fs.to_request_facets()
         assert result[0]["name"] == "phs999999"
         assert result[0]["display"] == "phs999999"
@@ -241,16 +241,16 @@ class TestFacetSet:
 
     def test_clear(self):
         fs = self._make_facet_set()
-        fs.add("study_ids", "phs000007")
+        fs.add("dataset_id", "phs000007")
         fs.clear()
-        assert fs.view() == {"study_ids": [], "data_type": []}
+        assert fs.view() == {"dataset_id": [], "data_type": []}
 
     def test_clear_category(self):
         fs = self._make_facet_set()
-        fs.add("study_ids", "phs000007")
+        fs.add("dataset_id", "phs000007")
         fs.add("data_type", "categorical")
-        fs.clear("study_ids")
-        assert fs.view()["study_ids"] == []
+        fs.clear("dataset_id")
+        assert fs.view()["dataset_id"] == []
         assert fs.view()["data_type"] == ["categorical"]
 
     def test_clear_invalid_category_raises(self):
