@@ -134,11 +134,15 @@ def buildClauseGroup(  # noqa: N802
         ``Session.runQuery()``.
 
     Raises:
-        PicSureValidationError: If the clause list is empty, or if
+        PicSureValidationError: If the clause list is empty, if
             ``clauses`` is a bare Clause, a bare ClauseGroup or a string
-            rather than a sequence of them. The sequence reaches
-            :class:`ClauseGroup` unconverted so that its own guard is the
-            one that answers, rather than an unwrapped ``TypeError``.
+            rather than a sequence of them, or if any element is neither
+            a Clause nor a ClauseGroup. A Query is the common case, since
+            ``Session.loadQueryByID`` may return one; its
+            ``phenotypicFilter`` is the part that composes. The sequence
+            reaches :class:`ClauseGroup` unconverted so that its own
+            guards are the ones that answer, rather than an unwrapped
+            ``TypeError`` or a later ``AttributeError``.
 
     Example:
         >>> from picsure import buildClauseGroup, GroupOperator

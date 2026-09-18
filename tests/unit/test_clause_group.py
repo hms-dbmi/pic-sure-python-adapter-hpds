@@ -4,6 +4,7 @@ import pytest
 
 from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
+from picsure._models.query import Query
 from picsure.errors import PicSureValidationError
 
 
@@ -246,3 +247,39 @@ class TestClauseGroupInputTypes:
     def test_a_string_is_refused_rather_than_split_into_characters(self):
         with pytest.raises(PicSureValidationError, match="not a string"):
             ClauseGroup(clauses="abc", operator=GroupOperator.AND)
+
+
+class TestClauseGroupChildTypes:
+    """Only a Clause or a ClauseGroup carries the group's wire contract."""
+
+    def test_a_query_child_is_refused_with_the_composable_part_named(self):
+        query = Query(phenotypicFilter=_sex_clause())
+
+        with pytest.raises(PicSureValidationError) as exc_info:
+            ClauseGroup(clauses=[query, _age_clause()], operator=GroupOperator.AND)
+
+        message = str(exc_info.value)
+        assert "index 0" in message
+        assert "Query" in message
+        assert "phenotypicFilter" in message
+
+    def test_a_string_child_is_refused_naming_its_position(self):
+        with pytest.raises(PicSureValidationError) as exc_info:
+            ClauseGroup(clauses=[_sex_clause(), "\\x\\"], operator=GroupOperator.AND)
+
+        message = str(exc_info.value)
+        assert "index 1" in message
+        assert "str" in message
+        assert "buildClause()" in message
+
+    def test_an_arbitrary_object_child_is_refused(self):
+        with pytest.raises(PicSureValidationError, match="not a Clause or ClauseGroup"):
+            ClauseGroup(clauses=[object()], operator=GroupOperator.AND)
+
+    def test_a_mix_of_clauses_and_nested_groups_still_builds(self):
+        inner = ClauseGroup(clauses=[_age_clause()], operator=GroupOperator.OR)
+
+        group = ClauseGroup(clauses=[_sex_clause(), inner], operator=GroupOperator.AND)
+
+        assert group.clauses == (_sex_clause(), inner)
+        assert group.to_query_json()["operator"] == "AND"

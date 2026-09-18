@@ -190,6 +190,18 @@ class TestBuildClauseGroup:
         with pytest.raises(PicSureValidationError, match="not a string"):
             buildClauseGroup("abc")
 
+    def test_a_loaded_query_among_the_children_raises(self):
+        """A saved query loads as a Query, which is not composable."""
+        clause = buildClause("\\p1\\", type=PhenotypicFilterType.FILTER, categories="A")
+        saved = buildQuery(phenotypicFilter=clause, includeConcepts=["\\p2\\"])
+
+        with pytest.raises(PicSureValidationError) as exc_info:
+            buildClauseGroup([saved, clause])
+
+        message = str(exc_info.value)
+        assert "Query" in message
+        assert "phenotypicFilter" in message
+
     def test_copies_caller_list(self):
         c1 = buildClause("\\p1\\", type=PhenotypicFilterType.FILTER, categories="A")
         c2 = buildClause("\\p2\\", type=PhenotypicFilterType.FILTER, categories="B")
