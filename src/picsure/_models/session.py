@@ -439,14 +439,20 @@ class Session:
     @timed("session.exportCSV")
     def exportCSV(  # noqa: N802
         self,
-        data: pd.DataFrame,
+        data: pd.DataFrame | pd.Series,
         path: str | Path,
     ) -> None:
-        """Write a DataFrame to a CSV file.
+        """Write a DataFrame or Series to a CSV file.
 
         Args:
-            data: DataFrame to export (e.g. from runQuery).
+            data: DataFrame to export (e.g. from runQuery), or a single
+                column of one.
             path: File path for the CSV output.
+
+        Raises:
+            PicSureValidationError: If ``data`` is neither a DataFrame nor
+                a Series, for example the ``CountResult`` of a count query.
+            PicSureConnectionError: If ``path`` could not be written.
         """
         from picsure._services.export import export_csv
 
@@ -455,14 +461,20 @@ class Session:
     @timed("session.exportTSV")
     def exportTSV(  # noqa: N802
         self,
-        data: pd.DataFrame,
+        data: pd.DataFrame | pd.Series,
         path: str | Path,
     ) -> None:
-        """Write a DataFrame to a TSV file.
+        """Write a DataFrame or Series to a TSV file.
 
         Args:
-            data: DataFrame to export (e.g. from runQuery).
+            data: DataFrame to export (e.g. from runQuery), or a single
+                column of one.
             path: File path for the TSV output.
+
+        Raises:
+            PicSureValidationError: If ``data`` is neither a DataFrame nor
+                a Series, for example the ``CountResult`` of a count query.
+            PicSureConnectionError: If ``path`` could not be written.
         """
         from picsure._services.export import export_tsv
 

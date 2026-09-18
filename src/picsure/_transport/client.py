@@ -20,6 +20,7 @@ never answers fails in seconds rather than waiting out the data deadline.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import ssl
@@ -49,6 +50,8 @@ from picsure._transport.secret import SecretToken, as_secret_token
 from picsure.errors import PicSureQueryError, PicSureTLSError, PicSureValidationError
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from picsure._dev.config import DevConfig
 
 RequestBody: TypeAlias = dict[str, Any]
@@ -61,6 +64,8 @@ _MAX_RETRIES = 1
 
 DATA_TIMEOUT_SECONDS = 600.0
 VALIDATION_TIMEOUT_SECONDS = 15.0
+
+_CHUNK_BYTES = 64 * 1024
 
 # Env var controlling TLS certificate verification, used only when the caller
 # does not pass an explicit ``verify`` to connect()/PicSureClient. Accepts a
@@ -491,30 +496,35 @@ class PicSureClient:
         success-path body is left as a live stream.  A transport failure
         while the caller drains the stream is translated to
         :class:`TransportConnectionError` as well, so no raw httpx
-        exception escapes this context manager.
+        exception escapes this context manager.  Only a failure where the
+        request provably never reached the server is retried, because a
+        POST may have executed on the server otherwise.
+
+        Developer-mode accounting also matches :meth:`_request`: every
+        failed attempt emits an ``error`` event, a 4xx/5xx emits an
+        ``http`` event carrying the status before its ``error`` event,
+        and every raised exception is marked as already recorded.  The
+        attempt that produced the yielded response is stored in
+        ``response.extensions["picsure_retry"]`` so the caller can report
+        it on the event it emits for the streamed body.
         """
         last_exc: Exception | None = None
 
         for attempt in range(_MAX_RETRIES + 1):
+            start = time.monotonic()
             stream_cm = self._http.stream("POST", path, json=body)
             try:
                 response = stream_cm.__enter__()
             except httpx.TransportError as exc:
                 last_exc = exc
-                # This stream is always a POST, so retry only the failures
-                # where the request provably never reached the server (see
-                # _should_retry).
+                self._emit_error("POST", path, attempt, start, type(exc).__name__)
                 if _should_retry("POST", exc) and attempt < _MAX_RETRIES:
                     continue
-                raise _connection_error(exc, self._host) from exc
+                raise _mark_emitted(_connection_error(exc, self._host)) from exc
 
             status = response.status_code
 
             if status >= 400:
-                # Read the (presumably small) error body so the mapper
-                # below can include a preview, then close the stream.  The
-                # status alone drives the mapping, so degrade to a
-                # placeholder if the connection drops mid-read.
                 try:
                     response.read()
                     body_text = response.text
@@ -522,30 +532,84 @@ class PicSureClient:
                     body_text = f"<error body unavailable: {exc}>"
                 finally:
                     stream_cm.__exit__(None, None, None)
-                if 400 <= status < 500:
-                    _raise_for_status(status, body_text, response)
-                # POST /stream is non-idempotent; do not retry on 5xx.
-                structured_error = _structured_transport_error(status, body_text)
-                if structured_error is not None:
-                    raise structured_error
-                raise TransportServerError(status, body_text)
+                self._emit_http("POST", path, body, response, attempt, start)
+                error = _status_error(status, body_text, response)
+                self._emit_error("POST", path, attempt, start, type(error).__name__)
+                raise _mark_emitted(error)
 
-            # Happy path: hand the live response to the caller.  A transport
-            # failure while the caller drains the stream is thrown back into
-            # this generator at the yield; translate it so callers see the
-            # Transport* contract, never a raw httpx error.  No retry is
-            # possible here -- part of the body has already been consumed.
+            response.extensions["picsure_retry"] = attempt
             try:
                 yield response
             except httpx.TransportError as exc:
-                raise TransportConnectionError(
+                error = TransportConnectionError(
                     f"Connection failed while streaming the response: {exc}"
-                ) from exc
+                )
+                self._emit_error("POST", path, attempt, start, type(error).__name__)
+                raise _mark_emitted(error) from exc
             finally:
                 stream_cm.__exit__(None, None, None)
             return
 
         raise TransportConnectionError("Request failed after retries") from last_exc
+
+    def post_raw_to_file(
+        self,
+        path: str,
+        target: Path,
+        body: RequestBody | None = None,
+    ) -> None:
+        """POST a JSON body and stream the response to ``target`` on disk.
+
+        The buffered counterpart, :meth:`post_raw`, holds the whole
+        response in memory; with a ten-minute deadline a participant
+        download can be large enough that buffering it kills the kernel
+        with no error at all.  This method never holds more than one
+        chunk: bytes go to ``<target>.part`` as they arrive and
+        :func:`os.replace` promotes that to ``target`` only once the body
+        is complete, so a failed download never leaves a truncated file
+        at the real path.
+
+        Args:
+            path: Request path, relative to the client's base URL.
+            target: Final path to write.  Its parent must exist.
+            body: JSON request body.
+
+        Emits the developer-mode ``http`` event for the download only
+        once the file sits at ``target``, sized by the byte count written
+        rather than ``len(response.content)``, which a streamed response
+        does not have.  A failure anywhere, the rename included, emits an
+        ``error`` event instead, unless :meth:`post_raw_stream` already
+        recorded it as a transport failure.
+
+        Raises:
+            TransportError: Same mapping as :meth:`post_raw_stream`.
+            OSError: If the staging file cannot be written or promoted.
+        """
+        part_path = target.with_suffix(target.suffix + ".part")
+        start = time.monotonic()
+        try:
+            with (
+                self.post_raw_stream(path, body=body) as response,
+                open(part_path, "wb") as out,
+            ):
+                written = 0
+                for chunk in response.iter_bytes(chunk_size=_CHUNK_BYTES):
+                    if chunk:
+                        written += out.write(chunk)
+            os.replace(part_path, target)
+        except BaseException as exc:
+            if not getattr(exc, "_picsure_dev_emitted", False):
+                self._emit_error("POST", path, 0, start, type(exc).__name__)
+            _remove_partial(part_path)
+            raise
+        self._emit_download(
+            path,
+            body,
+            response,
+            written,
+            start,
+            retry=int(response.extensions.get("picsure_retry", 0)),
+        )
 
     def _request(self, method: str, path: str, **kwargs: object) -> httpx.Response:
         last_exc: Exception | None = None
@@ -625,7 +689,10 @@ class PicSureClient:
             if response.request
             else _estimate_bytes(body)
         )
-        bytes_received = len(response.content or b"")
+        try:
+            bytes_received: int | None = len(response.content or b"")
+        except httpx.ResponseNotRead:
+            bytes_received = None
         metadata: dict[str, object] = {}
 
         if body_is_sensitive(path, method, body):
@@ -641,6 +708,51 @@ class PicSureClient:
                 bytes_received=bytes_received,
                 status=response.status_code,
                 retry=attempt,
+                error=None,
+                metadata=metadata,
+            )
+        )
+
+    def _emit_download(
+        self,
+        path: str,
+        body: RequestBody | None,
+        response: httpx.Response,
+        bytes_written: int,
+        start: float,
+        retry: int,
+    ) -> None:
+        """Record a completed streamed download as an ``http`` event.
+
+        The buffered path uses :meth:`_emit_http`, which sizes the
+        response with ``len(response.content)``.  A streamed response has
+        no ``content`` to read, and reading it would defeat the point, so
+        the size comes from what was written to disk.  ``retry`` is the
+        attempt that produced the response, as :meth:`post_raw_stream`
+        recorded it.
+        """
+        cfg = self._dev_config
+        if cfg is None or not cfg.enabled:
+            return
+
+        metadata: dict[str, object] = {}
+        if body_is_sensitive(path, "POST", body):
+            metadata["redacted"] = "participant"
+
+        cfg.emit(
+            Event(
+                timestamp=datetime.now(timezone.utc),
+                kind="http",
+                name=path,
+                duration_ms=(time.monotonic() - start) * 1000.0,
+                bytes_sent=(
+                    len(response.request.content or b"")
+                    if response.request
+                    else _estimate_bytes(body)
+                ),
+                bytes_received=bytes_written,
+                status=response.status_code,
+                retry=retry,
                 error=None,
                 metadata=metadata,
             )
@@ -702,6 +814,25 @@ def _raise_for_status(status: int, body: str, response: httpx.Response) -> None:
     if 400 <= status < 500:
         # 400, 422, and any other 4xx fall into the validation bucket.
         raise TransportValidationError(status, body)
+
+
+def _status_error(status: int, body: str, response: httpx.Response) -> TransportError:
+    """Build the transport exception for a 4xx or 5xx without raising it.
+
+    4xx goes through :func:`_raise_for_status`, so the streaming path
+    maps refusals exactly as the buffered one does.  5xx prefers the
+    structured consent error encoded in the body and falls back to
+    :class:`TransportServerError`.  A POST is never retried on 5xx.
+    """
+    if 400 <= status < 500:
+        try:
+            _raise_for_status(status, body, response)
+        except TransportError as exc:
+            return exc
+    structured_error = _structured_transport_error(status, body)
+    if structured_error is not None:
+        return structured_error
+    return TransportServerError(status, body)
 
 
 def _refusal_transport_error(status: int, body: str) -> TransportError:
@@ -767,6 +898,16 @@ def _timeout_kwargs(timeout: float | None) -> dict[str, float]:
     reads as "no deadline at all".
     """
     return {} if timeout is None else {"timeout": timeout}
+
+
+def _remove_partial(part_path: Path) -> None:
+    """Best-effort removal of a staging file after a failed download.
+
+    If the partial cannot be deleted there is nothing useful to do; the
+    original failure is the one worth propagating.
+    """
+    with contextlib.suppress(OSError):
+        part_path.unlink(missing_ok=True)
 
 
 def _estimate_bytes(body: RequestBody | None) -> int | None:

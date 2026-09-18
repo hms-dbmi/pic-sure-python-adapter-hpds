@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import json
 import re
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from io import BytesIO, StringIO
+from io import StringIO
+from pathlib import Path
 from typing import NoReturn
 
 import pandas as pd
@@ -18,7 +22,11 @@ from picsure._services._errors import translate_transport_error
 from picsure._services._hpds_paths import query_prefix
 from picsure._transport.client import PicSureClient
 from picsure._transport.errors import TransportError, TransportServerError
-from picsure.errors import PicSureQueryError, PicSureValidationError
+from picsure.errors import (
+    PicSureConnectionError,
+    PicSureQueryError,
+    PicSureValidationError,
+)
 
 _QUERY_OPERATION = "the query"
 
@@ -45,6 +53,10 @@ _VARIANT_RESULT_TYPES = frozenset(
         "AGGREGATE_VCF_EXCERPT",
     }
 )
+
+_DATAFRAME_RESULT_TYPES = frozenset({"DATAFRAME", "DATAFRAME_TIMESERIES"})
+
+_PREVIEW_BYTES = 200
 
 _COUNT_EXACT = re.compile(r"^(\d+)$")
 _COUNT_NOISY = re.compile(r"^(\d+)\s*\u00b1\s*(\d+)$")
@@ -94,6 +106,9 @@ def run_query(
     body = build_query_body(query, resolved_type)
     path = query_prefix(backend, v3=True) + "/query/sync"
 
+    if resolved_type in _DATAFRAME_RESULT_TYPES:
+        return _run_dataframe_query(client, path, body, resolved_type)
+
     try:
         raw = client.post_raw(path, body=body)
     except TransportError as exc:
@@ -108,9 +123,7 @@ def run_query(
         return _parse_variant_count(raw, request=request)
     if resolved_type == "VARIANT_LIST_FOR_QUERY":
         return _parse_variant_list(raw)
-    if resolved_type in ("VCF_EXCERPT", "AGGREGATE_VCF_EXCERPT"):
-        return _parse_vcf_excerpt(raw)
-    return _parse_dataframe(raw)
+    return _parse_vcf_excerpt(raw)
 
 
 def _raise_query_error(exc: TransportError, resolved_type: str) -> NoReturn:
@@ -127,6 +140,58 @@ def _raise_query_error(exc: TransportError, resolved_type: str) -> NoReturn:
             f"HTTP {exc.status_code}.)"
         ) from exc
     raise translate_transport_error(exc, operation=_QUERY_OPERATION) from exc
+
+
+def _run_dataframe_query(
+    client: PicSureClient,
+    path: str,
+    body: dict[str, object],
+    resolved_type: str,
+) -> pd.DataFrame:
+    """Stream a participant or timestamp result and parse it from disk.
+
+    Only the CSV cohort result types (``DATAFRAME`` and
+    ``DATAFRAME_TIMESERIES``) come through here; a participant download
+    for a big cohort can run to hundreds of megabytes, while every other
+    result type, VCF excerpts included, is a short body parsed in place.
+    The buffered path holds the whole CSV in memory and then builds a
+    DataFrame from it, so peak usage is the raw bytes plus the frame.
+    For a large cohort that is enough to exhaust a notebook kernel,
+    which presents as a dead kernel with no error rather than as a
+    failure, and the ten-minute data deadline lets much larger results
+    through than the old thirty seconds did.  Streaming to a temporary
+    file drops the peak to the frame alone.
+
+    Staging the result on disk introduces local failures the buffered
+    path never had: no temporary directory, a full disk, an unreadable
+    file.  Those are translated to :class:`PicSureConnectionError`, as
+    the export helpers do, so a caller catching ``PicSureError`` still
+    sees them.
+    """
+    try:
+        with _download_target() as target:
+            try:
+                client.post_raw_to_file(path, target, body=body)
+            except TransportError as exc:
+                _raise_query_error(exc, resolved_type)
+            return _parse_dataframe(target)
+    except OSError as exc:
+        raise PicSureConnectionError(
+            f"Could not stage the query result on local disk: {exc}"
+        ) from exc
+
+
+@contextmanager
+def _download_target() -> Iterator[Path]:
+    """Yield a path to stream a download into, removed on the way out.
+
+    The enclosing directory is what gets cleaned up, so the ``.part``
+    staging file :meth:`PicSureClient.post_raw_to_file` writes goes with
+    it whether the download succeeded, failed part-way, or the parse
+    afterwards raised.
+    """
+    with tempfile.TemporaryDirectory(prefix="picsure-query-") as directory:
+        yield Path(directory) / "result.csv"
 
 
 def build_query_body(
@@ -430,19 +495,29 @@ def _parse_cross_count(raw: bytes) -> dict[str, CountResult]:
     return result
 
 
-def _parse_dataframe(raw: bytes) -> pd.DataFrame:
-    if not raw.strip():
-        return pd.DataFrame()
+def _parse_dataframe(source: Path) -> pd.DataFrame:
+    """Parse a streamed CSV download into a DataFrame.
+
+    Takes a path rather than the response bytes so pandas reads the file
+    incrementally and the raw body is never held alongside the frame.
+    An empty or whitespace-only body is a legitimate "no rows" answer,
+    which pandas reports as ``EmptyDataError``; it becomes an empty
+    DataFrame rather than a parse failure.
+    """
     try:
-        return pd.read_csv(BytesIO(raw), encoding="utf-8")
-    except UnicodeDecodeError as exc:
+        return pd.read_csv(source, encoding="utf-8")
+    except pd.errors.EmptyDataError:
+        return pd.DataFrame()
+    except (UnicodeDecodeError, pd.errors.ParserError) as exc:
         raise PicSureQueryError(
-            f"Server returned a malformed CSV response: {raw[:200]!r}"
+            f"Server returned a malformed CSV response: {_download_preview(source)!r}"
         ) from exc
-    except (pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
-        raise PicSureQueryError(
-            f"Server returned a malformed CSV response: {raw[:200]!r}"
-        ) from exc
+
+
+def _download_preview(source: Path) -> bytes:
+    """Return the leading bytes of a download, to quote in an error."""
+    with source.open("rb") as handle:
+        return handle.read(_PREVIEW_BYTES)
 
 
 _QUERY_TYPE_NOT_ALLOWED = "query type not allowed"

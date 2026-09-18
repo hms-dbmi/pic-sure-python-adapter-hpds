@@ -1245,3 +1245,91 @@ class TestClientTimeouts:
 
         timeout = respx.calls[0].request.extensions["timeout"]
         assert timeout["read"] == DATA_TIMEOUT_SECONDS
+
+
+class TestPostRawToFile:
+    """A download that never holds the whole body in memory."""
+
+    @respx.mock
+    def test_writes_the_body_to_the_target(self, tmp_path):
+        respx.post(f"{BASE_URL}/download").mock(
+            return_value=httpx.Response(200, content=b"col_a,col_b\n1,2\n")
+        )
+        target = tmp_path / "out.csv"
+        client = PicSureClient(base_url=BASE_URL, token="t")
+
+        client.post_raw_to_file("/download", target, body={"q": 1})
+
+        assert target.read_bytes() == b"col_a,col_b\n1,2\n"
+
+    @respx.mock
+    def test_leaves_no_staging_file_behind(self, tmp_path):
+        respx.post(f"{BASE_URL}/download").mock(
+            return_value=httpx.Response(200, content=b"data")
+        )
+        target = tmp_path / "out.csv"
+        client = PicSureClient(base_url=BASE_URL, token="t")
+
+        client.post_raw_to_file("/download", target)
+
+        assert list(p.name for p in tmp_path.iterdir()) == ["out.csv"]
+
+    @respx.mock
+    def test_a_failure_leaves_nothing_at_the_target_path(self, tmp_path):
+        """A half-written download leaves neither a file nor a .part behind."""
+        respx.post(f"{BASE_URL}/download").mock(
+            return_value=httpx.Response(500, text="boom")
+        )
+        target = tmp_path / "out.csv"
+        client = PicSureClient(base_url=BASE_URL, token="t")
+
+        with pytest.raises(TransportServerError):
+            client.post_raw_to_file("/download", target)
+
+        assert list(tmp_path.iterdir()) == []
+
+    @respx.mock
+    def test_a_mid_stream_failure_cleans_up(self, tmp_path):
+        respx.post(f"{BASE_URL}/download").mock(
+            return_value=httpx.Response(200, stream=_FailsMidStream())
+        )
+        target = tmp_path / "out.csv"
+        client = PicSureClient(base_url=BASE_URL, token="t")
+
+        with pytest.raises(TransportConnectionError):
+            client.post_raw_to_file("/download", target)
+
+        assert list(tmp_path.iterdir()) == []
+
+    @respx.mock
+    def test_a_failed_promotion_cleans_up_the_staging_file(self, tmp_path):
+        """A non-empty directory at the target fails the rename after the write.
+
+        A file cannot replace a non-empty directory, so the failure lands
+        after the whole body was written to the staging file.
+        """
+        respx.post(f"{BASE_URL}/download").mock(
+            return_value=httpx.Response(200, content=b"data")
+        )
+        target = tmp_path / "out.csv"
+        target.mkdir()
+        (target / "occupant").write_text("x")
+        client = PicSureClient(base_url=BASE_URL, token="t")
+
+        with pytest.raises(OSError):
+            client.post_raw_to_file("/download", target)
+
+        assert not (tmp_path / "out.csv.part").exists()
+
+    @respx.mock
+    def test_sends_the_auth_header(self, tmp_path):
+        route = respx.post(f"{BASE_URL}/download").mock(
+            return_value=httpx.Response(200, content=b"x")
+        )
+        client = PicSureClient(base_url=BASE_URL, token="secret-token")
+
+        client.post_raw_to_file("/download", tmp_path / "out.csv")
+
+        assert route.calls[0].request.headers["authorization"] == (
+            "Bearer secret-token"
+        )
