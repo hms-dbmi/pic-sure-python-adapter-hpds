@@ -288,6 +288,40 @@ class TestBuildClauseGroup:
         assert children[2]["operator"] == "OR"  # type: ignore[index]
 
 
+class TestBuildClauseGroupNonSequence:
+    def test_none_names_the_argument_type(self):
+        with pytest.raises(PicSureValidationError, match="NoneType") as info:
+            buildClauseGroup(None)  # type: ignore[arg-type]
+
+        assert "at least one clause" not in str(info.value)
+
+    def test_an_include_only_saved_query_filter_is_named_as_a_missing_sequence(self):
+        include_only = buildQuery(includeConcepts=["\\p1\\"])
+
+        with pytest.raises(PicSureValidationError, match="cannot be iterated"):
+            buildClauseGroup(include_only.phenotypicFilter)  # type: ignore[arg-type]
+
+    def test_an_empty_string_names_the_type(self):
+        with pytest.raises(PicSureValidationError, match="not a string"):
+            buildClauseGroup("")  # type: ignore[arg-type]
+
+    def test_a_number_names_the_type(self):
+        with pytest.raises(PicSureValidationError, match="not a int"):
+            buildClauseGroup(0)  # type: ignore[arg-type]
+
+    def test_an_empty_list_keeps_its_own_message(self):
+        with pytest.raises(PicSureValidationError) as info:
+            buildClauseGroup([])
+
+        assert str(info.value) == "A clause group must contain at least one clause."
+
+    def test_an_empty_tuple_keeps_the_same_message(self):
+        with pytest.raises(PicSureValidationError) as info:
+            buildClauseGroup(())
+
+        assert str(info.value) == "A clause group must contain at least one clause."
+
+
 class TestBuildQuery:
     def test_filter_and_include_concepts(self):
         males = buildClause(

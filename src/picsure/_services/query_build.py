@@ -146,14 +146,16 @@ def buildClauseGroup(  # noqa: N802
 
     Raises:
         PicSureValidationError: If the clause list is empty, if
-            ``clauses`` is a bare Clause, a bare ClauseGroup or a string
-            rather than a sequence of them, or if any element is neither
-            a Clause nor a ClauseGroup. A Query is the common case, since
-            ``Session.loadQueryByID`` may return one; its
-            ``phenotypicFilter`` is the part that composes. The sequence
-            reaches :class:`ClauseGroup` unconverted so that its own
-            guards are the ones that answer, rather than an unwrapped
-            ``TypeError`` or a later ``AttributeError``.
+            ``clauses`` is a bare Clause, a bare ClauseGroup, a string or
+            anything else that is not a sequence of them, or if any
+            element is neither a Clause nor a ClauseGroup. A Query is the
+            common case, since ``Session.loadQueryByID`` may return one;
+            its ``phenotypicFilter`` is the part that composes, and on an
+            include-only saved query that attribute is ``None``. An empty
+            sequence is answered here; every other argument reaches
+            :class:`ClauseGroup` unconverted, so its guards name the type
+            that arrived rather than reporting an empty group, an
+            unwrapped ``TypeError`` or a later ``AttributeError``.
 
     Example:
         >>> from picsure import buildClauseGroup, GroupOperator
@@ -162,7 +164,7 @@ def buildClauseGroup(  # noqa: N802
         ...     operator=GroupOperator.AND,
         ... )
     """
-    if not clauses:
+    if isinstance(clauses, Sequence) and not isinstance(clauses, str) and not clauses:
         raise PicSureValidationError("A clause group must contain at least one clause.")
 
     return ClauseGroup(clauses=clauses, operator=operator)
