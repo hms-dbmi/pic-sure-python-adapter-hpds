@@ -396,6 +396,13 @@ class Session:
         async flow is exposed only on the authorized v3 endpoints, which
         the BDC API gateway rejects without a token.
 
+        The submit, poll and download sequence is bounded as a whole at
+        ten minutes. That budget is its own, and
+        ``picsure.connect(timeout=...)`` does not change it: that
+        argument is the deadline for a single request, so raising it lets
+        one slow poll consume more of the ten minutes rather than
+        extending them.
+
         Args:
             query: A Query, Clause, or ClauseGroup.
             path: File path to write the PFB data to.
@@ -403,6 +410,10 @@ class Session:
         Raises:
             PicSureValidationError: If the session was connected to an
                 open-access platform.
+            PicSureConnectionError: If the export does not finish within
+                its ten-minute budget, and for the other transport
+                failures :func:`picsure._services.export.export_pfb`
+                documents.
         """
         if self._backend == "open":
             raise PicSureValidationError(

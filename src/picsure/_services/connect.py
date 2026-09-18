@@ -121,10 +121,15 @@ def connect(
         timeout: Per-request deadline in seconds for the data operations
             this session performs: counts, participant downloads, export
             polls. Defaults to ten minutes, because a large dataset can
-            legitimately take minutes to assemble server-side. The
-            connect-time validation request below is not covered by it:
-            that one keeps its own short deadline so a mistyped hostname
-            fails in seconds.
+            legitimately take minutes to assemble server-side. It bounds
+            one request, not a whole operation, and two things sit
+            outside it. The connect-time validation request below keeps
+            its own short deadline, so a mistyped hostname fails in
+            seconds. :meth:`Session.exportAsPFB` keeps its own ten-minute
+            budget for the submit, poll and download flow as a whole,
+            which this argument neither raises nor lowers: a larger
+            ``timeout`` only lets one slow poll eat more of that fixed
+            budget.
         validate: Whether to verify the connection before returning a
             Session. ``True`` (default) checks the token's shape and
             expiry locally, then sends one ``GET /psama/user/me`` to
