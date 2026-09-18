@@ -168,7 +168,7 @@ every pull request and every branch push, and **deploys** only from a
 published release or a push to the repository's default branch. The
 guard compares against `github.event.repository.default_branch`
 rather than a hard-coded name, so it cannot go stale if the default
-branch is renamed — but it also means the deploy follows whatever
+branch is renamed. It also means the deploy follows whatever
 GitHub says the default branch is, not whichever branch the team
 treats as mainline.
 

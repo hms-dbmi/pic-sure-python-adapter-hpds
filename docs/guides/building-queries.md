@@ -324,8 +324,14 @@ female_query = replaceClause(full_query, sex_filter, female_filter)
 
 `removeSubQuery` drops any `ClauseGroup` left empty by a removal, so
 you don't end up with orphan operators. It raises
-`PicSureValidationError` if the removal would empty the whole tree —
+`PicSureValidationError` if the removal would empty the whole tree;
 build a fresh query instead in that case.
+
+Both functions raise `PicSureValidationError` when `target` does not
+occur in the query, rather than returning an unchanged copy. Matching is
+structural, so a clause built with the same concept path but different
+categories, min or max is a different clause. Build the target from the
+same values, or pick it out of the query's own clauses.
 
 ## Validation
 
