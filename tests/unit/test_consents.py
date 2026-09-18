@@ -167,14 +167,28 @@ class TestFetchConsentsRefusalIsNotAvailability:
 
 
 class TestFetchConsentsMalformedBody:
-    @respx.mock
-    def test_non_json_200_raises_from_the_public_hierarchy_not_a_decode_error(self):
-        from picsure.errors import PicSureError
+    """An unreadable body points at the base URL, not at the response.
 
+    The shared decoder raises PicSureQueryError, so the handler has to
+    catch that rather than the raw ValueError the decoder used to let
+    through, or the deployment-root explanation never reaches the user.
+    """
+
+    @respx.mock
+    def test_non_json_200_is_reported_as_a_connection_error(self):
         respx.get(CONSENTS_URL).mock(
             return_value=httpx.Response(200, text="<html>captive portal</html>")
         )
-        with pytest.raises(PicSureError) as exc_info:
+        with pytest.raises(PicSureConnectionError) as exc_info:
             fetch_consents(_make_client())
         assert not isinstance(exc_info.value, ValueError)
         assert "/psama/user/me/consents" in str(exc_info.value)
+        assert "PIC-SURE deployment root" in str(exc_info.value)
+
+    @respx.mock
+    def test_empty_200_body_is_reported_as_a_connection_error(self):
+        respx.get(CONSENTS_URL).mock(return_value=httpx.Response(200, text=""))
+        with pytest.raises(PicSureConnectionError) as exc_info:
+            fetch_consents(_make_client())
+        assert "PIC-SURE deployment root" in str(exc_info.value)
+        assert "empty body" in str(exc_info.value)
