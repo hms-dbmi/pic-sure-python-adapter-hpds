@@ -558,6 +558,44 @@ class TestSearchPagination:
         with pytest.raises(PicSureValidationError, match="too many"):
             searchDictionary(_make_client(), page_size=3)
 
+    @respx.mock
+    def test_unpaged_final_page_is_truncated_at_the_ceiling(self, monkeypatch):
+        """A last page that crosses the ceiling with no ``totalElements`` is cut."""
+        monkeypatch.setattr(search_module, "_MAX_UNPAGED_ROWS", 5)
+        respx.post(_concepts_url(3, page=0)).mock(
+            return_value=httpx.Response(
+                200, json={"content": _rows(0, 3), "last": False}
+            )
+        )
+        respx.post(_concepts_url(3, page=1)).mock(
+            return_value=httpx.Response(
+                200, json={"content": _rows(3, 3), "last": True}
+            )
+        )
+        df = searchDictionary(_make_client(), page_size=3)
+        assert len(df) == 5
+        assert df["conceptPath"].tolist() == [f"\\c{i}\\" for i in range(5)]
+        assert df.attrs["has_more"] is True
+        assert df.attrs["total_elements"] is None
+        assert df.attrs["pages_fetched"] == 2
+
+    @respx.mock
+    def test_unpaged_walk_ending_exactly_at_the_ceiling_is_complete(self, monkeypatch):
+        monkeypatch.setattr(search_module, "_MAX_UNPAGED_ROWS", 6)
+        respx.post(_concepts_url(3, page=0)).mock(
+            return_value=httpx.Response(
+                200, json={"content": _rows(0, 3), "last": False}
+            )
+        )
+        respx.post(_concepts_url(3, page=1)).mock(
+            return_value=httpx.Response(
+                200, json={"content": _rows(3, 3), "last": True}
+            )
+        )
+        df = searchDictionary(_make_client(), page_size=3)
+        assert len(df) == 6
+        assert df.attrs["has_more"] is False
+
     @pytest.mark.parametrize("bad", [0, -1, -500])
     def test_non_positive_page_size_rejected(self, bad):
         with pytest.raises(PicSureValidationError, match="page_size"):

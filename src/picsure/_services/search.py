@@ -9,9 +9,9 @@ Three module constants bound that paging. ``_DEFAULT_PAGE_SIZE`` is the number
 of rows requested per call when the caller gives no ``page_size``.
 ``_SERVER_MAX_PAGE_SIZE`` is the largest ``page_size`` the backend accepts,
 Java ``Integer.MAX_VALUE``; one above it overflows the int binding and comes
-back as HTTP 400. ``_MAX_UNPAGED_ROWS`` caps the rows an unpaged search
-accumulates before it refuses to continue, so a caller who omits ``page`` on a
-production-sized dictionary does not walk the whole thing into one DataFrame.
+back as HTTP 400. ``_MAX_UNPAGED_ROWS`` caps the rows an unpaged search returns,
+so a caller who omits ``page`` on a production-sized dictionary does not walk
+the whole thing into one DataFrame.
 """
 
 from __future__ import annotations
@@ -85,13 +85,20 @@ def searchDictionary(  # noqa: N802
     walking the pages in ``page_size`` chunks.  Passing ``page``
     returns that one page and nothing else.
 
+    An unpaged call never returns more than :data:`_MAX_UNPAGED_ROWS`
+    rows. When the server reports a larger match count, or the walk
+    passes the ceiling with pages still to come, it raises. When the
+    server reports no count and only the final page crosses the
+    ceiling, the surplus rows are dropped and ``has_more`` is ``True``.
+
     Either way the returned DataFrame carries the page metadata in
     :attr:`pandas.DataFrame.attrs`:
 
     - ``total_elements`` is the server's total match count, or ``None``
       when the response omitted it.
     - ``has_more`` says whether further pages exist beyond what was
-      returned.
+      returned. On an unpaged call it is ``True`` only when the final
+      page was truncated at the ceiling.
     - ``page`` is the requested page, or ``None`` when every page was
       collected.
     - ``page_size`` is the number of rows requested per HTTP call.
@@ -251,8 +258,14 @@ def _fetch_all_pages(
     """Walk every page of a concepts search and return the rows as one list.
 
     Returns the accumulated content, the server's ``totalElements`` (or
-    ``None``), ``has_more`` (always ``False`` on a completed walk), and
-    the number of requests issued.
+    ``None``), ``has_more``, and the number of requests issued.
+
+    A response whose ``totalElements`` exceeds :data:`_MAX_UNPAGED_ROWS`
+    raises before any more pages are read, and so does a walk that
+    passes the ceiling with pages still to come. When ``totalElements``
+    is absent and the final page carries the walk past the ceiling, the
+    surplus rows are dropped and ``has_more`` is ``True`` to say so.
+    Otherwise ``has_more`` is ``False``.
     """
     content: list[dict[str, object]] = []
     total_elements: int | None = None
@@ -265,10 +278,16 @@ def _fetch_all_pages(
         page_rows = _page_content(data)
         content.extend(page_rows)
         pages_fetched = page + 1
-        if not page_rows or not _page_has_more(data, page, page_size, len(page_rows)):
-            return content, total_elements, False, pages_fetched
+        more_pages = bool(page_rows) and _page_has_more(
+            data, page, page_size, len(page_rows)
+        )
         if len(content) > _MAX_UNPAGED_ROWS:
-            raise _unpaged_ceiling_error(total_elements)
+            if more_pages:
+                raise _unpaged_ceiling_error(total_elements)
+            del content[_MAX_UNPAGED_ROWS:]
+            return content, total_elements, True, pages_fetched
+        if not more_pages:
+            return content, total_elements, False, pages_fetched
         page += 1
 
 
