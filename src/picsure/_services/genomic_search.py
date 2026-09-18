@@ -6,7 +6,7 @@ import pandas as pd
 
 from picsure._services._errors import translate_transport_error
 from picsure._services._hpds_paths import search_values_path
-from picsure._transport.client import PicSureClient
+from picsure._transport.client import EmptyBodyError, PicSureClient
 from picsure._transport.errors import TransportError, TransportNotFoundError
 from picsure.errors import PicSureQueryError, PicSureValidationError
 
@@ -33,9 +33,11 @@ def search_genomic_values(
 
     Raises:
         PicSureValidationError: If ``genomic_concept_path`` is blank.
-        PicSureQueryError: If the endpoint is absent, or the response is not
-            a genomic values payload. That includes the empty body the server
-            returns for a concept that is not a genomic annotation.
+        PicSureQueryError: If the endpoint is absent, if the server answers
+            with the empty body it sends for a concept that is not a genomic
+            annotation, if the body is not JSON, or if the payload is not a
+            genomic values object. Only the empty body is read as "not a
+            genomic annotation"; the other cases keep the decoder's message.
     """
     if not isinstance(genomic_concept_path, str) or not genomic_concept_path.strip():
         raise PicSureValidationError(
@@ -54,11 +56,11 @@ def search_genomic_values(
 
     try:
         data = client.get_json(path)
-    except ValueError as exc:
+    except EmptyBodyError as exc:
         raise PicSureQueryError(
             f"The server returned no genomic values payload for "
             f"'{genomic_concept_path}'. That concept may not be a genomic "
-            "annotation on this deployment — valid keys look like "
+            "annotation on this deployment. Valid keys look like "
             "'Gene_with_variant' or 'Variant_consequence_calculated', not a "
             "phenotypic concept path."
         ) from exc

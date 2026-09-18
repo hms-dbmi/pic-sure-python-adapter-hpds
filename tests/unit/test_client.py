@@ -291,6 +291,21 @@ class TestJsonBodyShapes:
             client.get_json("/odd")
 
     @respx.mock
+    @pytest.mark.parametrize("content", [b"", b"   \n"])
+    def test_empty_body_raises_empty_body_error(self, content):
+        from picsure._transport.client import EmptyBodyError
+
+        respx.get(f"{BASE_URL}/odd").mock(
+            return_value=httpx.Response(200, content=content)
+        )
+
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+        with pytest.raises(EmptyBodyError, match="empty body") as exc_info:
+            client.get_json("/odd")
+
+        assert isinstance(exc_info.value, PicSureQueryError)
+
+    @respx.mock
     def test_post_json_scalar_top_level_raises_query_error(self):
         respx.post(f"{BASE_URL}/odd").mock(return_value=httpx.Response(200, json=7))
 

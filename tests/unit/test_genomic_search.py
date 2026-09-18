@@ -238,16 +238,34 @@ class TestGenomicValuesNonAnnotationConcept:
             )
 
     @respx.mock
-    def test_non_json_body_raises_a_picsure_error(self):
-        respx.get(GENOMIC_VALUES_URL).mock(
-            return_value=httpx.Response(200, content=b"<html>nope</html>")
-        )
+    def test_whitespace_body_is_treated_as_empty(self):
+        _values_route().mock(return_value=httpx.Response(200, content=b"  \n"))
         with pytest.raises(PicSureQueryError, match="no genomic values payload"):
+            search_genomic_values(
+                PicSureClient(base_url=BASE_URL, token=TOKEN),
+                "Totally_Not_A_Key",
+                backend="auth",
+            )
+
+    @respx.mock
+    @pytest.mark.parametrize("content", [b"<html>nope</html>", b"null", b"7"])
+    def test_non_empty_undecodable_body_keeps_the_decoder_message(self, content):
+        """Only the empty body means "not a genomic annotation".
+
+        A proxy page or a scalar payload says nothing about the concept, so
+        the decode error keeps its own message instead of blaming the key.
+        """
+        respx.get(GENOMIC_VALUES_URL).mock(
+            return_value=httpx.Response(200, content=content)
+        )
+        with pytest.raises(PicSureQueryError) as exc_info:
             search_genomic_values(
                 PicSureClient(base_url=BASE_URL, token=TOKEN),
                 "Gene_with_variant",
                 backend="auth",
             )
+
+        assert "genomic annotation" not in str(exc_info.value)
 
 
 class TestGenomicValuesValueList:
