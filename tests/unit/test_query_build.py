@@ -173,6 +173,23 @@ class TestBuildClauseGroup:
         with pytest.raises(PicSureValidationError, match="at least one"):
             buildClauseGroup([])
 
+    def test_bare_clause_raises_the_documented_validation_error(self):
+        clause = buildClause("\\p1\\", type=PhenotypicFilterType.FILTER, categories="A")
+
+        with pytest.raises(PicSureValidationError, match="Clause or ClauseGroup"):
+            buildClauseGroup(clause)
+
+    def test_bare_group_raises_the_documented_validation_error(self):
+        clause = buildClause("\\p1\\", type=PhenotypicFilterType.FILTER, categories="A")
+        inner = buildClauseGroup([clause], operator=GroupOperator.OR)
+
+        with pytest.raises(PicSureValidationError, match="bare ClauseGroup"):
+            buildClauseGroup(inner)
+
+    def test_a_string_raises_instead_of_becoming_character_children(self):
+        with pytest.raises(PicSureValidationError, match="not a string"):
+            buildClauseGroup("abc")
+
     def test_copies_caller_list(self):
         c1 = buildClause("\\p1\\", type=PhenotypicFilterType.FILTER, categories="A")
         c2 = buildClause("\\p2\\", type=PhenotypicFilterType.FILTER, categories="B")

@@ -36,13 +36,21 @@ class ClauseGroup:
     hashable and usable as a dict key or set member. ``clauses`` accepts
     any sequence of :class:`Clause` / :class:`ClauseGroup` and always
     stores a tuple. A bare :class:`Clause` or :class:`ClauseGroup` passed
-    where the sequence belongs raises :class:`PicSureValidationError`.
+    where the sequence belongs raises :class:`PicSureValidationError`,
+    and so does a string, which is a sequence of characters and would
+    otherwise become one child per character.
     """
 
     clauses: Sequence[Clause | ClauseGroup]
     operator: GroupOperator
 
     def __post_init__(self) -> None:
+        if isinstance(self.clauses, str):
+            raise PicSureValidationError(
+                "ClauseGroup expects a sequence of Clause or ClauseGroup objects, "
+                "not a string. Pass a list of clauses built with "
+                "picsure.buildClause() or picsure.buildClauseGroup()."
+            )
         if isinstance(self.clauses, (Clause, ClauseGroup)):
             raise PicSureValidationError(
                 "ClauseGroup expects a sequence of Clause or ClauseGroup objects, "

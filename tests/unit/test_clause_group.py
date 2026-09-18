@@ -242,3 +242,7 @@ class TestClauseGroupInputTypes:
 
         with pytest.raises(PicSureValidationError, match="bare ClauseGroup"):
             ClauseGroup(clauses=inner, operator=GroupOperator.AND)
+
+    def test_a_string_is_refused_rather_than_split_into_characters(self):
+        with pytest.raises(PicSureValidationError, match="not a string"):
+            ClauseGroup(clauses="abc", operator=GroupOperator.AND)

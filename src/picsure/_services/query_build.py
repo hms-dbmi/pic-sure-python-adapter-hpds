@@ -134,7 +134,11 @@ def buildClauseGroup(  # noqa: N802
         ``Session.runQuery()``.
 
     Raises:
-        PicSureValidationError: If the clause list is empty.
+        PicSureValidationError: If the clause list is empty, or if
+            ``clauses`` is a bare Clause, a bare ClauseGroup or a string
+            rather than a sequence of them. The sequence reaches
+            :class:`ClauseGroup` unconverted so that its own guard is the
+            one that answers, rather than an unwrapped ``TypeError``.
 
     Example:
         >>> from picsure import buildClauseGroup, GroupOperator
@@ -146,7 +150,7 @@ def buildClauseGroup(  # noqa: N802
     if not clauses:
         raise PicSureValidationError("A clause group must contain at least one clause.")
 
-    return ClauseGroup(clauses=tuple(clauses), operator=operator)
+    return ClauseGroup(clauses=clauses, operator=operator)
 
 
 def buildQuery(  # noqa: N802
