@@ -135,6 +135,60 @@ class TestBuildClauseValidation:
             buildClause([], type=PhenotypicFilterType.FILTER, categories="x")
 
 
+class TestBuildClauseEmptyCategories:
+    def test_an_empty_category_list_is_no_criteria_at_all(self):
+        with pytest.raises(
+            PicSureValidationError, match="require at least one of: categories"
+        ):
+            buildClause("\\path\\", type=PhenotypicFilterType.FILTER, categories=[])
+
+    def test_an_empty_category_list_does_not_conflict_with_min(self):
+        clause = buildClause(
+            "\\path\\",
+            type=PhenotypicFilterType.FILTER,
+            categories=[],
+            min=40.0,
+        )
+
+        assert clause.categories is None
+        assert clause.min == 40.0
+
+    def test_an_empty_category_list_never_reaches_the_wire_as_empty_values(self):
+        clause = buildClause(
+            "\\path\\",
+            type=PhenotypicFilterType.FILTER,
+            categories=[],
+            max=80.0,
+        )
+
+        assert "values" not in clause.to_query_json()
+
+    def test_a_blank_category_string_is_refused(self):
+        with pytest.raises(PicSureValidationError, match="empty or blank strings"):
+            buildClause("\\path\\", type=PhenotypicFilterType.FILTER, categories="")
+
+    def test_a_blank_category_in_a_list_is_refused(self):
+        with pytest.raises(PicSureValidationError, match="empty or blank strings"):
+            buildClause("\\path\\", type=PhenotypicFilterType.FILTER, categories=[""])
+
+    def test_a_whitespace_only_category_is_refused(self):
+        with pytest.raises(PicSureValidationError, match="empty or blank strings"):
+            buildClause(
+                "\\path\\",
+                type=PhenotypicFilterType.FILTER,
+                categories=["Male", "   "],
+            )
+
+    def test_real_categories_still_build_a_values_filter(self):
+        clause = buildClause(
+            "\\path\\",
+            type=PhenotypicFilterType.FILTER,
+            categories=["Male", "Female"],
+        )
+
+        assert clause.to_query_json()["values"] == ["Male", "Female"]
+
+
 class TestSelectRemoved:
     def test_select_member_is_gone(self):
         assert not hasattr(PhenotypicFilterType, "SELECT")

@@ -129,14 +129,6 @@ class TestRemoveSubQuery:
         with pytest.raises(PicSureValidationError, match="structural"):
             removeSubQuery(q, _clause("\\a\\", "different"))
 
-    def test_pathless_target_is_still_named(self):
-        """A pathless clause only arrives by direct construction; still named."""
-        q = buildClauseGroup([_clause("\\a\\", "x")], operator=GroupOperator.AND)
-        pathless = Clause(keys=(), type=PhenotypicFilterType.REQUIRE)
-
-        with pytest.raises(PicSureValidationError, match="that clause"):
-            removeSubQuery(q, pathless)
-
     def test_absent_group_target_is_named_as_a_group(self):
         a = _clause("\\a\\", "x")
         b = _clause("\\b\\", "y")

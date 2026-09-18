@@ -4,6 +4,8 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import Enum
 
+from picsure.errors import PicSureValidationError
+
 
 class PhenotypicFilterType(Enum):
     """Type of filter clause in a PIC-SURE query.
@@ -58,6 +60,12 @@ class Clause:
     works at runtime. A list field would have
     left the frozen declaration only skin-deep, with ``hash()`` raising on a
     supposedly immutable value object.
+
+    **Emptiness.** A clause with no keys is refused here, not only in
+    ``buildClause``. It serializes to ``phenotypicClauses: []``, the
+    payload the query service rejects for an empty group, and nesting it
+    in a group beside a real sibling hides that from the group's own
+    non-empty check, because the group still has one child.
     """
 
     keys: Sequence[str]
@@ -68,6 +76,13 @@ class Clause:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "keys", _as_tuple(self.keys))
+        if not self.keys:
+            raise PicSureValidationError(
+                "Clause must have at least one concept path. A clause with no "
+                "keys serializes to an empty 'phenotypicClauses' list, which "
+                "the query service does not accept. Pass the concept path or "
+                "paths the clause filters on."
+            )
         if self.categories is not None:
             object.__setattr__(self, "categories", _as_tuple(self.categories))
 

@@ -34,7 +34,10 @@ def buildClause(  # noqa: N802
             categorical or range filters, ``PhenotypicFilterType.ANYRECORD``
             to match the presence of any value, or
             ``PhenotypicFilterType.REQUIRE`` to require a non-null value.
-        categories: For FILTER clauses on categorical variables.
+        categories: For FILTER clauses on categorical variables. An empty
+            list counts as no categories at all, so it does not satisfy a
+            FILTER's criteria requirement and does not conflict with
+            ``min``/``max``. A blank or whitespace-only value is refused.
         min: For FILTER clauses on numeric variables, minimum value.
         max: For FILTER clauses on numeric variables, maximum value.
 
@@ -44,7 +47,8 @@ def buildClause(  # noqa: N802
         ``Session.runQuery()``.
 
     Raises:
-        PicSureValidationError: If the clause configuration is invalid.
+        PicSureValidationError: If the clause configuration is invalid, or a
+            supplied category value is empty or blank.
 
     Note:
         Variables you filter on are returned as output columns automatically.
@@ -66,11 +70,18 @@ def buildClause(  # noqa: N802
         ... )
     """
     key_paths = (keys,) if isinstance(keys, str) else tuple(keys)
-    category_values = (
-        None
+    supplied_categories = (
+        ()
         if categories is None
         else ((categories,) if isinstance(categories, str) else tuple(categories))
     )
+    if any(not str(value).strip() for value in supplied_categories):
+        raise PicSureValidationError(
+            "buildClause 'categories' must not contain empty or blank strings. "
+            "Pass the category labels to match, or leave categories out and "
+            "filter with min/max."
+        )
+    category_values = supplied_categories or None
 
     if not key_paths:
         raise PicSureValidationError("Clause must have at least one concept path.")
