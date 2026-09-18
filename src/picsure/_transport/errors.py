@@ -7,6 +7,15 @@ Python renders the whole cause chain, so an unredacted transport message
 would print a server-echoed token one frame above the redacted public
 one. Redacting at construction keeps both the message and the stored
 ``body`` clean wherever the exception is rendered.
+
+This hierarchy is not parallel to the public one in
+:mod:`picsure.errors`, so a transport-level ``except`` written by
+analogy with a public one catches a different set of failures.
+:class:`_TransportStructuredError` names the two classes whose parent
+differs. One more divergence sits at the top: a 401 and a 403 both
+become :class:`TransportAuthenticationError` here, and the public side
+splits them into ``PicSureAuthenticationError`` and
+``PicSureAuthorizationError`` by re-reading ``status_code``.
 """
 
 from __future__ import annotations
@@ -87,6 +96,30 @@ class _TransportStructuredError(TransportError):
     """Base class for server responses with a documented error payload.
 
     The stored ``body`` and ``server_message`` are both redacted.
+
+    This is where the two error trees stop being parallel. Both
+    subclasses hang here, directly under :class:`TransportError`, while
+    each public counterpart hangs under the class for its status:
+
+    * :class:`TransportConsentLookupError` is a sibling of
+      :class:`TransportServerError`, so ``except TransportServerError``
+      does not catch the 502 consent-lookup case. Its public
+      counterpart ``PicSureConsentLookupError`` is a child of
+      ``PicSureServerError``, so ``except PicSureServerError`` does
+      catch that one.
+    * :class:`TransportConsentDeniedError` is not a
+      :class:`TransportAuthenticationError`, while its public
+      counterpart ``PicSureConsentDeniedError`` is a
+      ``PicSureAuthError``.
+
+    A transport-level ``except`` or ``isinstance`` therefore must not be
+    written by analogy with the public tree.
+    ``_services/query_run.py``'s ``_raise_query_error`` branches on
+    ``isinstance(exc, TransportServerError)`` to reword a 5xx on a
+    variant result type. A 502 carrying ``consent_lookup_failed`` does
+    not match that branch and reaches the public hierarchy through
+    ``translate_transport_error``, which tests for both classes here
+    before it tests for :class:`TransportServerError`.
     """
 
     def __init__(
