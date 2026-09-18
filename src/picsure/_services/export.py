@@ -7,6 +7,7 @@ import pandas as pd
 
 from picsure._models.clause import Clause
 from picsure._models.clause_group import ClauseGroup
+from picsure._models.count_result import CountResult
 from picsure._models.query import Query
 from picsure._services._errors import translate_transport_error
 from picsure._services._hpds_paths import query_prefix
@@ -210,71 +211,85 @@ def _download_result(
         raise PicSureConnectionError(f"Could not write PFB to {target}: {exc}") from exc
 
 
-def export_csv(data: pd.DataFrame, path: str | Path) -> None:
-    """Write a DataFrame to a CSV file.
+def export_csv(data: pd.DataFrame | pd.Series, path: str | Path) -> None:
+    """Write a DataFrame or Series to a CSV file.
 
     Args:
-        data: DataFrame to export (e.g. from runQuery).
+        data: DataFrame to export (e.g. from runQuery), or a single
+            column of one.
         path: File path for the CSV output.
 
     Raises:
-        PicSureValidationError: If ``data`` is not a DataFrame.
+        PicSureValidationError: If ``data`` is neither a DataFrame nor a
+            Series.
         PicSureConnectionError: If ``path`` could not be written.
     """
     _write_delimited(data, path, sep=",", fmt="CSV", method="exportCSV")
 
 
-def export_tsv(data: pd.DataFrame, path: str | Path) -> None:
-    """Write a DataFrame to a TSV file.
+def export_tsv(data: pd.DataFrame | pd.Series, path: str | Path) -> None:
+    """Write a DataFrame or Series to a TSV file.
 
     Args:
-        data: DataFrame to export (e.g. from runQuery).
+        data: DataFrame to export (e.g. from runQuery), or a single
+            column of one.
         path: File path for the TSV output.
 
     Raises:
-        PicSureValidationError: If ``data`` is not a DataFrame.
+        PicSureValidationError: If ``data`` is neither a DataFrame nor a
+            Series.
         PicSureConnectionError: If ``path`` could not be written.
     """
     _write_delimited(data, path, sep="\t", fmt="TSV", method="exportTSV")
 
 
 def _write_delimited(
-    data: pd.DataFrame,
+    data: pd.DataFrame | pd.Series,
     path: str | Path,
     *,
     sep: str,
     fmt: str,
     method: str,
 ) -> None:
-    """Write a DataFrame to a delimited file inside the public error hierarchy.
+    """Write a DataFrame or Series to a delimited file inside the error hierarchy.
 
-    ``DataFrame.to_csv`` raises a bare ``OSError`` for an unwritable path
-    and, handed something that is not a DataFrame, an ``AttributeError``
+    ``to_csv`` raises a bare ``OSError`` for an unwritable path and, handed
+    something that is not a DataFrame or Series, an ``AttributeError``
     naming ``to_csv``. A caller wrapping the call in ``except PicSureError``
     catches neither, and neither names the path that failed. The type is
     checked up front rather than caught, so the message can say what
-    arrived instead.
+    arrived instead, and a :class:`CountResult` gets the hint that a
+    count query does not produce a table.
 
     Args:
-        data: DataFrame to write.
+        data: DataFrame or Series to write.
         path: Destination file path.
         sep: Field delimiter.
         fmt: Format name used in messages, e.g. ``"CSV"``.
         method: Public method name used in messages, e.g. ``"exportCSV"``.
 
     Raises:
-        PicSureValidationError: If ``data`` is not a DataFrame.
+        PicSureValidationError: If ``data`` is neither a DataFrame nor a
+            Series.
         PicSureConnectionError: If the file could not be written.
     """
-    if not isinstance(data, pd.DataFrame):
+    if not isinstance(data, (pd.DataFrame, pd.Series)):
         raise PicSureValidationError(
-            f"{method} writes a pandas DataFrame, but got "
-            f"{type(data).__name__}. A count query returns a CountResult "
-            f"rather than a table. Run the query with "
-            f"type='participant' (or read CountResult.value directly) "
-            f"before exporting."
+            f"{method} writes a pandas DataFrame or Series, but got "
+            f"{type(data).__name__}.{_count_result_hint(data)}"
         )
     try:
         data.to_csv(path, sep=sep, index=False)
     except OSError as exc:
         raise PicSureConnectionError(f"Could not write {fmt} to {path}: {exc}") from exc
+
+
+def _count_result_hint(data: object) -> str:
+    """Explain how to get a table when a count result was passed to an export."""
+    if not isinstance(data, CountResult):
+        return ""
+    return (
+        " A count query returns a CountResult rather than a table. Run the "
+        "query with type='participant' (or read CountResult.value directly) "
+        "before exporting."
+    )

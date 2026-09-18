@@ -475,3 +475,29 @@ class TestDelimitedExportErrors:
     def test_non_dataframe_is_caught_as_picsure_error(self, export, tmp_path):
         with pytest.raises(PicSureError):
             export(None, tmp_path / "out.csv")
+
+    @pytest.mark.parametrize(
+        ("export", "expected"),
+        [(export_csv, b"age\n42\n51\n"), (export_tsv, b"age\n42\n51\n")],
+    )
+    def test_a_series_is_written_as_one_column(self, export, expected, tmp_path):
+        output = tmp_path / "out.txt"
+
+        export(pd.Series([42, 51], name="age"), output)
+
+        assert output.read_bytes() == expected
+
+    @pytest.mark.parametrize("export", [export_csv, export_tsv])
+    def test_a_count_result_gets_the_participant_hint(self, export, tmp_path):
+        result = CountResult(value=42, margin=None, cap=None, raw="42")
+
+        with pytest.raises(PicSureValidationError, match="type='participant'"):
+            export(result, tmp_path / "out.csv")
+
+    @pytest.mark.parametrize("export", [export_csv, export_tsv])
+    def test_other_types_get_no_count_hint(self, export, tmp_path):
+        with pytest.raises(PicSureValidationError) as info:
+            export(["a", "b"], tmp_path / "out.csv")
+
+        assert "got list" in str(info.value)
+        assert "CountResult" not in str(info.value)
