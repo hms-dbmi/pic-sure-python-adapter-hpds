@@ -427,6 +427,40 @@ class TestNoTokenLeakage:
         assert exc.body.count("<redacted token>") == 1
         assert "token>" not in exc.body.replace("<redacted token>", "")
 
+    def test_a_compact_json_body_keeps_everything_after_the_credential(self):
+        """A greedy match erases the rest of a compact JSON error body.
+
+        Spring's default error JSON carries no space after its commas, so
+        a run of non-space starting at the credential reaches the end of
+        the body and takes the status and the path with it.
+        """
+        body = (
+            f'{{"message":"Invalid token: Bearer {self.TOKEN}",'
+            '"status":401,"path":"/picsure/hpds/auth/v3/query/sync"}'
+        )
+
+        exc = TransportAuthenticationError(401, body)
+
+        assert self.TOKEN not in exc.body
+        assert "<redacted token>" in exc.body
+        assert '"status":401' in exc.body
+        assert '"path":"/picsure/hpds/auth/v3/query/sync"' in exc.body
+        assert exc.body.endswith("}")
+
+    def test_the_english_word_bearer_is_left_alone(self):
+        text = "The bearer of this request is not authorized"
+
+        exc = TransportAuthenticationError(403, text)
+
+        assert exc.body == text
+
+    def test_two_credentials_in_one_body_are_both_redacted(self):
+        exc = TransportAuthenticationError(
+            401, f"first Bearer {self.TOKEN} then {self.TOKEN} end"
+        )
+
+        assert exc.body == "first <redacted token> then <redacted token> end"
+
     def test_a_bare_jwt_is_still_redacted(self):
         exc = TransportAuthenticationError(401, f"Token rejected: {self.TOKEN}")
 

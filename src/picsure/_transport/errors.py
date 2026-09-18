@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 
 _CREDENTIAL_PATTERNS = (
-    re.compile(r"(?i)\bbearer\s+\S+"),
+    re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{8,}"),
     re.compile(r"[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{6,}"),
 )
 _REDACTED = "<redacted token>"
@@ -29,11 +29,18 @@ def _redact_credentials(text: str) -> str:
     renders the exception. Two shapes are replaced: a ``Bearer <value>``
     header fragment and a JWT (three base64url segments).
 
-    The header fragment is replaced first. Its ``\S+`` would otherwise
-    swallow the leading half of a placeholder the JWT pattern had already
-    left behind, turning ``"Bearer <jwt>"`` into two placeholders instead
-    of one. Running it first cannot go wrong the same way, because the
-    placeholder it leaves carries no dot for the JWT pattern to match.
+    The header fragment is replaced first, so ``"Bearer <jwt>"`` leaves
+    one placeholder rather than the two a leading JWT pass produces: the
+    header pattern would otherwise swallow the leading half of the
+    placeholder the JWT pass had just written. The placeholder it leaves
+    behind carries no dot, so the JWT pattern cannot match it in turn.
+
+    What the header pattern matches is bounded to base64url and JWT
+    characters, at least eight of them, rather than a run of non-space.
+    A run of non-space reaches the end of a compact JSON error body,
+    whose commas carry no space, and erases the status and the path along
+    with the credential; it also matches the ordinary English word
+    "bearer" followed by any word.
 
     Args:
         text: Server-supplied text, typically a response body.
