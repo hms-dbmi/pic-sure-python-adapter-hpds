@@ -414,6 +414,32 @@ class TestNoTokenLeakage:
         assert self.TOKEN not in exc.body
         assert "<redacted token>" in exc.body
 
+    def test_a_bearer_header_fragment_leaves_exactly_one_placeholder(self):
+        """The bearer pattern runs first, so it cannot eat a placeholder.
+
+        With the JWT pattern first, "Bearer <jwt>" redacted to
+        "<redacted token> token>": the bearer pattern's \\S+ swallowed the
+        leading half of the placeholder the JWT pattern had just left.
+        """
+        exc = TransportAuthenticationError(401, f"Token rejected: Bearer {self.TOKEN}")
+
+        assert exc.body == "Token rejected: <redacted token>"
+        assert exc.body.count("<redacted token>") == 1
+        assert "token>" not in exc.body.replace("<redacted token>", "")
+
+    def test_a_bare_jwt_is_still_redacted(self):
+        exc = TransportAuthenticationError(401, f"Token rejected: {self.TOKEN}")
+
+        assert exc.body == "Token rejected: <redacted token>"
+        assert self.TOKEN not in exc.body
+
+    def test_a_placeholder_is_not_redacted_again(self):
+        exc = TransportAuthenticationError(
+            401, f"Bearer {self.TOKEN} and {self.TOKEN} both"
+        )
+
+        assert exc.body == "<redacted token> and <redacted token> both"
+
     def test_a_chained_traceback_carries_no_token(self):
         """The cause frame is rendered too, so it must be clean as well."""
         transport = TransportAuthenticationError(

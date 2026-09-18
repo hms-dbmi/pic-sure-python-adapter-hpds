@@ -14,8 +14,8 @@ from __future__ import annotations
 import re
 
 _CREDENTIAL_PATTERNS = (
-    re.compile(r"[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{6,}"),
     re.compile(r"(?i)\bbearer\s+\S+"),
+    re.compile(r"[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{6,}"),
 )
 _REDACTED = "<redacted token>"
 
@@ -26,8 +26,14 @@ def _redact_credentials(text: str) -> str:
     A PIC-SURE response can echo the request's bearer token back in an
     error body. Keeping that body on an exception, or quoting it into a
     message, would put the token into every traceback and log line that
-    renders the exception. Two shapes are replaced: a JWT (three
-    base64url segments) and a ``Bearer <value>`` header fragment.
+    renders the exception. Two shapes are replaced: a ``Bearer <value>``
+    header fragment and a JWT (three base64url segments).
+
+    The header fragment is replaced first. Its ``\S+`` would otherwise
+    swallow the leading half of a placeholder the JWT pattern had already
+    left behind, turning ``"Bearer <jwt>"`` into two placeholders instead
+    of one. Running it first cannot go wrong the same way, because the
+    placeholder it leaves carries no dot for the JWT pattern to match.
 
     Args:
         text: Server-supplied text, typically a response body.
