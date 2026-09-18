@@ -60,12 +60,22 @@ def _clear_env(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _reset_picsure_logger():
+    """Hand each test the picsure logger as an unconfigured host leaves it.
+
+    The level is saved and cleared alongside the handlers, because
+    _install_default_handler now reads it to decide whether it may set
+    one, and a level left behind by an earlier test would decide that
+    for the next.
+    """
     logger = logging.getLogger("picsure")
-    saved = list(logger.handlers)
+    saved_handlers = list(logger.handlers)
+    saved_level = logger.level
     logger.handlers.clear()
+    logger.setLevel(logging.NOTSET)
     yield
     logger.handlers.clear()
-    logger.handlers.extend(saved)
+    logger.handlers.extend(saved_handlers)
+    logger.setLevel(saved_level)
 
 
 @respx.mock
@@ -143,3 +153,23 @@ def test_dev_mode_off_does_not_install_handler():
     logger = logging.getLogger("picsure")
     connect(platform=CUSTOM_URL, token=TOKEN, dev_mode=False)
     assert logger.handlers == []
+
+
+@respx.mock
+def test_dev_mode_sets_the_logger_level_when_nothing_configured_it():
+    _mock_platform_endpoints()
+    logger = logging.getLogger("picsure")
+    assert logger.level == logging.NOTSET
+    connect(platform=CUSTOM_URL, token=TOKEN, dev_mode=True)
+    assert logger.level == logging.DEBUG
+
+
+@respx.mock
+def test_dev_mode_leaves_a_host_configured_level_alone():
+    """A library does not get to overrule the application embedding it."""
+    _mock_platform_endpoints()
+    logger = logging.getLogger("picsure")
+    logger.setLevel(logging.WARNING)
+    connect(platform=CUSTOM_URL, token=TOKEN, dev_mode=True)
+    assert logger.level == logging.WARNING
+    assert logger.handlers[-1].level == logging.DEBUG

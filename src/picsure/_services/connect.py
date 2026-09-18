@@ -789,6 +789,14 @@ def _install_default_handler() -> None:
     """Attach a stderr handler to the picsure logger if no handlers exist.
 
     Idempotent: repeat calls do nothing once a handler is present.
+
+    The logger's own level is raised to ``DEBUG`` only when it has no
+    level of its own, meaning ``logging.NOTSET``. An application that
+    embeds this library and configured the ``picsure`` logger at, say,
+    ``WARNING`` made a decision that belongs to it, and a library that
+    resets it because dev mode is on is overruling its host. The handler
+    carries its own ``DEBUG`` level either way, so dev-mode output is
+    unchanged in the ordinary case where nothing configured the logger.
     """
     logger = logging.getLogger(_LOGGER_NAME)
     if logger.handlers:
@@ -797,4 +805,5 @@ def _install_default_handler() -> None:
     handler.setLevel(logging.DEBUG)
     handler.setFormatter(logging.Formatter("%(name)s %(message)s"))
     logger.addHandler(handler)
-    logger.setLevel(logging.DEBUG)
+    if logger.level == logging.NOTSET:
+        logger.setLevel(logging.DEBUG)
