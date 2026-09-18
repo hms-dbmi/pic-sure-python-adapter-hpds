@@ -8,7 +8,6 @@ from picsure._dev.config import DevConfig
 from picsure._dev.reporting import events_to_df, stats_to_df
 from picsure._dev.timing import timed
 from picsure._models.query_type import QueryType
-from picsure._models.resource import Resource
 from picsure.errors import PicSureValidationError
 
 if TYPE_CHECKING:
@@ -22,12 +21,15 @@ if TYPE_CHECKING:
     from picsure._transport.client import PicSureClient
 
 
+_BACKENDS = frozenset({"auth", "open"})
+
+
 class Session:
     """A live connection to a PIC-SURE instance.
 
-    Returned by ``picsure.connect()``. Holds the authenticated HTTP client
-    and resource metadata. Methods for search, query building, and export
-    are added in later plans.
+    Returned by ``picsure.connect()``. Holds the authenticated HTTP client,
+    the user's consent list, and the HPDS backend the gateway routes to.
+    Search, query building, and export delegate to the service modules.
     """
 
     def __init__(
@@ -35,22 +37,48 @@ class Session:
         client: PicSureClient,
         user_email: str,
         token_expiration: str,
-        resources: list[Resource],
-        resource_uuid: str | None = None,
         consents: list[str] | None = None,
         dev_config: DevConfig | None = None,
-        use_legacy_query_path: bool = False,
+        backend: str = "auth",
         supports_genomic: bool = False,
         session_id: str = "",
     ) -> None:
+        """Build a session around an already-configured client.
+
+        Args:
+            client: The HTTP client to issue requests through.
+            user_email: Display email for the connect banner.
+            token_expiration: Formatted token expiry, or ``"N/A"`` on an
+                anonymous connection.
+            consents: Study-consent identifiers to scope dictionary
+                requests by.
+            dev_config: Developer-mode configuration; defaults to off.
+            backend: ``"auth"`` or ``"open"``, the HPDS instance every
+                query on this session routes to, selected by the
+                ``/picsure/hpds/auth`` or ``/picsure/hpds/open`` request
+                path. ``connect()`` derives it from
+                ``PlatformInfo.backend``, the same value the connect
+                banner reads, so the two cannot disagree.
+            supports_genomic: Whether genomic operations are allowed.
+            session_id: Correlation id sent on every request.
+
+        Raises:
+            PicSureValidationError: If ``backend`` is not ``"auth"`` or
+                ``"open"``.
+        """
         self._client = client
         self._user_email = user_email
         self._token_expiration = token_expiration
-        self._resources = resources
-        self._resource_uuid = resource_uuid
         self._session_id = session_id
         self._consents: list[str] = list(consents) if consents else []
-        self._use_legacy_query_path = use_legacy_query_path
+        if backend not in _BACKENDS:
+            raise PicSureValidationError(
+                f"backend must be one of {sorted(_BACKENDS)}, not {backend!r}. "
+                f"It is interpolated straight into the HPDS request path, so "
+                f"an unrecognized value would silently produce a 404 on every "
+                f"query."
+            )
+        self._backend = backend
         self._supports_genomic = supports_genomic
         self._dev_config = (
             dev_config
@@ -69,6 +97,36 @@ class Session:
         return self._session_id
 
     @property
+    def user_email(self) -> str:
+        """Email address of the account this session runs as.
+
+        On an authorized connection with ``validate=True`` (the default)
+        this is the address PSAMA returned for the token from
+        ``GET /psama/user/me``, so it names the account the server will
+        actually run requests as rather than whatever the token claims.
+        Falls back to the token's own ``email`` claim when validation was
+        skipped, and is ``"anonymous"`` on an open-access connection.
+
+        The token itself is never exposed: only this address and
+        :attr:`token_expiration` are readable from a session.
+        """
+        return self._user_email
+
+    @property
+    def token_expiration(self) -> str:
+        """When this session's token expires, as UTC ISO 8601.
+
+        Read from the token's ``exp`` claim at connect time and formatted
+        as ``"YYYY-MM-DDTHH:MM:SSZ"``. ``"unknown"`` when the token
+        carried no readable ``exp``, and ``"N/A"`` on an open-access
+        connection, which has no token to expire.
+
+        A rendered timestamp rather than the token: nothing here can be
+        replayed as a credential.
+        """
+        return self._token_expiration
+
+    @property
     def consents(self) -> list[str]:
         """Study-consent identifiers the user is authorized for.
 
@@ -78,59 +136,6 @@ class Session:
         """
         return list(self._consents)
 
-    def getResourceID(self) -> pd.DataFrame:
-        """Return resource IDs and metadata as a DataFrame."""
-        if not self._resources:
-            return pd.DataFrame(columns=["uuid", "name", "description"])
-        return pd.DataFrame(
-            [
-                {
-                    "uuid": r.uuid,
-                    "name": r.name,
-                    "description": r.description,
-                }
-                for r in self._resources
-            ]
-        )
-
-    def setResourceID(self, resource_uuid: str) -> None:
-        """Set the active resource UUID for searches and queries.
-
-        Args:
-            resource_uuid: The UUID of the resource to use. See
-                ``getResourceID()`` for available resources.
-
-        Raises:
-            PicSureValidationError: If the UUID does not match any
-                resource on this connection.
-        """
-        known_uuids = {r.uuid for r in self._resources}
-        if known_uuids and resource_uuid not in known_uuids:
-            raise PicSureValidationError(
-                f"'{resource_uuid}' is not a valid resource UUID. "
-                f"Use session.getResourceID() to see available resources."
-            )
-        self._resource_uuid = resource_uuid
-
-    def setResourceIDByName(self, name: str) -> None:
-        """Set the active resource by looking up its name.
-
-        Args:
-            name: The resource name (e.g. ``"hpds"``, ``"auth-hpds"``).
-
-        Raises:
-            PicSureValidationError: If no resource matches the given name.
-        """
-        for r in self._resources:
-            if r.name == name:
-                self._resource_uuid = r.uuid
-                return
-
-        valid = ", ".join(r.name for r in self._resources)
-        raise PicSureValidationError(
-            f"'{name}' does not match any resource. Available resources: {valid}."
-        )
-
     @timed("session.searchDictionary")
     def searchDictionary(  # noqa: N802
         self,
@@ -138,20 +143,38 @@ class Session:
         *,
         facets: FacetSet | None = None,
         include_values: bool = True,
+        page: int | None = None,
+        page_size: int | None = None,
     ) -> pd.DataFrame:
         """Search the PIC-SURE data dictionary.
+
+        Omitting ``page`` collects every matching concept by walking the
+        server's pages in ``page_size`` chunks. Passing ``page`` returns
+        that one zero-based page and nothing else. Either way the
+        returned DataFrame's ``attrs`` carries ``total_elements``,
+        ``has_more``, ``page``, ``page_size`` and ``pages_fetched``.
 
         Args:
             term: Search term. Empty string returns all variables.
             facets: Optional FacetSet to narrow results by category.
             include_values: If False, omit variable values from results.
+            page: Zero-based page to return. ``None`` (the default)
+                collects every page.
+            page_size: Rows per HTTP request. Defaults to 500.
 
         Returns:
             DataFrame of matching data dictionary entries.
 
+        Raises:
+            PicSureValidationError: If ``page`` or ``page_size`` is out of
+                range, or if an unpaged search matches more concepts than
+                one call may collect.
+
         Example:
             >>> df = session.searchDictionary("blood pressure")
             >>> df_filtered = session.searchDictionary("sex", facets=my_facets)
+            >>> first = session.searchDictionary("sex", page=0, page_size=100)
+            >>> first.attrs["has_more"]
         """
         from picsure._services.search import searchDictionary as _searchDictionary
 
@@ -161,6 +184,8 @@ class Session:
             facets=facets,
             include_values=include_values,
             consents=self._consents,
+            page=page,
+            page_size=page_size,
         )
 
     @timed("session.facets")
@@ -284,8 +309,8 @@ class Session:
 
         return search_genomic_values(
             self._client,
-            self._default_resource_uuid(),
             genomicConceptPath,
+            backend=self._backend,
             query=query,
             page=page,
             size=size,
@@ -345,10 +370,9 @@ class Session:
 
         return run_query(
             self._client,
-            self._default_resource_uuid(),
             query,
             type,
-            use_legacy_query_path=self._use_legacy_query_path,
+            backend=self._backend,
         )
 
     @timed("session.exportAsPFB")
@@ -372,7 +396,7 @@ class Session:
             PicSureValidationError: If the session was connected to an
                 open-access platform.
         """
-        if self._use_legacy_query_path:
+        if self._backend == "open":
             raise PicSureValidationError(
                 "PFB export is not supported on open-access platforms. "
                 "Connect with an authorized platform (e.g. "
@@ -383,9 +407,9 @@ class Session:
 
         export_pfb(
             self._client,
-            self._default_resource_uuid(),
             query,
             path,
+            backend=self._backend,
         )
 
     @timed("session.saveQueryByName")
@@ -419,24 +443,29 @@ class Session:
 
         return save_query_by_name(
             self._client,
-            self._default_resource_uuid(),
             query,
             name,
-            use_legacy_query_path=self._use_legacy_query_path,
+            backend=self._backend,
             overwrite=overwrite,
         )
 
     @timed("session.exportCSV")
     def exportCSV(  # noqa: N802
         self,
-        data: pd.DataFrame,
+        data: pd.DataFrame | pd.Series,
         path: str | Path,
     ) -> None:
-        """Write a DataFrame to a CSV file.
+        """Write a DataFrame or Series to a CSV file.
 
         Args:
-            data: DataFrame to export (e.g. from runQuery).
+            data: DataFrame to export (e.g. from runQuery), or a single
+                column of one.
             path: File path for the CSV output.
+
+        Raises:
+            PicSureValidationError: If ``data`` is neither a DataFrame nor
+                a Series, for example the ``CountResult`` of a count query.
+            PicSureConnectionError: If ``path`` could not be written.
         """
         from picsure._services.export import export_csv
 
@@ -445,14 +474,20 @@ class Session:
     @timed("session.exportTSV")
     def exportTSV(  # noqa: N802
         self,
-        data: pd.DataFrame,
+        data: pd.DataFrame | pd.Series,
         path: str | Path,
     ) -> None:
-        """Write a DataFrame to a TSV file.
+        """Write a DataFrame or Series to a TSV file.
 
         Args:
-            data: DataFrame to export (e.g. from runQuery).
+            data: DataFrame to export (e.g. from runQuery), or a single
+                column of one.
             path: File path for the TSV output.
+
+        Raises:
+            PicSureValidationError: If ``data`` is neither a DataFrame nor
+                a Series, for example the ``CountResult`` of a count query.
+            PicSureConnectionError: If ``path`` could not be written.
         """
         from picsure._services.export import export_tsv
 
@@ -484,14 +519,20 @@ class Session:
         Raises:
             PicSureValidationError: If the ID is blank, the saved query
                 cannot be loaded, or the query type is invalid.
-            PicSureAuthError / PicSureConnectionError / PicSureQueryError:
-                As raised by the underlying load and execute calls.
+            PicSureAuthenticationError: If the token is rejected (HTTP 401).
+            PicSureAuthorizationError: If the account may not load or run
+                the query (HTTP 403), including a consent denial.
+            PicSureConnectionError: If the server cannot be reached, or
+                :class:`PicSureServerError` if it answered with a 5xx.
+            PicSureQueryError: If a response cannot be parsed.
 
         Example:
             >>> count = session.runQueryByID(
             ...     "11111111-2222-3333-4444-555555555555", type="count"
             ... )
-            >>> df = session.runQueryByID("XXXXX-ID", type="participant")
+            >>> df = session.runQueryByID(
+            ...     "22222222-3333-4444-5555-666666666666", type="participant"
+            ... )
         """
         query = self.loadQueryByID(query_id)
         return self.runQuery(query, type)
@@ -514,8 +555,11 @@ class Session:
             PicSureValidationError: If the ID is empty, the query was not
                 found, or the saved query uses features this adapter cannot
                 yet represent (NOT clauses).
-            PicSureAuthError: On 401 / 403.
-            PicSureConnectionError: If the server is unreachable.
+            PicSureAuthenticationError: If the token is rejected (HTTP 401).
+            PicSureAuthorizationError: If the account may not load the
+                query (HTTP 403), including a consent denial.
+            PicSureConnectionError: If the server cannot be reached, or
+                :class:`PicSureServerError` if it answered with a 5xx.
             PicSureQueryError: If the response cannot be parsed.
 
         Example:
@@ -524,7 +568,7 @@ class Session:
         """
         from picsure._services.query_load import load_query
 
-        return load_query(self._client, query_id)
+        return load_query(self._client, query_id, backend=self._backend)
 
     def close(self) -> None:
         """Close the underlying HTTP client and release its connection pool.
@@ -572,21 +616,3 @@ class Session:
                 "(e.g. Platform.BDC_AUTHORIZED); this session is connected "
                 "to an open or non-genomic resource."
             )
-
-    def _default_resource_uuid(self) -> str:
-        if self._resource_uuid is not None:
-            return self._resource_uuid
-        if not self._resources:
-            raise PicSureValidationError(
-                "No resources are available on this connection. "
-                "Check with your administrator."
-            )
-        if len(self._resources) == 1:
-            return self._resources[0].uuid
-        listing = "\n".join(f"  {r.uuid}  {r.name}" for r in self._resources)
-        raise PicSureValidationError(
-            "This connection has multiple resources and none has been "
-            "selected. Call session.setResourceID(uuid) to choose one "
-            "before searching or querying.\n\n"
-            f"Available resources:\n{listing}"
-        )

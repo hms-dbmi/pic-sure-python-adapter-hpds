@@ -11,7 +11,6 @@ class PlatformConfig:
     """Connection details for a known PIC-SURE deployment."""
 
     url: str
-    resource_uuid: str
     label: str
     include_consents: bool
     requires_auth: bool
@@ -20,25 +19,68 @@ class PlatformConfig:
 
 @dataclass(frozen=True)
 class PlatformInfo:
-    """Resolved platform connection details."""
+    """Resolved platform connection details.
+
+    ``backend`` is the single derived value that both HPDS routing and
+    the connect banner read, so the two can no longer disagree about
+    whether a connection is open or authorized.
+
+    ``is_custom_url`` is true when the caller passed a URL string rather
+    than a ``Platform`` member, so ``connect()`` knows the capability
+    flags are defaults it guessed rather than facts recorded for a known
+    deployment.
+
+    Raises:
+        PicSureValidationError: If ``include_consents`` is set with
+            ``requires_auth`` off.  Consent scoping exists only on the
+            authorized backend, and the consent list itself comes from
+            an authenticated PSAMA route, so the combination cannot
+            describe a real deployment.
+    """
 
     url: str
-    resource_uuid: str | None = None
     include_consents: bool = False
     # Default True for custom URLs — safer to assume a token is needed
     # unless the caller explicitly opts out with ``requires_auth=False``.
     requires_auth: bool = True
     supports_genomic: bool = False
+    is_custom_url: bool = False
+
+    def __post_init__(self) -> None:
+        if self.include_consents and not self.requires_auth:
+            raise PicSureValidationError(
+                "include_consents=True cannot be combined with "
+                "requires_auth=False. Consent scoping applies only to the "
+                "authorized HPDS backend, and the consent list is read from "
+                "an authenticated PSAMA endpoint, so an unauthenticated "
+                "connection has no consents to scope by. Pass a token and "
+                "leave requires_auth alone for a consent-scoped deployment, "
+                "or pass include_consents=False (e.g. Platform.BDC_OPEN) for "
+                "an open one."
+            )
+
+    @property
+    def backend(self) -> str:
+        """The HPDS backend this deployment routes to: ``"auth"`` or ``"open"``.
+
+        The gateway selects HPDS by URL path, ``/picsure/hpds/auth`` versus
+        ``/picsure/hpds/open``, so this one string decides both the request path
+        and how the connection is described to the user.  Consent scoping
+        implies the authorized backend, which ``__post_init__`` enforces,
+        so the auth requirement alone settles it.
+        """
+        return "auth" if self.requires_auth else "open"
 
 
 class Platform(Enum):
     """Known PIC-SURE deployment platforms.
 
-    Each member stores a :class:`PlatformConfig`.  BDC Authorized and
-    BDC Open share a domain and are distinguished by resource UUID.
-    ``include_consents`` controls whether dictionary-api requests must
-    carry the user's consent list; ``requires_auth`` controls whether
-    the connection needs a PIC-SURE token at all.
+    Each member stores a :class:`PlatformConfig`.  BDC Authorized and BDC
+    Open share a domain; they are distinguished by which HPDS the gateway
+    routes to — the ``/hpds/auth`` vs ``/hpds/open`` path — not by a
+    resource UUID.  ``include_consents`` controls whether dictionary-api
+    requests must carry the user's consent list; ``requires_auth``
+    controls whether the connection needs a PIC-SURE token at all.
 
     Pass a member to :func:`picsure.connect` to connect to a known
     platform, or pass a custom URL string for unlisted deployments.
@@ -46,7 +88,6 @@ class Platform(Enum):
 
     BDC_AUTHORIZED = PlatformConfig(
         url="https://picsure.biodatacatalyst.nhlbi.nih.gov",
-        resource_uuid="02e23f52-f354-4e8b-992c-d37c8b9ba140",
         label="BDC Authorized",
         include_consents=True,
         requires_auth=True,
@@ -54,7 +95,6 @@ class Platform(Enum):
     )
     BDC_OPEN = PlatformConfig(
         url="https://picsure.biodatacatalyst.nhlbi.nih.gov",
-        resource_uuid="ac004461-1b47-4832-80e2-22a4aecabe39",
         label="BDC Open",
         include_consents=False,
         requires_auth=False,
@@ -62,7 +102,6 @@ class Platform(Enum):
     )
     BDC_DEV_AUTHORIZED = PlatformConfig(
         url="https://dev.picsure.biodatacatalyst.nhlbi.nih.gov",
-        resource_uuid="02e23f52-f354-4e8b-992c-d37c8b9ba140",
         label="BDC Authorized",
         include_consents=True,
         requires_auth=True,
@@ -70,7 +109,6 @@ class Platform(Enum):
     )
     BDC_DEV_OPEN = PlatformConfig(
         url="https://dev.picsure.biodatacatalyst.nhlbi.nih.gov",
-        resource_uuid="ac004461-1b47-4832-80e2-22a4aecabe39",
         label="BDC Open",
         include_consents=False,
         requires_auth=False,
@@ -78,7 +116,6 @@ class Platform(Enum):
     )
     BDC_PREDEV_AUTHORIZED = PlatformConfig(
         url="https://predev.picsure.biodatacatalyst.nhlbi.nih.gov",
-        resource_uuid="02e23f52-f354-4e8b-992c-d37c8b9ba140",
         label="BDC Authorized",
         include_consents=True,
         requires_auth=True,
@@ -86,7 +123,6 @@ class Platform(Enum):
     )
     BDC_PREDEV_OPEN = PlatformConfig(
         url="https://predev.picsure.biodatacatalyst.nhlbi.nih.gov",
-        resource_uuid="ac004461-1b47-4832-80e2-22a4aecabe39",
         label="BDC Open",
         include_consents=False,
         requires_auth=False,
@@ -94,7 +130,6 @@ class Platform(Enum):
     )
     NHANES_AUTHORIZED = PlatformConfig(
         url="https://nhanes.hms.harvard.edu/",
-        resource_uuid="ded89b08-faa9-435c-b7c4-55b81922ee5f",
         label="Nhanes Authorized",
         include_consents=False,
         requires_auth=True,
@@ -102,7 +137,6 @@ class Platform(Enum):
     )
     NHANES_OPEN = PlatformConfig(
         url="https://nhanes.hms.harvard.edu/",
-        resource_uuid="ded89b08-faa9-435c-b7c4-55b81922ee5f",
         label="Nhanes Open",
         include_consents=False,
         requires_auth=False,
@@ -112,10 +146,6 @@ class Platform(Enum):
     @property
     def url(self) -> str:
         return self.value.url
-
-    @property
-    def resource_uuid(self) -> str:
-        return self.value.resource_uuid
 
     @property
     def label(self) -> str:
@@ -157,12 +187,13 @@ def resolve_platform(
             their own flag.
 
     Returns:
-        A :class:`PlatformInfo` with the base URL, optional resource
-        UUID, consent policy, auth requirement, and genomic support flag.
+        A :class:`PlatformInfo` with the base URL, consent policy, auth
+        requirement, and genomic support flag.
 
     Raises:
         PicSureValidationError: If the value is not a ``Platform`` member
-            and does not look like a URL.
+            and does not look like a URL, or if the resolved flags ask
+            for consent scoping on an unauthenticated connection.
     """
     if isinstance(platform, Platform):
         resolved_consents = (
@@ -180,7 +211,6 @@ def resolve_platform(
         )
         return PlatformInfo(
             url=platform.url,
-            resource_uuid=platform.resource_uuid,
             include_consents=resolved_consents,
             requires_auth=resolved_auth,
             supports_genomic=resolved_genomic,
@@ -192,6 +222,7 @@ def resolve_platform(
             include_consents=bool(include_consents),
             requires_auth=True if requires_auth is None else requires_auth,
             supports_genomic=bool(supports_genomic),
+            is_custom_url=True,
         )
 
     valid = ", ".join(f"Platform.{p.name}" for p in Platform)

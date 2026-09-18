@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 from typing import TYPE_CHECKING
+from urllib.parse import quote
+from uuid import UUID
 
 from picsure._models.clause import (
     PHENOTYPIC_FILTER_TYPE_BY_WIRE_NAME,
@@ -12,20 +14,11 @@ from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure._models.dictionary import coerce_float
 from picsure._models.genomic_filter import GenomicFilter, is_variant_spec
 from picsure._models.query import Query
-from picsure._services._errors import rate_limit_message
-from picsure._transport.errors import (
-    TransportAuthenticationError,
-    TransportError,
-    TransportNotFoundError,
-    TransportRateLimitError,
-    TransportValidationError,
-)
-from picsure.errors import (
-    PicSureAuthError,
-    PicSureConnectionError,
-    PicSureQueryError,
-    PicSureValidationError,
-)
+from picsure._services._errors import translate_transport_error
+from picsure._transport.errors import TransportError, TransportNotFoundError
+from picsure.errors import PicSureQueryError, PicSureValidationError
+
+_LOAD_OPERATION = "the saved-query load"
 
 if TYPE_CHECKING:
     from picsure._transport.client import PicSureClient
@@ -78,17 +71,17 @@ def _parse_leaf(node: dict[str, object]) -> Clause:
     if not isinstance(concept_path, str):
         raise PicSureQueryError("Leaf phenotypic clause missing 'conceptPath' string.")
     clause_type = PHENOTYPIC_FILTER_TYPE_BY_WIRE_NAME[raw_type]
-    categories: list[str] | None = None
+    categories: tuple[str, ...] | None = None
     cmin: float | None = None
     cmax: float | None = None
     if clause_type == PhenotypicFilterType.FILTER:
         values = node.get("values")
         if isinstance(values, list) and values:
-            categories = [str(v) for v in values]
+            categories = tuple(str(v) for v in values)
         cmin = coerce_float(node.get("min"))
         cmax = coerce_float(node.get("max"))
     return Clause(
-        keys=[concept_path],
+        keys=(concept_path,),
         type=clause_type,
         categories=categories,
         min=cmin,
@@ -107,7 +100,7 @@ def _parse_subquery(node: dict[str, object]) -> ClauseGroup:
         raise PicSureQueryError(
             "Subquery 'phenotypicClauses' must be a non-empty list."
         )
-    children: list[Clause | ClauseGroup] = [_parse_phenotypic(c) for c in raw_children]
+    children = tuple(_parse_phenotypic(c) for c in raw_children)
     return ClauseGroup(
         clauses=children,
         operator=GroupOperator(raw_op),
@@ -176,67 +169,94 @@ def _to_query(
     )
 
 
-# Always use the legacy /picsure/query/{id}/metadata path.  The v3
-# /picsure/v3/query/{id}/metadata endpoint has a known issue on BDC, so
-# we pin reads to legacy regardless of how the session was connected.
-_PICSURE_QUERY_METADATA_PATH = "/picsure/query/{query_id}/metadata"
+# Query metadata is served under the versioned (/v3) query routes -- the
+# non-versioned route 404s on the current gateway. The {backend} segment is
+# required for routing but the read does not depend on which backend is named.
+_HPDS_QUERY_METADATA_PATH = "/picsure/hpds/{backend}/v3/query/{query_id}/metadata"
+
+
+def _validate_query_id(query_id: str) -> str:
+    """Normalize a saved-query identifier to canonical UUID form.
+
+    The controller binds this path segment as ``@PathVariable UUID``, so
+    anything that is not a UUID cannot succeed server-side and is worth
+    rejecting before the request goes out.
+
+    Args:
+        query_id: Caller-supplied identifier.
+
+    Returns:
+        The canonical lower-case hyphenated UUID string.
+
+    Raises:
+        PicSureValidationError: If ``query_id`` is not a UUID.
+    """
+    try:
+        return str(UUID(query_id.strip()))
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise PicSureValidationError(
+            f"{query_id!r} is not a valid query ID. A PIC-SURE query ID is a "
+            "UUID, for example '3fa85f64-5717-4562-b3fc-2c963f66afa6'."
+        ) from exc
 
 
 def load_query(
     client: PicSureClient,
     query_id: str,
+    *,
+    backend: str,
 ) -> Query | Clause | ClauseGroup:
     """Load a previously-saved query by ID and rebuild it as a Query.
 
-    Always uses ``/picsure/query/{id}/metadata`` (legacy) — the v3
-    metadata endpoint is currently broken on BDC, so we read via legacy
-    for every deployment.
+    Reads ``/picsure/hpds/{backend}/v3/query/{id}/metadata``.  The read
+    itself does not depend on HPDS, since the query-service returns the
+    stored query row, but only the versioned route is mapped on the
+    current gateway, so ``/v3`` is used for every session.
 
     Args:
         client: Authenticated HTTP client.
-        query_id: The UUID string of a previous query.
+        query_id: The UUID string of a previous query.  Validated and
+            normalized to canonical form before the request is sent.
+        backend: ``"auth"`` or ``"open"`` — the HPDS backend segment for
+            the metadata route (does not affect the metadata read itself).
 
     Returns:
-        A :class:`Clause` or :class:`ClauseGroup` that can be passed
-        directly to :meth:`Session.runQuery`, :meth:`Session.exportAsPFB`,
-        or composed with :func:`buildQuery`.
+        A :class:`Query` when the saved row carries output concepts or
+        genomic filters, otherwise the bare :class:`Clause` or
+        :class:`ClauseGroup` it reduces to.  Any of the three can be
+        passed directly to :meth:`Session.runQuery`,
+        :meth:`Session.exportAsPFB`, or composed with :func:`buildQuery`.
 
     Raises:
-        PicSureValidationError: If the ID is blank, the query was not
-            found, or the saved query uses features this adapter cannot
-            yet represent (NOT clauses).
-        PicSureAuthError: On 401 / 403.
-        PicSureConnectionError: On network failures or 5xx.
+        PicSureValidationError: If the ID is blank or not a UUID, the
+            query was not found, or the saved query uses features this
+            adapter cannot yet represent (NOT clauses).
+        PicSureAuthenticationError: On 401.
+        PicSureAuthorizationError: On 403.
+        PicSureConsentDeniedError: On a consent refusal.
+        PicSureConsentLookupError: When the server cannot resolve consents.
+        PicSureServerError: On 5xx.
+        PicSureTLSError: When the server certificate is rejected.
+        PicSureConnectionError: On network failures or rate limiting.
         PicSureQueryError: If the response shape is malformed.
     """
     if not query_id or not query_id.strip():
         raise PicSureValidationError(
             "A non-empty query ID is required to load a saved query."
         )
-    path = _PICSURE_QUERY_METADATA_PATH.format(query_id=query_id.strip())
+    normalized_id = _validate_query_id(query_id)
+    path = _HPDS_QUERY_METADATA_PATH.format(
+        backend=backend, query_id=quote(normalized_id, safe="")
+    )
 
     try:
         response = client.get_json(path)
     except TransportNotFoundError as exc:
         raise PicSureValidationError(
-            f"No saved query found with ID '{query_id}' (HTTP {exc.status_code})."
+            f"No saved query found with ID '{normalized_id}' (HTTP {exc.status_code})."
         ) from exc
-    except TransportAuthenticationError as exc:
-        raise PicSureAuthError(
-            f"Authentication failed loading saved query "
-            f"(HTTP {exc.status_code}): {exc.body[:200]}"
-        ) from exc
-    except TransportValidationError as exc:
-        raise PicSureValidationError(
-            f"Server rejected the load-query request "
-            f"(HTTP {exc.status_code}): {exc.body[:200]}"
-        ) from exc
-    except TransportRateLimitError as exc:
-        raise PicSureConnectionError(rate_limit_message(exc)) from exc
     except TransportError as exc:
-        raise PicSureConnectionError(
-            "Could not load the saved query. The server may be temporarily unavailable."
-        ) from exc
+        raise translate_transport_error(exc, operation=_LOAD_OPERATION) from exc
 
     return _build_query_from_response(response)
 

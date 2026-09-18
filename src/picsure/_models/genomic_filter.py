@@ -18,10 +18,21 @@ class VariantFrequency(str, Enum):
     ``"Rare"``). Note that ``str(VariantFrequency.RARE)`` is
     ``"VariantFrequency.RARE"``, not the value — use ``.value`` if you need
     the wire string yourself.
+
+    These members are a convenience, not an allowlist: the real vocabulary is
+    whatever the deployment's variant annotations carry, so
+    ``searchGenomicValues("Variant_frequency_as_text")`` is the authoritative
+    source and ``buildGenomicFilter`` accepts any string for this key.
+
+    ``NOVEL`` is deprecated: it is absent from every annotation set observed
+    on a PIC-SURE deployment. It is kept so existing code keeps working;
+    prefer a value returned by ``searchGenomicValues``.
     """
 
     RARE = "Rare"
     COMMON = "Common"
+    LOW_FREQUENCY = "Low_frequency"
+    ULTRA_RARE = "Ultra_rare"
     NOVEL = "Novel"
 
 
@@ -29,9 +40,10 @@ class GenomicFilterKey(str, Enum):
     """Recognized genomic annotation keys for ``buildGenomicFilter(key=...)``.
 
     Pass a member directly, or the equivalent string (validated against these
-    members). ``VARIANT_SEVERITY`` is a *virtual* key: the backend has no
-    ``Variant_severity`` filter, so the builder expands it to the matching
-    ``Variant_consequence_calculated`` values (see :class:`VariantSeverity`).
+    members). ``VARIANT_SEVERITY`` accepts two vocabularies, the backend's own
+    impact values (:func:`known_impacts`) and this adapter's severity buckets
+    (:class:`VariantSeverity`). ``buildGenomicFilter`` routes them
+    differently; see :func:`picsure.buildGenomicFilter`.
     """
 
     GENE_WITH_VARIANT = "Gene_with_variant"
@@ -42,11 +54,18 @@ class GenomicFilterKey(str, Enum):
 
 
 class VariantSeverity(str, Enum):
-    """Severity buckets for the virtual ``Variant_severity`` key.
+    """Coarse severity buckets built from ``Variant_consequence_calculated``.
 
-    Each member maps to a set of ``Variant_consequence_calculated`` values;
-    ``buildGenomicFilter`` expands it so filtering by severity behaves as if
-    the backend supported a ``Variant_severity`` key.
+    Each member maps to a set of ``Variant_consequence_calculated`` values,
+    and ``buildGenomicFilter`` expands it into those values. The buckets are
+    this adapter's own grouping, expressed in terms of consequences rather
+    than the backend's ``Variant_severity`` annotation.
+
+    The backend's ``Variant_severity`` impact values (:func:`known_impacts`)
+    are accepted for the same key and sent through untouched. On observed
+    data the two routes select the same patients, but the impact values are
+    the deployment's own vocabulary and are the only way to reach
+    ``MODIFIER``, which no bucket covers.
     """
 
     HIGH = "High Severity"
@@ -74,6 +93,60 @@ def _severity_map() -> dict[str, tuple[str, ...]]:
 def known_severities() -> tuple[str, ...]:
     """Return the valid severity labels, in file order (for error messages)."""
     return tuple(_severity_map().keys())
+
+
+_IMPACT_VALUES: tuple[str, ...] = ("HIGH", "MODERATE", "LOW", "MODIFIER")
+
+
+def known_impacts() -> tuple[str, ...]:
+    """Return the backend's ``Variant_severity`` impact values.
+
+    These are VEP's IMPACT labels in decreasing order of severity, and the
+    values ``searchGenomicValues("Variant_severity")`` reports. The backend
+    applies the key verbatim, so unlike :class:`VariantSeverity` buckets they
+    are sent on the ``Variant_severity`` key unchanged.
+    """
+    return _IMPACT_VALUES
+
+
+def normalize_impact(value: str) -> str | None:
+    """Return ``value`` as an impact label, or ``None`` if it is not one.
+
+    Only surrounding whitespace is forgiven. The match is case-sensitive, so
+    a mistyped bucket label such as ``"High"`` is rejected instead of being
+    routed silently to the ``Variant_severity`` key.
+
+    Args:
+        value: A candidate ``Variant_severity`` value.
+
+    Returns:
+        The impact label, or ``None`` if ``value`` is not one.
+    """
+    candidate = value.strip()
+    return candidate if candidate in _IMPACT_VALUES else None
+
+
+_SEVERITY_ALIASES: dict[str, str] = {"MEDIUM": "MODERATE"}
+
+
+def suggest_severity_spelling(value: str) -> str | None:
+    """Return the accepted spelling that a near-miss severity value points at.
+
+    A value that matches an impact label or a severity bucket except for
+    case, or ``MEDIUM`` standing in for the impact ``MODERATE``, maps to the
+    spelling the builder accepts.
+
+    Args:
+        value: The rejected ``Variant_severity`` value.
+
+    Returns:
+        The accepted spelling, or ``None`` when nothing comes close.
+    """
+    folded = value.strip().casefold()
+    for accepted in (*_IMPACT_VALUES, *known_severities()):
+        if accepted.casefold() == folded:
+            return accepted
+    return _SEVERITY_ALIASES.get(folded.upper())
 
 
 def severity_consequences(severity: str) -> tuple[str, ...]:
@@ -120,7 +193,7 @@ class GenomicFilter:
     A filter matches when the annotation named by ``key`` is one of ``values``.
 
     **Wire format.** :meth:`to_query_json` emits a v3 ``GenomicFilter`` record
-    (``{"key", "values"?}``) per the ``/picsure/v3/query/sync`` contract.
+    (``{"key", "values"?}``) per the ``/hpds/{auth,open}[/v3]/query`` contract.
     """
 
     key: str

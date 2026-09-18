@@ -4,12 +4,11 @@ import httpx
 import respx
 
 from picsure._dev.config import DevConfig
-from picsure._models.resource import Resource
 from picsure._models.session import Session
+from picsure._services._hpds_paths import query_prefix
 from picsure._transport.client import PicSureClient
 
 BASE_URL = "https://test.example.com"
-RESOURCE_UUID = "uuid-1"
 
 
 def _make_session(dev_enabled: bool) -> Session:
@@ -19,8 +18,6 @@ def _make_session(dev_enabled: bool) -> Session:
         client=client,
         user_email="u@e",
         token_expiration="N/A",
-        resources=[Resource(uuid=RESOURCE_UUID, name="hpds", description="")],
-        resource_uuid=RESOURCE_UUID,
         consents=[],
         dev_config=cfg,
     )
@@ -54,7 +51,7 @@ def test_dev_clear_is_noop_when_off():
 
 @respx.mock
 def test_runquery_count_emits_http_and_function_events():
-    respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
+    respx.post(f"{BASE_URL}{query_prefix('auth', v3=True)}/query/sync").mock(
         return_value=httpx.Response(200, content=b"42")
     )
     session = _make_session(dev_enabled=True)
@@ -75,7 +72,7 @@ def test_runquery_count_emits_http_and_function_events():
 
 @respx.mock
 def test_dev_stats_aggregates_from_live_calls():
-    respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
+    respx.post(f"{BASE_URL}{query_prefix('auth', v3=True)}/query/sync").mock(
         return_value=httpx.Response(200, content=b"42")
     )
     session = _make_session(dev_enabled=True)
@@ -96,7 +93,7 @@ def test_dev_stats_aggregates_from_live_calls():
 
 @respx.mock
 def test_dev_clear_empties_buffer():
-    respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
+    respx.post(f"{BASE_URL}{query_prefix('auth', v3=True)}/query/sync").mock(
         return_value=httpx.Response(200, content=b"1")
     )
     session = _make_session(dev_enabled=True)

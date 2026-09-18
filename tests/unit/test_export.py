@@ -7,22 +7,25 @@ import pytest
 import respx
 
 from picsure._models.clause import Clause, PhenotypicFilterType
+from picsure._models.count_result import CountResult
+from picsure._services._hpds_paths import query_prefix
 from picsure._services.export import export_csv, export_pfb, export_tsv
 from picsure._transport.client import PicSureClient
 from picsure.errors import (
     PicSureConnectionError,
+    PicSureConsentDeniedError,
+    PicSureError,
     PicSureQueryError,
     PicSureValidationError,
 )
 
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
-RESOURCE_UUID = "resource-uuid-aaaa-1111"
 QUERY_ID = "abc-123"
 
-SUBMIT_URL = f"{BASE_URL}/picsure/v3/query"
-STATUS_URL = f"{BASE_URL}/picsure/v3/query/{QUERY_ID}/status"
-RESULT_URL = f"{BASE_URL}/picsure/v3/query/{QUERY_ID}/result"
+SUBMIT_URL = f"{BASE_URL}{query_prefix('auth', v3=True)}/query"
+STATUS_URL = f"{BASE_URL}{query_prefix('auth', v3=True)}/query/{QUERY_ID}/status"
+RESULT_URL = f"{BASE_URL}{query_prefix('auth', v3=True)}/query/{QUERY_ID}/result"
 
 
 def _make_client() -> PicSureClient:
@@ -56,7 +59,7 @@ class TestExportPFBHappyPath:
 
         output = tmp_path / "out.pfb"
         with patch("picsure._services.export.time.sleep") as sleep_mock:
-            export_pfb(_make_client(), RESOURCE_UUID, _simple_clause(), output)
+            export_pfb(_make_client(), _simple_clause(), output, backend="auth")
 
         assert output.exists()
         assert output.read_bytes() == b"pfb_content"
@@ -79,14 +82,14 @@ class TestExportPFBHappyPath:
 
         output = tmp_path / "out.pfb"
         with patch("picsure._services.export.time.sleep") as sleep_mock:
-            export_pfb(_make_client(), RESOURCE_UUID, _simple_clause(), output)
+            export_pfb(_make_client(), _simple_clause(), output, backend="auth")
 
         assert output.exists()
         assert output.read_bytes() == b"pfb_content"
         sleep_mock.assert_called_once_with(1.0)
 
     @respx.mock
-    def test_sends_pfb_result_type_and_resource_uuid(self, tmp_path):
+    def test_sends_pfb_result_type(self, tmp_path):
         import json
 
         submit_route = respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
@@ -96,14 +99,13 @@ class TestExportPFBHappyPath:
         with patch("picsure._services.export.time.sleep"):
             export_pfb(
                 _make_client(),
-                RESOURCE_UUID,
                 _simple_clause(),
                 tmp_path / "out.pfb",
+                backend="auth",
             )
 
         body = json.loads(submit_route.calls[0].request.content)
         assert body["query"]["expectedResultType"] == "DATAFRAME_PFB"
-        assert body["resourceUUID"] == RESOURCE_UUID
         # The filter variable is returned as a PFB column without being
         # repeated in includeConcepts.
         assert body["query"]["select"] == ["\\phs1\\sex\\"]
@@ -130,9 +132,9 @@ class TestExportPFBBackoff:
         with patch("picsure._services.export.time.sleep") as sleep_mock:
             export_pfb(
                 _make_client(),
-                RESOURCE_UUID,
                 _simple_clause(),
                 tmp_path / "out.pfb",
+                backend="auth",
             )
 
         intervals = [call.args[0] for call in sleep_mock.call_args_list]
@@ -155,9 +157,9 @@ class TestExportPFBBackoff:
         ):
             export_pfb(
                 _make_client(),
-                RESOURCE_UUID,
                 _simple_clause(),
                 tmp_path / "out.pfb",
+                backend="auth",
             )
 
         intervals = [call.args[0] for call in sleep_mock.call_args_list]
@@ -177,7 +179,7 @@ class TestExportPFBErrorStatus:
             patch("picsure._services.export.time.sleep"),
             pytest.raises(PicSureQueryError, match="status=ERROR"),
         ):
-            export_pfb(_make_client(), RESOURCE_UUID, _simple_clause(), output)
+            export_pfb(_make_client(), _simple_clause(), output, backend="auth")
 
         assert not output.exists()
         assert not (tmp_path / "out.pfb.part").exists()
@@ -210,9 +212,9 @@ class TestExportPFBTimeout:
         ):
             export_pfb(
                 _make_client(),
-                RESOURCE_UUID,
                 _simple_clause(),
                 tmp_path / "out.pfb",
+                backend="auth",
             )
 
         assert not (tmp_path / "out.pfb").exists()
@@ -221,6 +223,31 @@ class TestExportPFBTimeout:
 
 class TestExportPFB4xx:
     @respx.mock
+    def test_result_consent_denied_raises_typed_error_without_output(self, tmp_path):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        respx.post(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+        respx.post(RESULT_URL).mock(
+            return_value=httpx.Response(
+                403,
+                json={
+                    "errorType": "consent_denied",
+                    "message": "You no longer have consent for this saved result",
+                },
+            )
+        )
+
+        output = tmp_path / "out.pfb"
+        with pytest.raises(PicSureConsentDeniedError) as exc_info:
+            export_pfb(_make_client(), _simple_clause(), output, backend="auth")
+
+        exc = exc_info.value
+        assert exc.status_code == 403
+        assert exc.error_type == "consent_denied"
+        assert exc.server_message == "You no longer have consent for this saved result"
+        assert not output.exists()
+        assert not (tmp_path / "out.pfb.part").exists()
+
+    @respx.mock
     def test_submit_400_raises_validation_error(self, tmp_path):
         respx.post(SUBMIT_URL).mock(
             return_value=httpx.Response(400, json={"error": "bad query"})
@@ -228,7 +255,7 @@ class TestExportPFB4xx:
 
         output = tmp_path / "out.pfb"
         with pytest.raises(PicSureValidationError):
-            export_pfb(_make_client(), RESOURCE_UUID, _simple_clause(), output)
+            export_pfb(_make_client(), _simple_clause(), output, backend="auth")
 
         assert not output.exists()
         assert not (tmp_path / "out.pfb.part").exists()
@@ -243,7 +270,7 @@ class TestExportPFB4xx:
             patch("picsure._services.export.time.sleep"),
             pytest.raises(PicSureQueryError),
         ):
-            export_pfb(_make_client(), RESOURCE_UUID, _simple_clause(), output)
+            export_pfb(_make_client(), _simple_clause(), output, backend="auth")
 
         assert not output.exists()
         assert not (tmp_path / "out.pfb.part").exists()
@@ -261,7 +288,7 @@ class TestExportPFB4xx:
             patch("picsure._services.export.time.sleep"),
             pytest.raises(PicSureValidationError),
         ):
-            export_pfb(_make_client(), RESOURCE_UUID, _simple_clause(), output)
+            export_pfb(_make_client(), _simple_clause(), output, backend="auth")
 
         assert not output.exists()
         assert not (tmp_path / "out.pfb.part").exists()
@@ -272,7 +299,7 @@ class TestExportPFB4xx:
 
         output = tmp_path / "out.pfb"
         with pytest.raises(PicSureConnectionError):
-            export_pfb(_make_client(), RESOURCE_UUID, _simple_clause(), output)
+            export_pfb(_make_client(), _simple_clause(), output, backend="auth")
 
         assert not output.exists()
 
@@ -293,12 +320,12 @@ class TestExportPFBAtomicWrite:
         with (
             patch("picsure._services.export.time.sleep"),
             patch(
-                "picsure._services.export.os.replace",
+                "picsure._transport.client.os.replace",
                 side_effect=OSError("disk full"),
             ),
             pytest.raises(PicSureConnectionError, match="out.pfb"),
         ):
-            export_pfb(_make_client(), RESOURCE_UUID, _simple_clause(), output)
+            export_pfb(_make_client(), _simple_clause(), output, backend="auth")
 
         # Neither the final file nor the .part file should remain.
         assert not output.exists()
@@ -315,17 +342,35 @@ class TestExportPFBAtomicWrite:
         output = tmp_path / "out.pfb"
         part = tmp_path / "out.pfb.part"
 
-        def boom(_response, _part_path):  # noqa: ANN001
-            # Simulate a partial write that already left bytes behind.
-            part.write_bytes(b"partial")
-            raise OSError("no space left on device")
+        class FullDisk:
+            """A staging-file handle whose first write leaves bytes behind, then fails.
+
+            This is what a disk filling up part-way through a download looks like.
+            """
+
+            def __init__(self, handle):  # noqa: ANN001
+                self._handle = handle
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_exc_info):  # noqa: ANN002
+                self._handle.close()
+
+            def write(self, _chunk):  # noqa: ANN001
+                self._handle.write(b"partial")
+                self._handle.flush()
+                raise OSError("no space left on device")
+
+        def failing_open(path, mode="r", *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+            return FullDisk(open(path, mode, *args, **kwargs))
 
         with (
             patch("picsure._services.export.time.sleep"),
-            patch("picsure._services.export._stream_to_file", side_effect=boom),
+            patch("picsure._transport.client.open", failing_open, create=True),
             pytest.raises(PicSureConnectionError, match="out.pfb"),
         ):
-            export_pfb(_make_client(), RESOURCE_UUID, _simple_clause(), output)
+            export_pfb(_make_client(), _simple_clause(), output, backend="auth")
 
         assert not output.exists()
         assert not part.exists()
@@ -394,3 +439,65 @@ class TestExportTSV:
         output = str(tmp_path / "test.tsv")
         export_tsv(df, output)
         assert Path(output).exists()
+
+
+class TestDelimitedExportErrors:
+    """Failures stay inside the public hierarchy and name the path."""
+
+    @pytest.mark.parametrize("export", [export_csv, export_tsv])
+    def test_unwritable_directory_raises_connection_error(self, export, tmp_path):
+        output = tmp_path / "no-such-dir" / "out.csv"
+
+        with pytest.raises(PicSureConnectionError) as info:
+            export(pd.DataFrame({"x": [1]}), output)
+
+        assert str(output) in str(info.value)
+        assert isinstance(info.value.__cause__, OSError)
+
+    @pytest.mark.parametrize("export", [export_csv, export_tsv])
+    def test_unwritable_directory_is_caught_as_picsure_error(self, export, tmp_path):
+        with pytest.raises(PicSureError):
+            export(pd.DataFrame({"x": [1]}), tmp_path / "nope" / "out.csv")
+
+    @pytest.mark.parametrize("export", [export_csv, export_tsv])
+    def test_count_result_raises_validation_error(self, export, tmp_path):
+        result = CountResult(value=42, margin=None, cap=None, raw="42")
+
+        with pytest.raises(PicSureValidationError, match="CountResult"):
+            export(result, tmp_path / "out.csv")
+
+    @pytest.mark.parametrize("export", [export_csv, export_tsv])
+    def test_non_dataframe_names_the_type_it_got(self, export, tmp_path):
+        with pytest.raises(PicSureValidationError, match="got list"):
+            export([1, 2, 3], tmp_path / "out.csv")
+
+    @pytest.mark.parametrize("export", [export_csv, export_tsv])
+    def test_non_dataframe_is_caught_as_picsure_error(self, export, tmp_path):
+        with pytest.raises(PicSureError):
+            export(None, tmp_path / "out.csv")
+
+    @pytest.mark.parametrize(
+        ("export", "expected"),
+        [(export_csv, b"age\n42\n51\n"), (export_tsv, b"age\n42\n51\n")],
+    )
+    def test_a_series_is_written_as_one_column(self, export, expected, tmp_path):
+        output = tmp_path / "out.txt"
+
+        export(pd.Series([42, 51], name="age"), output)
+
+        assert output.read_bytes() == expected
+
+    @pytest.mark.parametrize("export", [export_csv, export_tsv])
+    def test_a_count_result_gets_the_participant_hint(self, export, tmp_path):
+        result = CountResult(value=42, margin=None, cap=None, raw="42")
+
+        with pytest.raises(PicSureValidationError, match="type='participant'"):
+            export(result, tmp_path / "out.csv")
+
+    @pytest.mark.parametrize("export", [export_csv, export_tsv])
+    def test_other_types_get_no_count_hint(self, export, tmp_path):
+        with pytest.raises(PicSureValidationError) as info:
+            export(["a", "b"], tmp_path / "out.csv")
+
+        assert "got list" in str(info.value)
+        assert "CountResult" not in str(info.value)

@@ -132,7 +132,8 @@ Constraints (validated client-side, mirrored from the backend
 
 !!! note
     `saveQueryByName` is not supported on open-access deployments —
-    the `/dataset/named/` endpoint requires an authenticated principal.
+    the `/picsure/operations/dataset/named` endpoint requires an
+    authenticated principal.
 
 ## Simple Queries
 
@@ -154,8 +155,9 @@ If something goes wrong, you'll get a clear error message:
 ```python
 # Invalid query type
 session.runQuery(my_query, type="invalid")
-# PicSureValidationError: 'invalid' is not a valid query type.
-# Valid types: count, participant, timestamp.
+# PicSureValidationError: 'invalid' is not a valid query type. Pass a
+# QueryType member or one of: count, participant, timestamp, cross_count,
+# variant_count, variant_list, vcf_excerpt, aggregate_vcf_excerpt.
 ```
 
 Researchers don't need to write try/except blocks. The error messages
