@@ -22,6 +22,56 @@ Pass an empty string (or no argument) to return all variables:
 all_vars = session.searchDictionary()
 ```
 
+The server sends the dictionary a page at a time, so this walks the
+pages and returns the whole result set as one DataFrame. It is not a
+single request: the walk issues one HTTP call per 500 rows by default.
+
+A production dictionary is large enough that the call above can fail.
+An unpaged search refuses to collect more than 100,000 rows and raises
+`PicSureValidationError` when the match count is above it, naming the
+count and telling you to page. Narrowing with a term or a facet is the
+other way out.
+
+### Paging
+
+Pass `page` to fetch exactly one page and stop. Pages are **zero-based**:
+`page=0` is the first one. `page_size` sets the rows per HTTP request
+and defaults to 500.
+
+```python
+first = session.searchDictionary("blood pressure", page=0, page_size=100)
+second = session.searchDictionary("blood pressure", page=1, page_size=100)
+```
+
+Every returned DataFrame carries the paging state in
+[`df.attrs`](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.attrs.html):
+
+| Key | Meaning |
+|---|---|
+| `total_elements` | The server's total match count, or `None` when the response omitted it. |
+| `has_more` | Whether pages remain beyond what was returned. |
+| `page` | The page you asked for, or `None` when every page was collected. |
+| `page_size` | Rows requested per HTTP call. |
+| `pages_fetched` | How many HTTP calls the result took. |
+
+`has_more` is what to loop on, since the last page is usually a short
+one rather than an empty one:
+
+```python
+page = 0
+while True:
+    chunk = session.searchDictionary("blood pressure", page=page, page_size=1000)
+    process(chunk)
+    if not chunk.attrs["has_more"]:
+        break
+    page += 1
+```
+
+On an unpaged call `page` comes back `None` and `has_more` is `True`
+only in one case: the server reported no match count and the final page
+carried the walk past the 100,000-row ceiling, so the surplus rows were
+dropped.
+
 ### Exclude Values
 
 For faster searches on large dictionaries, set `include_values=False`
