@@ -110,7 +110,7 @@ def _values_route():
 
 
 class TestGenomicValuesErrorBranches:
-    """PYR-8: the error branches of ``search_genomic_values``."""
+    """The error branches of ``search_genomic_values``."""
 
     @respx.mock
     def test_server_error_reports_a_server_failure(self):
@@ -128,8 +128,7 @@ class TestGenomicValuesErrorBranches:
     @pytest.mark.parametrize("status", [418, 451, 502, 503])
     @respx.mock
     def test_unexpected_status_is_translated_not_leaked(self, status):
-        # These statuses have no dedicated branch. Whatever they map to, a
-        # caller must see the public hierarchy, never a transport internal.
+        """Statuses with no dedicated branch still surface as public errors."""
         respx.get(GENOMIC_VALUES_URL).mock(
             return_value=httpx.Response(status, text="unexpected")
         )
@@ -143,7 +142,6 @@ class TestGenomicValuesErrorBranches:
 
     @respx.mock
     def test_missing_endpoint_reports_unsupported_deployment(self):
-        # A deployment without genomic value lookups answers 404 on the route.
         respx.get(GENOMIC_VALUES_URL).mock(
             return_value=httpx.Response(404, text="not found")
         )
@@ -207,7 +205,7 @@ class TestGenomicValuesErrorBranches:
 
 
 class TestGenomicValuesNonAnnotationConcept:
-    """PYR-8: a concept that is not a genomic annotation.
+    """A concept that is not a genomic annotation.
 
     Verified live: the server answers HTTP 200 with a zero-length body and
     no content type for a phenotypic concept path or an unknown key, which
@@ -253,11 +251,10 @@ class TestGenomicValuesNonAnnotationConcept:
 
 
 class TestGenomicValuesValueList:
-    """PYR-8: empty and malformed value lists."""
+    """Empty and malformed value lists."""
 
     def test_empty_results_list_is_an_empty_frame_not_an_error(self):
-        # Live: a query term matching nothing returns
-        # {"results":[],"page":1,"total":0}. That is a legitimate answer.
+        """Live, a term matching nothing returns an empty results list."""
         client = _FakeClient({"results": [], "page": 1, "total": 0})
         df = search_genomic_values(client, "Gene_with_variant", backend="auth")
         assert list(df.columns) == ["value"]
@@ -265,7 +262,7 @@ class TestGenomicValuesValueList:
         assert df.attrs["total"] == 0
 
     def test_page_past_the_end_is_an_empty_frame(self):
-        # Live: page=99 returns {"results":[],"page":99,"total":8}.
+        """Live, page 99 returns an empty results list with the total intact."""
         client = _FakeClient({"results": [], "page": 99, "total": 8})
         df = search_genomic_values(client, "Gene_with_variant", backend="auth", page=99)
         assert df.empty
@@ -309,7 +306,7 @@ class TestGenomicValuesValueList:
 
 
 class TestGenomicValuesRequiresGenomicSupport:
-    """PYR-8: a deployment without genomic support."""
+    """A deployment without genomic support."""
 
     def test_session_refuses_before_any_request(self):
         from picsure._models.session import Session
@@ -326,13 +323,9 @@ class TestGenomicValuesRequiresGenomicSupport:
 
         message = str(exc_info.value)
         assert "Genomic operations require an authorized platform" in message
-        # The guard runs before the lookup, so no request is attempted.
         assert client.last_path is None
 
 
-# Captured live from a PIC-SURE stack with genomic data loaded (2026-09-10)
-# via GET /picsure/hpds/auth/search/values?genomicConceptPath=<key>.  These
-# are the values searchGenomicValues actually hands a caller.
 LIVE_GENOMIC_VALUES: dict[str, list[str]] = {
     "Gene_with_variant": [
         "CONSENTQA902_1",
@@ -359,13 +352,18 @@ LIVE_GENOMIC_VALUES: dict[str, list[str]] = {
         "Common",
     ],
 }
+"""Values captured live on 2026-09-10 from a PIC-SURE stack with genomic data.
+
+Fetched with ``GET /picsure/hpds/auth/search/values?genomicConceptPath=<key>``,
+so these are the values ``searchGenomicValues`` hands a caller.
+"""
 
 
 class TestDiscoveryToBuilderRoundTrip:
-    """PL-05: every discovered value must be buildable.
+    """Every discovered value must be buildable.
 
     ``searchGenomicValues`` and ``buildGenomicFilter`` are the two halves of
-    one workflow — discover the valid values for a key, then filter on them.
+    one workflow: discover the valid values for a key, then filter on them.
     This is the test that stops the two vocabularies drifting apart again:
     it walks the values the discovery call returns and feeds each one back
     into the builder for the same key.
@@ -406,8 +404,6 @@ class TestDiscoveryToBuilderRoundTrip:
 
     @pytest.mark.parametrize("concept_path", sorted(LIVE_GENOMIC_VALUES))
     def test_discovered_values_round_trip_onto_their_own_key(self, concept_path):
-        # Every key, Variant_severity included, now sends the discovered
-        # values on the key they were discovered under.
         from picsure import buildGenomicFilter
 
         values = LIVE_GENOMIC_VALUES[concept_path]
@@ -416,9 +412,7 @@ class TestDiscoveryToBuilderRoundTrip:
         assert set(gf.values or ()) == set(values)
 
     def test_severity_buckets_are_not_discovered_values(self):
-        # The bucket labels are this adapter's own vocabulary; the server
-        # never reports them. Kept as a guard so nobody "fixes" the round
-        # trip by pointing discovery at the buckets.
+        """The bucket labels are this adapter's own; the server never reports them."""
         from picsure._models.genomic_filter import known_severities
 
         discovered = set(LIVE_GENOMIC_VALUES["Variant_severity"])

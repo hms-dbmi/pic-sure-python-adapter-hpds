@@ -1076,12 +1076,6 @@ class TestVariantResultParsing:
             run_query(_make_client(), _simple_clause(), "count", backend="auth")
 
 
-# Response bodies below were captured from a live PIC-SURE stack on
-# 2026-09-10 (local all-in-one, genomic data loaded).  VARIANT_COUNT is the
-# only variant type this deployment serves; VARIANT_LIST, VCF_EXCERPT and
-# AGGREGATE_VCF_EXCERPT are disabled there and answer with the
-# "<TYPE> query type not allowed" body reproduced here, so their success
-# shapes are exercised as unit tests only.
 VARIANT_COUNT_LIVE = b'{"count":1,"message":"Query ran successfully"}'
 VARIANT_COUNT_NO_FILTERS_LIVE = (
     b'{"count":"0","message":"No variant filters were supplied, so no query was run."}'
@@ -1102,10 +1096,15 @@ def _genomic_query() -> Query:
 
 
 class TestRunQueryVariantCountEndToEnd:
-    """PYR-9 / PL-03: drive VARIANT_COUNT through ``run_query``.
+    """Drive VARIANT_COUNT through ``run_query``.
 
     The server answers with a JSON object, which the old parser rejected
     because it expected a bare count string. Reproduced live before the fix.
+    The ``*_LIVE`` bodies were captured from a local all-in-one stack with
+    genomic data loaded on 2026-09-10. VARIANT_COUNT is the only variant type
+    that deployment serves; the other three answer with the
+    "query type not allowed" body, so their success shapes are unit-tested
+    only.
     """
 
     @respx.mock
@@ -1128,8 +1127,7 @@ class TestRunQueryVariantCountEndToEnd:
 
     @respx.mock
     def test_raw_preserves_the_whole_body_including_message(self):
-        # The server's `message` has no field of its own on CountResult; it
-        # survives because `raw` keeps the entire response body.
+        """The server's message survives because ``raw`` keeps the whole body."""
         respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=VARIANT_COUNT_LIVE)
         )
@@ -1160,7 +1158,7 @@ class TestRunQueryVariantCountEndToEnd:
 
     @respx.mock
     def test_accepts_a_string_count(self):
-        # `count` is a JSON string in some responses, not always a number.
+        """Some responses send ``count`` as a JSON string."""
         respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b'{"count":"7"}')
         )
@@ -1195,7 +1193,7 @@ class TestRunQueryVariantCountEndToEnd:
 
     @respx.mock
     def test_bare_numeric_body_still_accepted(self):
-        # Kept for any deployment that answers with a bare count string.
+        """A bare count string still parses, for deployments that send one."""
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"42"))
         result = run_query(
             _make_client(), _genomic_query(), "variant_count", backend="auth"
@@ -1205,9 +1203,11 @@ class TestRunQueryVariantCountEndToEnd:
 
     @respx.mock
     def test_no_variant_filters_message_raises_instead_of_reporting_zero(self):
-        # Live shape for a variant count with no genomic filter. Returning
-        # CountResult(value=0) here would read as "no matching variants" when
-        # the server never ran a query at all.
+        """Live shape for a variant count with no genomic filter.
+
+        Returning CountResult(value=0) would read as no matching variants
+        when the server never ran a query at all.
+        """
         respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=VARIANT_COUNT_NO_FILTERS_LIVE)
         )
@@ -1262,7 +1262,7 @@ class TestRunQueryVariantCountEndToEnd:
 
 
 class TestRunQueryVariantListEndToEnd:
-    """PYR-9: drive VARIANT_LIST through ``run_query``.
+    """Drive VARIANT_LIST through ``run_query``.
 
     Disabled on the verified deployment, so the "not allowed" body is the
     live shape and the success shape is unit-tested only.
@@ -1321,7 +1321,7 @@ class TestRunQueryVariantListEndToEnd:
 
 
 class TestRunQueryVcfExcerptEndToEnd:
-    """PYR-9: drive both VCF excerpt types through ``run_query``.
+    """Drive both VCF excerpt types through ``run_query``.
 
     Both are disabled on the verified deployment, so their success shapes
     are unit-tested only; the "not allowed" bodies are the live ones.
@@ -1414,7 +1414,6 @@ class TestVariantParserDefensiveBranches:
     def test_vcf_excerpt_unparsable_table_raises(self):
         from picsure._services.query_run import _parse_vcf_excerpt
 
-        # Ragged rows the tab reader cannot square into a table.
-        body = b'CHROM\tPOS\n7\t100000\n"unclosed\tquote\t\t\t\n'
+        ragged_rows = b'CHROM\tPOS\n7\t100000\n"unclosed\tquote\t\t\t\n'
         with pytest.raises(PicSureQueryError, match="malformed VCF excerpt"):
-            _parse_vcf_excerpt(body)
+            _parse_vcf_excerpt(ragged_rows)

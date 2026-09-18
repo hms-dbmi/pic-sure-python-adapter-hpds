@@ -40,9 +40,9 @@ class GenomicFilterKey(str, Enum):
     """Recognized genomic annotation keys for ``buildGenomicFilter(key=...)``.
 
     Pass a member directly, or the equivalent string (validated against these
-    members). ``VARIANT_SEVERITY`` accepts two vocabularies — the backend's own
+    members). ``VARIANT_SEVERITY`` accepts two vocabularies, the backend's own
     impact values (:func:`known_impacts`) and this adapter's severity buckets
-    (:class:`VariantSeverity`) — which ``buildGenomicFilter`` routes
+    (:class:`VariantSeverity`). ``buildGenomicFilter`` routes them
     differently; see :func:`picsure.buildGenomicFilter`.
     """
 
@@ -95,19 +95,16 @@ def known_severities() -> tuple[str, ...]:
     return tuple(_severity_map().keys())
 
 
-# The values the backend's ``Variant_severity`` annotation actually carries
-# (VEP's IMPACT field), in decreasing order of severity.  This is what
-# ``searchGenomicValues("Variant_severity")`` returns, and the backend applies
-# the key verbatim, so these are passed through rather than expanded.
 _IMPACT_VALUES: tuple[str, ...] = ("HIGH", "MODERATE", "LOW", "MODIFIER")
 
 
 def known_impacts() -> tuple[str, ...]:
     """Return the backend's ``Variant_severity`` impact values.
 
-    These are the values ``searchGenomicValues("Variant_severity")`` reports.
-    Unlike :class:`VariantSeverity` buckets they are sent on the
-    ``Variant_severity`` key unchanged.
+    These are VEP's IMPACT labels in decreasing order of severity, and the
+    values ``searchGenomicValues("Variant_severity")`` reports. The backend
+    applies the key verbatim, so unlike :class:`VariantSeverity` buckets they
+    are sent on the ``Variant_severity`` key unchanged.
     """
     return _IMPACT_VALUES
 

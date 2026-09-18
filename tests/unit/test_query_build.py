@@ -443,9 +443,7 @@ class TestGenomicFilterKeyEnum:
             buildGenomicFilter(GenomicFilterKey.VARIANT_SEVERITY, values="Catastrophic")
 
     def test_unknown_severity_message_names_both_vocabularies(self):
-        # PL-05: the flat rejection did not say that two vocabularies exist,
-        # so a user who fed searchGenomicValues output back in had nothing to
-        # go on.
+        """The rejection names both vocabularies, so discovery output fits."""
         from picsure import GenomicFilterKey, PicSureValidationError, buildGenomicFilter
 
         with pytest.raises(PicSureValidationError) as exc_info:
@@ -460,7 +458,7 @@ class TestGenomicFilterKeyEnum:
 
 
 class TestVariantSeverityImpactValues:
-    """The backend's own ``Variant_severity`` vocabulary (PL-05).
+    """The backend's own ``Variant_severity`` vocabulary.
 
     ``searchGenomicValues("Variant_severity")`` returns HIGH / MODERATE /
     LOW / MODIFIER and the backend applies the key verbatim, so these are
@@ -500,9 +498,11 @@ class TestVariantSeverityImpactValues:
         assert gf.values == ("HIGH",)
 
     def test_modifier_is_unreachable_through_severity_buckets(self):
-        # MODIFIER is a populated bucket on the live stack (32 patients via
-        # intron_variant) that no VariantSeverity bucket covers, so the impact
-        # vocabulary is the only way to express it.
+        """MODIFIER has patients on the live stack but no bucket covers it.
+
+        The 32 patients come through intron_variant, so the impact vocabulary
+        is the only way to express it.
+        """
         from picsure._models.genomic_filter import (
             known_severities,
             severity_consequences,
@@ -535,7 +535,6 @@ class TestVariantSeverityImpactValues:
         assert "'Variant_consequence_calculated'" in message
 
     def test_buckets_still_expand_unchanged(self):
-        # Back-compat: the bucket vocabulary keeps its existing behaviour.
         from picsure import VariantSeverity, buildGenomicFilter
 
         gf = buildGenomicFilter("Variant_severity", values=VariantSeverity.HIGH)

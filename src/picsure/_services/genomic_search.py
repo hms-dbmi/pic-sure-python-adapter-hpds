@@ -34,7 +34,7 @@ def search_genomic_values(
     Raises:
         PicSureValidationError: If ``genomic_concept_path`` is blank.
         PicSureQueryError: If the endpoint is absent, or the response is not
-            a genomic values payload — including the empty body the server
+            a genomic values payload. That includes the empty body the server
             returns for a concept that is not a genomic annotation.
     """
     if not isinstance(genomic_concept_path, str) or not genomic_concept_path.strip():
@@ -55,9 +55,6 @@ def search_genomic_values(
     try:
         data = client.get_json(path)
     except ValueError as exc:
-        # The server answers HTTP 200 with an empty body when the concept is
-        # not a genomic annotation, which leaves get_json with nothing to
-        # decode.  Without this, a JSONDecodeError escapes the library.
         raise PicSureQueryError(
             f"The server returned no genomic values payload for "
             f"'{genomic_concept_path}'. That concept may not be a genomic "

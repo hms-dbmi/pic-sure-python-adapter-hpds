@@ -260,7 +260,7 @@ def _empty_count_message(context: str) -> str:
     """Explain an empty body where a count was expected.
 
     The server answers HTTP 200 with no body when it cannot apply a filter,
-    so the likeliest cause is a filter the query could not run with — most
+    so the likeliest cause is a filter the query could not run with, most
     often a filter whose shape does not match its concept's type (a numeric
     ``min``/``max`` on a categorical concept, or ``categories`` on a
     continuous one).
@@ -385,8 +385,8 @@ _VARIANT_RESULT_UNSUPPORTED = (
 def _parse_variant_count(raw: bytes, *, context: str = "") -> CountResult:
     """Parse a VARIANT_COUNT_FOR_QUERY response into a :class:`CountResult`.
 
-    The server answers with a JSON object — ``{"count": 1, "message": "Query
-    ran successfully"}`` — whose ``count`` is either a number or a count
+    The server answers with a JSON object such as ``{"count": 1, "message":
+    "Query ran successfully"}``, whose ``count`` is either a number or a count
     string. A bare count string is still accepted for deployments that send
     one. Either way the count is parsed with the same logic as patient
     counts, so an obfuscated response (``"11309 ±3"`` noisy or ``"< 10"``

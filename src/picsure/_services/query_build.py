@@ -230,9 +230,9 @@ def buildGenomicFilter(  # noqa: N802
     Args:
         key: The genomic annotation to filter on. Pass a
             :class:`GenomicFilterKey` member (preferred) or the equivalent
-            string — an unrecognized string raises an error listing the valid
-            keys. Variant-spec (SNP) keys — an rsID or a ``chr,pos,ref,alt``
-            spec — are not supported and are rejected.
+            string. An unrecognized string raises an error listing the valid
+            keys. Variant-spec (SNP) keys, an rsID or a ``chr,pos,ref,alt``
+            spec, are not supported and are rejected.
         values: One value or a sequence of values that must match.
             :class:`VariantFrequency` / :class:`VariantSeverity` members are
             accepted and coerced to their string value.
@@ -244,9 +244,9 @@ def buildGenomicFilter(  # noqa: N802
         ``GenomicFilterKey.VARIANT_SEVERITY`` accepts two vocabularies, and a
         single filter must not mix them:
 
-        - the backend's own impact values — ``HIGH``, ``MODERATE``, ``LOW``,
+        - the backend's own impact values, ``HIGH``, ``MODERATE``, ``LOW`` and
           ``MODIFIER`` (:func:`known_impacts`), exactly what
-          ``searchGenomicValues("Variant_severity")`` returns — are sent on
+          ``searchGenomicValues("Variant_severity")`` returns, are sent on
           the ``Variant_severity`` key unchanged;
         - this adapter's :class:`VariantSeverity` buckets (e.g.
           ``"High Severity"``) are expanded into the matching

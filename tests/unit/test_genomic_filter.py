@@ -110,7 +110,7 @@ def test_key_and_severity_enums_re_exported():
 
 
 class TestVariantFrequencyBuckets:
-    """PL-06: the ``Variant_frequency_as_text`` vocabulary.
+    """The ``Variant_frequency_as_text`` vocabulary.
 
     Captured live from a stack with genomic data loaded: ``Low_frequency``,
     ``Ultra_rare``, ``Rare``, ``Common``. The backend's own annotated test
@@ -124,7 +124,6 @@ class TestVariantFrequencyBuckets:
             assert value in {member.value for member in VariantFrequency}
 
     def test_novel_is_kept_for_back_compat(self):
-        # Deprecated, not deleted: still importable so existing code runs.
         assert VariantFrequency.NOVEL == "Novel"
 
     def test_deprecation_is_documented(self):
@@ -132,7 +131,6 @@ class TestVariantFrequencyBuckets:
         assert "searchGenomicValues" in VariantFrequency.__doc__
 
     def test_frequency_values_are_accepted_by_the_builder(self):
-        # The key does no value validation, so every member must build.
         from picsure import buildGenomicFilter
 
         for member in VariantFrequency:
@@ -142,7 +140,7 @@ class TestVariantFrequencyBuckets:
 
 
 class TestImpactVocabulary:
-    """PL-05: the backend's ``Variant_severity`` impact values."""
+    """The backend's ``Variant_severity`` impact values."""
 
     def test_known_impacts_matches_the_live_discovery_output(self):
         from picsure._models.genomic_filter import known_impacts
