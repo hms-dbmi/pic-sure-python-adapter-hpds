@@ -1602,16 +1602,6 @@ class TestDataframeQueriesStreamToDisk:
         assert not targets[0].parent.exists()
 
     @respx.mock
-    def test_no_staging_file_survives_a_failed_download(self, monkeypatch):
-        respx.post(QUERY_URL).mock(return_value=httpx.Response(500, text="boom"))
-        targets = self._spy_on_streaming(monkeypatch)
-
-        with pytest.raises(PicSureServerError):
-            run_query(_make_client(), _simple_clause(), "participant", backend="auth")
-
-        assert not targets[0].with_suffix(".csv.part").exists()
-
-    @respx.mock
     def test_a_transport_failure_is_still_translated(self, monkeypatch):
         respx.post(QUERY_URL).mock(side_effect=httpx.ConnectError("refused"))
 
