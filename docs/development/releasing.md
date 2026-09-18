@@ -72,7 +72,7 @@ on anything else:
 |---|---|---|
 | `vX.Y.Z` (e.g. `v2.0.0`) | final release | PyPI |
 | `vX.Y.Z{a,b,rc}[N]` (e.g. `v2.0.0rc1`) | pre-release | TestPyPI |
-| anything else (e.g. `v1.0`) | error | nothing — the run fails |
+| anything else (e.g. `v1.0`) | error | nothing, the run fails |
 
 The two-component tags still in the repo (`v1.0`, `v1.2`) predate
 this workflow and would be rejected today. Use the full `vX.Y.Z`.
@@ -104,15 +104,16 @@ Publishing is automated and there is **no API token to manage**. The
 `publish-pypi` and `publish-testpypi` jobs in `release.yml` use
 `pypa/gh-action-pypi-publish` with `permissions: id-token: write`,
 which is [Trusted
-Publishing](https://docs.pypi.org/trusted-publishers/) — PyPI trusts
+Publishing](https://docs.pypi.org/trusted-publishers/). PyPI trusts
 a short-lived OIDC token minted for that workflow in that repository.
 Do not create a `PYPI_TOKEN` or set `UV_PUBLISH_TOKEN`; a long-lived
 token is the thing this setup exists to avoid.
 
 Each publish job is pinned to a GitHub
-[environment](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/settings/environments)
-— `PyPi` for final releases, `TestPyPi` for pre-releases — which is
-where the trusted-publisher binding and any required reviewers live.
+[environment](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/settings/environments),
+`PyPi` for final releases and `TestPyPi` for pre-releases. The
+environment is where the trusted-publisher binding and any required
+reviewers live.
 A first release from a new repository or environment needs the
 publisher registered on PyPI first, or the job fails at upload with a
 permissions error.
