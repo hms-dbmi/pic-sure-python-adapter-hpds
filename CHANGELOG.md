@@ -57,6 +57,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **BREAKING:** The resource-ID surface is removed: `picsure.connect(resource_uuid=...)`, `Session.getResourceID()`, `Session.setResourceID()`, and `Session.setResourceIDByName()`. There is no replacement and none is needed. The v3 API routes by URL path: `connect(platform=...)` resolves to `/hpds/auth` or `/hpds/open`, and that path alone selects the HPDS backend. No resource UUID is sent in a query body. The registry endpoint that used to populate the resource list was deleted with the v3 rewrite, so `getResourceID()` returned an empty frame, `setResourceIDByName()` could never match, and a UUID passed to `connect()` was stored and never read.
 - **BREAKING:** `resource_uuid` was the third *positional* parameter of `connect(platform, token, resource_uuid=None, *, ...)`. Removing it means `connect(platform, token, uuid)` now raises `TypeError` rather than silently binding the UUID to a different parameter. The remaining parameters are keyword-only, so there is no wrong-parameter failure mode. Delete the third argument.
 
+
 ### Added
 - `picsure.PicSureAuthenticationError` (HTTP 401: the token itself) and `picsure.PicSureAuthorizationError` (HTTP 403: the account's permissions), both subclasses of `PicSureAuthError`.
 - `picsure.PicSureServerError` (HTTP 5xx: the server answered but failed) and `picsure.PicSureTLSError` (certificate verification failed), both subclasses of `PicSureConnectionError`.
