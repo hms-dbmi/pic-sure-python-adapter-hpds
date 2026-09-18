@@ -22,7 +22,11 @@ from picsure._services._errors import translate_transport_error
 from picsure._services._hpds_paths import query_prefix
 from picsure._transport.client import PicSureClient
 from picsure._transport.errors import TransportError, TransportServerError
-from picsure.errors import PicSureQueryError, PicSureValidationError
+from picsure.errors import (
+    PicSureConnectionError,
+    PicSureQueryError,
+    PicSureValidationError,
+)
 
 _QUERY_OPERATION = "the query"
 
@@ -158,13 +162,24 @@ def _run_dataframe_query(
     failure, and the ten-minute data deadline lets much larger results
     through than the old thirty seconds did.  Streaming to a temporary
     file drops the peak to the frame alone.
+
+    Staging the result on disk introduces local failures the buffered
+    path never had: no temporary directory, a full disk, an unreadable
+    file.  Those are translated to :class:`PicSureConnectionError`, as
+    the export helpers do, so a caller catching ``PicSureError`` still
+    sees them.
     """
-    with _download_target() as target:
-        try:
-            client.post_raw_to_file(path, target, body=body)
-        except TransportError as exc:
-            _raise_query_error(exc, resolved_type)
-        return _parse_dataframe(target)
+    try:
+        with _download_target() as target:
+            try:
+                client.post_raw_to_file(path, target, body=body)
+            except TransportError as exc:
+                _raise_query_error(exc, resolved_type)
+            return _parse_dataframe(target)
+    except OSError as exc:
+        raise PicSureConnectionError(
+            f"Could not stage the query result on local disk: {exc}"
+        ) from exc
 
 
 @contextmanager

@@ -19,6 +19,7 @@ from picsure.errors import (
     PicSureConnectionError,
     PicSureConsentDeniedError,
     PicSureConsentLookupError,
+    PicSureError,
     PicSureQueryError,
     PicSureServerError,
     PicSureValidationError,
@@ -1569,6 +1570,47 @@ class TestDataframeQueriesStreamToDisk:
         respx.post(QUERY_URL).mock(side_effect=httpx.ConnectError("refused"))
 
         with pytest.raises(PicSureConnectionError):
+            run_query(_make_client(), _simple_clause(), "participant", backend="auth")
+
+    @respx.mock
+    def test_a_local_disk_failure_is_a_connection_error(self, monkeypatch):
+        csv = b"patient_id,age\nP001,42\n"
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=csv))
+
+        def full_disk(self, path, target, body=None):
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(PicSureClient, "post_raw_to_file", full_disk)
+
+        with pytest.raises(PicSureConnectionError, match="No space left") as info:
+            run_query(_make_client(), _simple_clause(), "participant", backend="auth")
+
+        assert isinstance(info.value.__cause__, OSError)
+
+    @respx.mock
+    def test_a_missing_temporary_directory_is_a_connection_error(
+        self, monkeypatch, tmp_path
+    ):
+        import tempfile
+
+        csv = b"patient_id,age\nP001,42\n"
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=csv))
+        monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "gone"))
+
+        with pytest.raises(PicSureConnectionError, match="local disk"):
+            run_query(_make_client(), _simple_clause(), "participant", backend="auth")
+
+    @respx.mock
+    def test_a_local_disk_failure_is_caught_as_picsure_error(self, monkeypatch):
+        csv = b"patient_id,age\nP001,42\n"
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=csv))
+
+        def full_disk(self, path, target, body=None):
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(PicSureClient, "post_raw_to_file", full_disk)
+
+        with pytest.raises(PicSureError):
             run_query(_make_client(), _simple_clause(), "participant", backend="auth")
 
     @respx.mock
