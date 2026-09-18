@@ -9,7 +9,7 @@ from picsure._models.query import Query
 from picsure._services._errors import translate_transport_error
 from picsure._services._hpds_paths import query_prefix
 from picsure._services.query_run import build_query_body
-from picsure._transport.client import json_object
+from picsure._transport.client import EmptyBodyError, json_object
 from picsure._transport.errors import TransportError
 from picsure.errors import (
     PicSureQueryError,
@@ -131,6 +131,23 @@ def _find_existing_by_name(
 
 
 def _create_named_dataset(client: PicSureClient, *, query_id: str, name: str) -> None:
+    """POST a new NamedDataset record for ``query_id``.
+
+    The call is made for its side effect, so an empty response body is a
+    success: the operations service may answer a create with ``201`` and
+    no body at all. :class:`EmptyBodyError` is swallowed rather than
+    allowed to fail a save the server already committed, which would
+    otherwise send the caller into the duplicate-name refusal on retry.
+
+    Args:
+        client: Authenticated HTTP client.
+        query_id: The submitted query's PIC-SURE id.
+        name: The name to store the record under.
+
+    Raises:
+        PicSureError: Whatever :func:`translate_transport_error` maps the
+            transport failure to.
+    """
     body = {
         "queryId": query_id,
         "name": name,
@@ -139,6 +156,8 @@ def _create_named_dataset(client: PicSureClient, *, query_id: str, name: str) ->
     }
     try:
         client.post_json(_NAMED_DATASET_COLLECTION_PATH, body=body)
+    except EmptyBodyError:
+        return
     except TransportError as exc:
         raise translate_transport_error(exc, operation="the saved-query save") from exc
 
@@ -152,6 +171,24 @@ def _update_named_dataset(
     archived: bool,
     metadata: dict[str, object],
 ) -> None:
+    """Re-point an existing NamedDataset record at ``query_id``.
+
+    Like :func:`_create_named_dataset`, the response body is not needed,
+    so an empty one is a success: ``204 No Content`` is a normal answer
+    to this PUT.
+
+    Args:
+        client: Authenticated HTTP client.
+        named_dataset_id: UUID of the record to update.
+        query_id: The freshly submitted query's PIC-SURE id.
+        name: The record's name, resent unchanged.
+        archived: The record's archived flag, preserved.
+        metadata: The record's metadata, preserved.
+
+    Raises:
+        PicSureError: Whatever :func:`translate_transport_error` maps the
+            transport failure to.
+    """
     path = _NAMED_DATASET_ITEM_PATH.format(named_dataset_id=named_dataset_id)
     body = {
         "queryId": query_id,
@@ -161,6 +198,8 @@ def _update_named_dataset(
     }
     try:
         client.put_json(path, body=body)
+    except EmptyBodyError:
+        return
     except TransportError as exc:
         raise translate_transport_error(
             exc, operation="the saved-query update"

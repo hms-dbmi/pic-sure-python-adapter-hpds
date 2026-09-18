@@ -116,6 +116,63 @@ class TestSaveQueryByNameHappyPath:
         assert qid == "qid-fallback"
 
 
+class TestSaveQueryByNameBodilessWrites:
+    """The record is written before the response body is read.
+
+    The operations service may answer the create with a bodiless 201 and
+    the update with a 204, so neither may be reported as a failure: a
+    caller who retried a "failed" save would meet the duplicate-name
+    refusal for a record that is already there.
+    """
+
+    @respx.mock
+    def test_create_answering_201_with_no_body_still_returns_the_query_id(self):
+        respx.get(LIST_URL).mock(return_value=httpx.Response(200, json=[]))
+        respx.post(SUBMIT_URL).mock(
+            return_value=httpx.Response(200, json={"picsureResultId": "qid-201"})
+        )
+        save = respx.post(SAVE_URL).mock(return_value=httpx.Response(201))
+
+        qid = save_query_by_name(_client(), _clause(), "fun", backend="auth")
+
+        assert qid == "qid-201"
+        assert save.called
+
+    @respx.mock
+    def test_update_answering_204_still_returns_the_query_id(self):
+        respx.get(LIST_URL).mock(
+            return_value=httpx.Response(
+                200,
+                json=[
+                    {
+                        "uuid": "nd-old",
+                        "name": "fun",
+                        "queryId": "qid-old",
+                        "archived": False,
+                        "metadata": {},
+                    }
+                ],
+            )
+        )
+        respx.post(SUBMIT_URL).mock(
+            return_value=httpx.Response(200, json={"picsureResultId": "qid-204"})
+        )
+        put = respx.put(
+            f"{BASE_URL}{_NAMED_DATASET_ITEM_PATH.format(named_dataset_id='nd-old')}"
+        ).mock(return_value=httpx.Response(204))
+
+        qid = save_query_by_name(
+            _client(),
+            _clause(),
+            "fun",
+            backend="auth",
+            overwrite=True,
+        )
+
+        assert qid == "qid-204"
+        assert put.called
+
+
 class TestSaveQueryByNameDuplicates:
     @respx.mock
     def test_refuses_duplicate_without_overwrite(self):
