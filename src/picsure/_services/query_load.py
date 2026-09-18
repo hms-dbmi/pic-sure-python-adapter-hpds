@@ -209,9 +209,9 @@ def load_query(
     """Load a previously-saved query by ID and rebuild it as a Query.
 
     Reads ``/picsure/hpds/{backend}/v3/query/{id}/metadata``.  The read
-    itself does not depend on HPDS -- the query-service returns the stored
-    query row -- but only the versioned route is mapped on the current
-    gateway, so ``/v3`` is used for every session.
+    itself does not depend on HPDS, since the query-service returns the
+    stored query row, but only the versioned route is mapped on the
+    current gateway, so ``/v3`` is used for every session.
 
     Args:
         client: Authenticated HTTP client.
@@ -233,7 +233,11 @@ def load_query(
             adapter cannot yet represent (NOT clauses).
         PicSureAuthenticationError: On 401.
         PicSureAuthorizationError: On 403.
-        PicSureConnectionError: On network failures or 5xx.
+        PicSureConsentDeniedError: On a consent refusal.
+        PicSureConsentLookupError: When the server cannot resolve consents.
+        PicSureServerError: On 5xx.
+        PicSureTLSError: When the server certificate is rejected.
+        PicSureConnectionError: On network failures or rate limiting.
         PicSureQueryError: If the response shape is malformed.
     """
     if not query_id or not query_id.strip():
