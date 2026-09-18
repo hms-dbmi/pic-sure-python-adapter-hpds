@@ -132,8 +132,33 @@ no `httpx`, and a `fastavro` too old to satisfy the pin. The extra
 index lets pip take those from PyPI while the candidate itself still
 comes from TestPyPI, the only index that has it.
 
-Only reach for a manual `uv build` / `uv publish` if the workflow
-itself is broken, and prefer fixing the workflow.
+### When a release run fails
+
+There is no manual publish path. `release.yml` has no
+`workflow_dispatch` trigger, and the publish jobs authenticate only
+with the OIDC token GitHub mints for a tag-triggered run, so nothing
+run by hand can upload. Recover inside that model:
+
+**Transient failure** (runner outage, flaky test, PyPI timeout). Open
+the run in the Actions tab and re-run the failed jobs. The re-run
+keeps the same tag and reuses the `dist` artifact already built in
+that run.
+
+**Wrong tag, or the workflow file itself needs a change.** The run
+executes the `release.yml` at the tagged commit, so land the fix on
+`main`, then move the tag to the new commit and push it again.
+Nothing was uploaded, so the version is still free.
+
+```bash
+git tag -d vX.Y.Z
+git push origin :refs/tags/vX.Y.Z
+git tag -a vX.Y.Z -m "Release X.Y.Z"
+git push origin vX.Y.Z
+```
+
+**Publish succeeded and a later step failed.** That version is spent.
+PyPI never accepts a file name twice, even after a delete. Fix forward
+and cut the next patch version.
 
 ## Publishing the docs
 
