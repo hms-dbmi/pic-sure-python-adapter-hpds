@@ -49,8 +49,9 @@ _SKIPPED_PLATFORM_UNSET = (
 
 _SKIPPED_PLATFORM_UNRECOGNIZED = (
     "PICSURE_TEST_PLATFORM={value!r} is neither a Platform enum name nor an "
-    "http(s):// URL, so platform resolution cannot succeed. Set it to one of "
-    "{names} or to a full https:// URL. See .env.example."
+    "https:// URL, so platform resolution cannot succeed. Set it to one of "
+    "{names} or to a full https:// URL. A custom URL must be https, because "
+    "the bearer token travels in the Authorization header. See .env.example."
 )
 
 _SKIPPED_TOKEN_UNSET = (
@@ -149,9 +150,11 @@ def requires_auth(test_platform: Platform | str) -> bool:
 def _resolve_test_platform() -> Platform | str | None:
     """Resolve PICSURE_TEST_PLATFORM, or ``None`` if it cannot be used.
 
-    ``None`` means the variable is unset or holds a value
-    :func:`picsure._transport.platforms.resolve_platform` would reject, so
-    the live suite has nothing to connect to. Returning it lets collection
+    ``None`` means the variable is unset, holds a value
+    :func:`picsure._transport.platforms.resolve_platform` would reject, or
+    names a plaintext ``http://`` URL, which is refused because the bearer
+    token would travel unencrypted; so the live suite has nothing to
+    connect to. Returning it lets collection
     skip the suite with one actionable message instead of letting every
     test fail inside platform resolution.
     """
@@ -161,7 +164,7 @@ def _resolve_test_platform() -> Platform | str | None:
     member = _PLATFORM_BY_NAME.get(value.upper())
     if member is not None:
         return member
-    if value.startswith(("http://", "https://")):
+    if value.startswith("https://"):
         return value
     return None
 

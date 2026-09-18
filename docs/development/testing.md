@@ -112,7 +112,7 @@ Integration tests hit a real PIC-SURE instance. They require:
 |----------------------------|--------------------------------------------------------------------|
 | `PICSURE_INTEGRATION`      | Set to `1` to opt in. Without it, the suite skips at collection.   |
 | `PICSURE_TEST_TOKEN`       | Bearer token for authorized platforms. Leave unset for open-access. |
-| `PICSURE_TEST_PLATFORM`    | A `Platform` enum name (e.g. `BDC_AUTHORIZED`, `BDC_OPEN`, `NHANES_OPEN`) or a full `http(s)://` URL. There is no default. Unset, unrecognized, or naming an authorized platform with no `PICSURE_TEST_TOKEN`, the whole live suite skips at collection with one message naming what to set — it does not fail. |
+| `PICSURE_TEST_PLATFORM`    | A `Platform` enum name (e.g. `BDC_AUTHORIZED`, `BDC_OPEN`, `NHANES_OPEN`) or a full `https://` URL (plaintext `http://` is refused, since the token travels in the Authorization header). There is no default. Unset, unrecognized, or naming an authorized platform with no `PICSURE_TEST_TOKEN`, the whole live suite skips at collection with one message naming what to set — it does not fail. |
 | `PICSURE_TEST_CONCEPT_PATH`| Concept path used by query/export tests. Required — tests skip with a clear message if unset. |
 | `PICSURE_TEST_SEARCH_TERM` | Search term for `test_search_live.py`. Defaults to `"age"`.        |
 | `PICSURE_TEST_GENE`        | Gene symbol for `test_query_genomic_live.py`. Required — all four genomic tests skip without it. `CHD8` is verified on `BDC_PREDEV_AUTHORIZED`; genomic tests need an `*_AUTHORIZED` platform. |
