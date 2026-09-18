@@ -147,18 +147,23 @@ facets.add("invalid_category", "value")
 
 ## Genomic Value Discovery
 
-On genomic-capable platforms (BDC_AUTHORIZED, NHANES_AUTHORIZED), you can look
-up valid values for any genomic key before building a filter.
+On genomic-capable platforms (the authorized ones, such as BDC_AUTHORIZED
+and NHANES_AUTHORIZED), you can look up valid values for any genomic key
+before building a filter.
 
 ### Search genomic values
 
-`session.searchGenomicValues` queries the server and returns a DataFrame of
-matching values. Results are paginated; metadata (total, page, size) is on
-`df.attrs`.
+`session.searchGenomicValues` queries the server and returns a
+single-column `value` DataFrame of matching values. Results are
+paginated, and every call puts four keys on `df.attrs`: `total` and
+`page` as the server reported them, `size` as you asked for it, and
+`genomic_concept_path`, the key you looked up.
 
 This route's paging is **one-based**, so the first page is `page=1`, and
 its page-size argument is called `size`. `searchDictionary` above is
 zero-based with `page_size`. The two are served by different backends.
+Both `page` and `size` must be integers of 1 or greater; anything else is
+refused before a request is sent.
 
 ```python
 # Find genes matching "BRCA"
@@ -170,8 +175,14 @@ all_consequences = session.searchGenomicValues("Variant_consequence_calculated")
 
 # Page through large result sets
 page2 = session.searchGenomicValues("Gene_with_variant", query="", page=2, size=100)
-print(df.attrs)  # {'total': ..., 'page': 2, 'size': 100}
+print(page2.attrs)
+# {'total': ..., 'page': 2, 'size': 100,
+#  'genomic_concept_path': 'Gene_with_variant'}
 ```
+
+A key that is not a genomic annotation on the deployment comes back as an
+empty body, which raises `PicSureQueryError` rather than an empty
+DataFrame.
 
 ### Variant consequences (offline)
 
