@@ -116,3 +116,78 @@ class TestDictionaryEntry:
         entry = DictionaryEntry.from_dict(data)
         with __import__("pytest").raises(AttributeError):
             entry.name = "changed"  # type: ignore[misc]
+
+
+class TestDictionaryEntryExplicitNulls:
+    def test_a_null_type_is_absent_rather_than_the_string_none(self):
+        entry = DictionaryEntry.from_dict(
+            {"conceptPath": "\\a\\", "name": "a", "type": None}
+        )
+
+        assert entry.data_type == ""
+
+    def test_a_null_dataset_is_absent_rather_than_the_string_none(self):
+        entry = DictionaryEntry.from_dict(
+            {"conceptPath": "\\a\\", "name": "a", "dataset": None}
+        )
+
+        assert entry.study_id == ""
+
+    def test_a_null_study_acronym_is_none_rather_than_the_string_none(self):
+        entry = DictionaryEntry.from_dict(
+            {"conceptPath": "\\a\\", "name": "a", "studyAcronym": None}
+        )
+
+        assert entry.study_acronym is None
+
+    def test_a_null_type_still_falls_back_to_the_legacy_data_type(self):
+        entry = DictionaryEntry.from_dict(
+            {
+                "conceptPath": "\\a\\",
+                "name": "a",
+                "type": None,
+                "dataType": "categorical",
+            }
+        )
+
+        assert entry.data_type == "categorical"
+
+    def test_a_null_dataset_still_falls_back_to_the_legacy_study_id(self):
+        entry = DictionaryEntry.from_dict(
+            {
+                "conceptPath": "\\a\\",
+                "name": "a",
+                "dataset": None,
+                "studyId": "phs000007",
+            }
+        )
+
+        assert entry.study_id == "phs000007"
+
+    def test_every_nullable_field_at_once_stays_out_of_the_row(self):
+        entry = DictionaryEntry.from_dict(
+            {
+                "conceptPath": "\\a\\",
+                "name": "a",
+                "studyAcronym": None,
+                "type": None,
+                "dataset": None,
+            }
+        )
+
+        assert (entry.data_type, entry.study_id, entry.study_acronym) == ("", "", None)
+
+    def test_real_values_are_still_passed_through(self):
+        entry = DictionaryEntry.from_dict(
+            {
+                "conceptPath": "\\a\\",
+                "name": "a",
+                "type": "continuous",
+                "dataset": "phs000007",
+                "studyAcronym": "FHS",
+            }
+        )
+
+        assert entry.data_type == "continuous"
+        assert entry.study_id == "phs000007"
+        assert entry.study_acronym == "FHS"
