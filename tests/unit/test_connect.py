@@ -1161,3 +1161,16 @@ class TestValidateFalseOnConsentGatedPlatforms:
 
     def test_docstring_says_consent_gated_platforms_still_fetch(self):
         assert "consent" in connect.__doc__.split("validate:")[1].split("Returns:")[0]
+
+
+class TestValidationDoesNotRetry:
+    @respx.mock
+    def test_a_timeout_on_the_validation_request_is_attempted_once(self):
+        from picsure.errors import PicSureConnectionError
+
+        route = _mock_validation(side_effect=httpx.ReadTimeout("slow host"))
+
+        with pytest.raises(PicSureConnectionError):
+            connect(platform=BASE_URL, token=TOKEN)
+
+        assert route.call_count == 1

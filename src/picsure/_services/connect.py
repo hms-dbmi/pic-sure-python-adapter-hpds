@@ -371,8 +371,9 @@ def _validate_connection(client: PicSureClient, info: PlatformInfo) -> str | Non
 
     Uses a short deadline of its own (see
     :data:`picsure._transport.client.VALIDATION_TIMEOUT_SECONDS`) rather
-    than the session's data timeout, so a host that accepts TCP and
-    never answers fails in seconds instead of ten minutes.  The request
+    than the session's data timeout, and is sent once with no retry, so
+    a host that accepts TCP and never answers fails within that deadline
+    instead of ten minutes.  The request
     goes through the session's own client, so it honours the caller's
     ``verify`` setting. Validating against a certificate we would not
     trust for real work would prove nothing.
@@ -399,7 +400,9 @@ def _validate_connection(client: PicSureClient, info: PlatformInfo) -> str | Non
             ``404`` to a request that carried a token.
     """
     try:
-        payload = client.get_json(_VALIDATION_PATH, timeout=VALIDATION_TIMEOUT_SECONDS)
+        payload = client.get_json(
+            _VALIDATION_PATH, timeout=VALIDATION_TIMEOUT_SECONDS, retry=False
+        )
     except TransportConnectionError as exc:
         raise translate_transport_error(exc, operation=_VALIDATION_OPERATION) from exc
     except TransportNotFoundError as exc:
