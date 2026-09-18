@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 
 from picsure._models.clause import Clause
+from picsure.errors import PicSureValidationError
 
 
 class GroupOperator(Enum):
@@ -26,13 +28,29 @@ class ClauseGroup:
     deep nesting.
 
     **Wire format.** :meth:`to_query_json` emits a v3
-    ``PhenotypicSubquery`` (``operator`` / ``phenotypicClauses``) per
-    the ``/hpds/{auth,open}[/v3]/query`` contract. The previous wire format
-    is not supported.
+    ``PhenotypicSubquery`` (``operator`` / ``phenotypicClauses``) per the
+    ``/picsure/hpds/{auth,open}/v3/query`` contract. The previous wire
+    format is not supported.
+
+    **Immutability.** Frozen with a tuple of children, so a group is
+    hashable and usable as a dict key or set member. ``clauses`` accepts
+    any sequence of :class:`Clause` / :class:`ClauseGroup` and always
+    stores a tuple. A bare :class:`Clause` or :class:`ClauseGroup` passed
+    where the sequence belongs raises :class:`PicSureValidationError`.
     """
 
-    clauses: list[Clause | ClauseGroup]
+    clauses: Sequence[Clause | ClauseGroup]
     operator: GroupOperator
+
+    def __post_init__(self) -> None:
+        if isinstance(self.clauses, (Clause, ClauseGroup)):
+            raise PicSureValidationError(
+                "ClauseGroup expects a sequence of Clause or ClauseGroup objects, "
+                f"not a bare {type(self.clauses).__name__}. Wrap it in a list "
+                "or tuple."
+            )
+        if not isinstance(self.clauses, tuple):
+            object.__setattr__(self, "clauses", tuple(self.clauses))
 
     def concept_paths(self) -> list[str]:
         """All concept paths referenced anywhere in this group, depth-first.

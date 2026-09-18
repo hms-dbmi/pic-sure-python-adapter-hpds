@@ -530,7 +530,9 @@ class Session:
             >>> count = session.runQueryByID(
             ...     "11111111-2222-3333-4444-555555555555", type="count"
             ... )
-            >>> df = session.runQueryByID("XXXXX-ID", type="participant")
+            >>> df = session.runQueryByID(
+            ...     "22222222-3333-4444-5555-666666666666", type="participant"
+            ... )
         """
         query = self.loadQueryByID(query_id)
         return self.runQuery(query, type)

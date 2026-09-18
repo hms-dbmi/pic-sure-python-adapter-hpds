@@ -9,8 +9,10 @@ import respx
 from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._services._hpds_paths import query_prefix
 from picsure._services.query_save import (
+    _NAME_PUNCTUATION,
     _NAMED_DATASET_COLLECTION_PATH,
     _NAMED_DATASET_ITEM_PATH,
+    _validate_name,
     save_query_by_name,
 )
 from picsure._transport.client import PicSureClient
@@ -275,7 +277,9 @@ class TestSaveQueryByNameNameValidation:
         ],
     )
     def test_rejects_bad_characters(self, bad_name):
-        with pytest.raises(PicSureValidationError, match="unsupported characters"):
+        with pytest.raises(
+            PicSureValidationError, match="characters the server rejects"
+        ):
             save_query_by_name(
                 _client(),
                 _clause(),
@@ -291,13 +295,57 @@ class TestSaveQueryByNameNameValidation:
         ],
     )
     def test_rejects_trailing_newline(self, bad_name):
-        with pytest.raises(PicSureValidationError, match="unsupported characters"):
+        with pytest.raises(
+            PicSureValidationError, match="characters the server rejects"
+        ):
             save_query_by_name(
                 _client(),
                 _clause(),
                 bad_name,
                 backend="auth",
             )
+
+    @pytest.mark.parametrize(
+        "bad_name",
+        [
+            "café",
+            "查询",
+            "Ünïcode cohort",
+            "naïve-2026",
+            "Ω",
+            "emoji \U0001f600",
+        ],
+    )
+    def test_rejects_non_ascii_names(self, bad_name):
+        r"""Names Python's Unicode ``\w`` accepts but Java's ASCII ``\w`` rejects."""
+        with pytest.raises(PicSureValidationError, match="non-Latin"):
+            save_query_by_name(
+                _client(),
+                _clause(),
+                bad_name,
+                backend="auth",
+            )
+
+    def test_non_ascii_name_rejected_before_any_request(self):
+        """No respx mock is installed, so a name that slipped through fails later."""
+        with pytest.raises(
+            PicSureValidationError, match="characters the server rejects"
+        ):
+            save_query_by_name(_client(), _clause(), "café", backend="auth")
+
+    def test_error_names_the_offending_characters(self):
+        with pytest.raises(PicSureValidationError) as excinfo:
+            save_query_by_name(_client(), _clause(), "café <x>", backend="auth")
+        message = str(excinfo.value)
+        assert "'é'" in message
+        assert "'<'" in message
+        assert "'>'" in message
+        assert "no query was submitted" in message
+
+    def test_error_states_what_is_allowed(self):
+        with pytest.raises(PicSureValidationError) as excinfo:
+            save_query_by_name(_client(), _clause(), "bad|name", backend="auth")
+        assert "ASCII letters, digits, underscore, space" in str(excinfo.value)
 
     def test_rejects_empty_name(self):
         with pytest.raises(PicSureValidationError, match="non-empty"):
@@ -401,3 +449,23 @@ class TestSaveQueryByNameTransportErrors:
                 "fun",
                 backend="auth",
             )
+
+
+class TestNameAllowListIsOneConstant:
+    def test_every_listed_punctuation_character_is_accepted(self):
+        for char in _NAME_PUNCTUATION:
+            _validate_name(f"cohort{char}1")
+
+    def test_message_lists_every_allowed_punctuation_character(self):
+        with pytest.raises(PicSureValidationError) as excinfo:
+            _validate_name("bad|name")
+
+        message = str(excinfo.value)
+        for char in _NAME_PUNCTUATION:
+            assert f" {char} " in message or f" {char}." in message
+
+    def test_message_still_reads_as_before(self):
+        with pytest.raises(PicSureValidationError) as excinfo:
+            _validate_name("bad|name")
+
+        assert "- \\ / ? + = [ ] . ( ) : \" '." in str(excinfo.value)

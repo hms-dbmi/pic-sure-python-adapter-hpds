@@ -28,8 +28,10 @@ if TYPE_CHECKING:
 _NAMED_DATASET_COLLECTION_PATH = "/picsure/operations/dataset/named"
 _NAMED_DATASET_ITEM_PATH = "/picsure/operations/dataset/named/{named_dataset_id}"
 
-# Mirrors the @Pattern on NamedDatasetRequest.name in pic-sure-api-data.
-_NAME_PATTERN = re.compile(r"\A[\w\d \-\\/?+=\[\]\.():\"']+\Z")
+_NAME_PUNCTUATION = "-\\/?+=[].():\"'"
+_NAME_CHARACTER_CLASS = r"\w\d " + "".join(re.escape(c) for c in _NAME_PUNCTUATION)
+_NAME_PATTERN = re.compile(rf"\A[{_NAME_CHARACTER_CLASS}]+\Z", re.ASCII)
+_NAME_ALLOWED_CHAR = re.compile(rf"[{_NAME_CHARACTER_CLASS}]", re.ASCII)
 _NAME_MAX_LEN = 255
 
 
@@ -49,10 +51,13 @@ def save_query_by_name(
     If a NamedDataset already exists for this user with ``name``:
         * ``overwrite=False`` (default) → raise :class:`PicSureValidationError`.
         * ``overwrite=True``            → re-point the existing record at the
-          freshly-submitted query via ``PUT /dataset/named/{id}/``.
+          freshly-submitted query via
+          ``PUT /picsure/operations/dataset/named/{id}``. No trailing
+          slash: Spring 6 answers one with a 404.
 
-    Open-access deployments are not supported: the ``/dataset/named/``
-    endpoint requires an authenticated principal.
+    Open-access deployments are not supported: the
+    ``/picsure/operations/dataset/named`` endpoint requires an
+    authenticated principal.
     """
     if backend == "open":
         raise PicSureValidationError(
@@ -109,7 +114,9 @@ def _find_existing_by_name(
     try:
         response = client.get_json(_NAMED_DATASET_COLLECTION_PATH)
     except TransportError as exc:
-        raise translate_transport_error(exc, operation="list") from exc
+        raise translate_transport_error(
+            exc, operation="the saved-query name lookup"
+        ) from exc
     if isinstance(response, list):
         items: list[object] = response
     elif isinstance(response, dict):
@@ -133,7 +140,7 @@ def _create_named_dataset(client: PicSureClient, *, query_id: str, name: str) ->
     try:
         client.post_json(_NAMED_DATASET_COLLECTION_PATH, body=body)
     except TransportError as exc:
-        raise translate_transport_error(exc, operation="save") from exc
+        raise translate_transport_error(exc, operation="the saved-query save") from exc
 
 
 def _update_named_dataset(
@@ -155,20 +162,48 @@ def _update_named_dataset(
     try:
         client.put_json(path, body=body)
     except TransportError as exc:
-        raise translate_transport_error(exc, operation="update") from exc
+        raise translate_transport_error(
+            exc, operation="the saved-query update"
+        ) from exc
 
 
 def _validate_name(name: str) -> None:
+    r"""Reject a name the server's @Pattern would reject, before any query runs.
+
+    ``_NAME_PUNCTUATION`` is the one list of punctuation the server's
+    ``@Pattern`` on ``NamedDatasetRequestDto.name`` in
+    pic-sure-operations-service accepts; the regex, the per-character check
+    and the message text are all derived from it. That annotation carries no
+    flags, so Java's
+    ``\w`` is ASCII-only and the mirror compiles with ``re.ASCII``; Python's
+    Unicode-aware ``\w`` would otherwise admit names such as "café" that the
+    server rejects with a 400. ``_NAME_MAX_LEN`` is the width of the
+    ``NamedDataset.name`` column.
+
+    Args:
+        name: Candidate NamedDataset name.
+
+    Raises:
+        PicSureValidationError: If ``name`` is empty, longer than 255
+            characters, or contains a character outside the server's
+            ASCII-only allow-list. The message names the offending
+            characters.
+    """
     if not isinstance(name, str) or not name:
         raise PicSureValidationError("`name` must be a non-empty string.")
     if len(name) > _NAME_MAX_LEN:
         raise PicSureValidationError(
-            f"`name` must be at most {_NAME_MAX_LEN} characters."
+            f"`name` must be at most {_NAME_MAX_LEN} characters (got {len(name)})."
         )
     if not _NAME_PATTERN.match(name):
+        offenders = sorted({c for c in name if not _NAME_ALLOWED_CHAR.match(c)})
+        rendered = ", ".join(repr(c) for c in offenders)
         raise PicSureValidationError(
-            "`name` contains unsupported characters. Allowed: letters, digits, "
-            "spaces, and the symbols - _ \\ / ? + = [ ] . ( ) : \" '"
+            f"`name` contains characters the server rejects: {rendered}. "
+            "Allowed: ASCII letters, digits, underscore, space, and "
+            f"{' '.join(_NAME_PUNCTUATION)}. Accented and non-Latin "
+            "characters are not accepted. Rename the query and retry; "
+            "no query was submitted."
         )
 
 
@@ -176,11 +211,12 @@ def _submit_and_extract_id(
     client: PicSureClient, submit_path: str, body: dict[str, object]
 ) -> str:
     try:
-        response = json_object(
-            client.post_json(submit_path, body=body), path=submit_path
-        )
+        payload = client.post_json(submit_path, body=body)
     except TransportError as exc:
-        raise translate_transport_error(exc, operation="submit") from exc
+        raise translate_transport_error(
+            exc, operation="the saveQueryByName query submit"
+        ) from exc
+    response = json_object(payload, path=submit_path)
     for field in ("picsureResultId", "resourceResultId", "queryId"):
         v = response.get(field)
         if isinstance(v, str) and v:

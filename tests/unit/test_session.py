@@ -802,3 +802,15 @@ class TestSessionBackendIsValidated:
                 backend=backend,
             )
             assert session._backend == backend
+
+
+class TestSessionSavedQueryIdValidation:
+    def test_load_query_by_id_rejects_a_non_uuid_id(self):
+        session = _make_live_session()
+        with pytest.raises(PicSureValidationError, match="not a valid query ID"):
+            session.loadQueryByID("abc-123")
+
+    def test_run_query_by_id_rejects_a_non_uuid_id(self):
+        session = _make_live_session()
+        with pytest.raises(PicSureValidationError, match="not a valid query ID"):
+            session.runQueryByID("abc-123", type="count")

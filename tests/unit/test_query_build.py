@@ -15,15 +15,15 @@ class TestBuildClause:
             categories="Male",
         )
         assert isinstance(clause, Clause)
-        assert clause.keys == ["\\phs1\\sex\\"]
-        assert clause.categories == ["Male"]
+        assert clause.keys == ("\\phs1\\sex\\",)
+        assert clause.categories == ("Male",)
 
     def test_keys_list_preserved(self):
         clause = buildClause(
             ["\\p1\\", "\\p2\\"],
             type=PhenotypicFilterType.ANYRECORD,
         )
-        assert clause.keys == ["\\p1\\", "\\p2\\"]
+        assert clause.keys == ("\\p1\\", "\\p2\\")
 
     def test_categories_list_preserved(self):
         clause = buildClause(
@@ -31,7 +31,7 @@ class TestBuildClause:
             type=PhenotypicFilterType.FILTER,
             categories=["Male", "Female"],
         )
-        assert clause.categories == ["Male", "Female"]
+        assert clause.categories == ("Male", "Female")
 
     def test_continuous_filter_min_only(self):
         clause = buildClause(
