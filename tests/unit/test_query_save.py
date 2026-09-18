@@ -196,6 +196,47 @@ class TestSaveQueryByNameBodilessWrites:
         assert qid == QUERY_ID
         assert put.called
 
+    @respx.mock
+    def test_create_answering_302_with_no_body_raises(self):
+        """A redirect wrote nothing, so it may not read as a saved query."""
+        respx.get(LIST_URL).mock(return_value=httpx.Response(200, json=[]))
+        respx.post(SUBMIT_URL).mock(
+            return_value=httpx.Response(200, json={"picsureResultId": QUERY_ID})
+        )
+        respx.post(SAVE_URL).mock(
+            return_value=httpx.Response(
+                302, headers={"location": "https://sso.example.com/login"}
+            )
+        )
+
+        with pytest.raises(PicSureQueryError) as exc_info:
+            save_query_by_name(_client(), _clause(), "fun", backend="auth")
+
+        message = str(exc_info.value)
+        assert "302" in message
+        assert "could not be confirmed" in message
+
+    @respx.mock
+    def test_overwrite_put_answering_303_with_no_body_raises(self):
+        _mock_overwrite_listing()
+        respx.post(SUBMIT_URL).mock(
+            return_value=httpx.Response(200, json={"picsureResultId": QUERY_ID})
+        )
+        respx.put(_ITEM_URL).mock(
+            return_value=httpx.Response(
+                303, headers={"location": "https://sso.example.com/login"}
+            )
+        )
+
+        with pytest.raises(PicSureQueryError) as exc_info:
+            save_query_by_name(
+                _client(), _clause(), "fun", backend="auth", overwrite=True
+            )
+
+        message = str(exc_info.value)
+        assert "303" in message
+        assert "could not be confirmed" in message
+
 
 class TestSaveQueryByNameDuplicates:
     @respx.mock

@@ -304,6 +304,24 @@ class TestJsonBodyShapes:
             client.get_json("/odd")
 
         assert isinstance(exc_info.value, PicSureQueryError)
+        assert exc_info.value.status_code == 200
+
+    @respx.mock
+    def test_empty_body_error_carries_a_redirect_status(self):
+        """The status is what tells a bodiless write from a bodiless redirect."""
+        from picsure._transport.client import EmptyBodyError
+
+        respx.get(f"{BASE_URL}/odd").mock(
+            return_value=httpx.Response(
+                302, headers={"location": "https://sso.example.com/login"}
+            )
+        )
+
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+        with pytest.raises(EmptyBodyError) as exc_info:
+            client.get_json("/odd")
+
+        assert exc_info.value.status_code == 302
 
     @respx.mock
     def test_post_json_scalar_top_level_raises_query_error(self):

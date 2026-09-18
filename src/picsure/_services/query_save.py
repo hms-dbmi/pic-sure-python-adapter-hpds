@@ -139,14 +139,42 @@ def _find_existing_by_name(
     return sorted(matches, key=lambda r: str(r.get("uuid") or ""))[0]
 
 
+def _confirm_bodiless_write(exc: EmptyBodyError, *, operation: str) -> None:
+    """Accept a bodiless named-dataset response only on a success status.
+
+    The operations service answers a create with ``201`` and an update
+    with ``204``, both without a body, and both mean the record was
+    written. Every other status below 400 arrives here as well, because
+    the client translates only 4xx and 5xx and does not follow redirects,
+    so a ``302`` to an SSO login on an expired gateway session looks
+    identical to a completed write unless the status is checked.
+
+    Args:
+        exc: The empty-body failure the transport raised.
+        operation: What the caller was doing, named in the message.
+
+    Raises:
+        PicSureQueryError: If the status is anything but a 2xx.
+    """
+    if 200 <= exc.status_code < 300:
+        return
+    raise PicSureQueryError(
+        f"The server answered HTTP {exc.status_code} with an empty body while "
+        f"{operation}, so the save could not be confirmed and the named query "
+        "may not exist. Only a 2xx with no body is a completed write; a "
+        "redirect usually means the gateway session expired. Reconnect, list "
+        "your saved queries, and retry."
+    ) from exc
+
+
 def _create_named_dataset(client: PicSureClient, *, query_id: str, name: str) -> None:
     """POST a new NamedDataset record for ``query_id``.
 
-    The call is made for its side effect, so an empty response body is a
-    success: the operations service may answer a create with ``201`` and
-    no body at all. :class:`EmptyBodyError` is swallowed rather than
-    allowed to fail a save the server already committed, which would
-    otherwise send the caller into the duplicate-name refusal on retry.
+    The call is made for its side effect, so a bodiless ``201 Created``
+    is a success rather than a failure: failing it would send the caller
+    into the duplicate-name refusal on a retry of a save the server
+    already committed. :func:`_confirm_bodiless_write` keeps that
+    tolerance to the statuses that mean the write landed.
 
     Args:
         client: Authenticated HTTP client.
@@ -154,6 +182,8 @@ def _create_named_dataset(client: PicSureClient, *, query_id: str, name: str) ->
         name: The name to store the record under.
 
     Raises:
+        PicSureQueryError: If the response carried no body under a status
+            that does not confirm the write.
         PicSureError: Whatever :func:`translate_transport_error` maps the
             transport failure to.
     """
@@ -165,8 +195,8 @@ def _create_named_dataset(client: PicSureClient, *, query_id: str, name: str) ->
     }
     try:
         client.post_json(_NAMED_DATASET_COLLECTION_PATH, body=body)
-    except EmptyBodyError:
-        return
+    except EmptyBodyError as exc:
+        _confirm_bodiless_write(exc, operation=f"saving the named query '{name}'")
     except TransportError as exc:
         raise translate_transport_error(exc, operation="the saved-query save") from exc
 
@@ -183,8 +213,9 @@ def _update_named_dataset(
     """Re-point an existing NamedDataset record at ``query_id``.
 
     Like :func:`_create_named_dataset`, the response body is not needed,
-    so an empty one is a success: ``204 No Content`` is a normal answer
-    to this PUT.
+    so a bodiless ``204 No Content`` is the normal answer to this PUT and
+    reads as a success. :func:`_confirm_bodiless_write` rejects the other
+    bodiless statuses.
 
     Args:
         client: Authenticated HTTP client.
@@ -196,6 +227,8 @@ def _update_named_dataset(
         metadata: The record's metadata, preserved.
 
     Raises:
+        PicSureQueryError: If the response carried no body under a status
+            that does not confirm the write.
         PicSureError: Whatever :func:`translate_transport_error` maps the
             transport failure to.
     """
@@ -210,8 +243,8 @@ def _update_named_dataset(
     }
     try:
         client.put_json(path, body=body)
-    except EmptyBodyError:
-        return
+    except EmptyBodyError as exc:
+        _confirm_bodiless_write(exc, operation=f"updating the named query '{name}'")
     except TransportError as exc:
         raise translate_transport_error(
             exc, operation="the saved-query update"
