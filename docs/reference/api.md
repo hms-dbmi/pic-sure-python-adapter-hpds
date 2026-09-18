@@ -111,6 +111,8 @@ Complete reference for all public functions, classes, and types in the
     options:
       members:
         - consents
+        - user_email
+        - token_expiration
         - searchDictionary
         - facets
         - showAllFacets

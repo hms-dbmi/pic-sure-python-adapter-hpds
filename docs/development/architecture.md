@@ -55,17 +55,22 @@ picsure._services.query_run.run_query
 picsure._transport.client.PicSureClient._request
   │  httpx.Client.request("POST", "/picsure/hpds/auth/v3/query/sync", ...)
   │  4xx → _raise_for_status → TransportAuthenticationError /
-  │        TransportValidationError / TransportNotFoundError /
-  │        TransportRateLimitError
-  │  5xx + connection errors → retried once, then TransportServerError /
+  │        TransportConsentDeniedError / TransportValidationError /
+  │        TransportNotFoundError / TransportRateLimitError
+  │  5xx → TransportServerError, never retried on a POST (only a GET is
+  │        re-sent, since a POST the server already saw may have run)
+  │  connection errors → retried once when the request provably never
+  │        reached the server, otherwise on a GET only, then
   │        TransportConnectionError
   ▼
 picsure._services.query_run.run_query (response handling)
-  │  parse "COUNT" / "CROSS_COUNT" / "DATAFRAME" / "DATAFRAME_TIMESERIES"
+  │  parse "COUNT" / "CROSS_COUNT" / "DATAFRAME" / "DATAFRAME_TIMESERIES" /
+  │        "VARIANT_COUNT_FOR_QUERY" / "VARIANT_LIST_FOR_QUERY" /
+  │        "VCF_EXCERPT" / "AGGREGATE_VCF_EXCERPT"
   │  TransportError → PicSureAuthError / PicSureQueryError /
   │                   PicSureConnectionError / PicSureValidationError
   ▼
-result returned to caller (CountResult | dict | DataFrame)
+result returned to caller (CountResult | dict | DataFrame | list[str])
 ```
 
 Every other entrypoint follows the same shape: a `Session` method
