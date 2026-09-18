@@ -6,6 +6,13 @@ every request it records, and a ``True`` puts ``redacted:
 "participant"`` in that event's metadata. Attaching the label is the
 module's whole effect.
 
+The answer is read off the body's shape alone. The request path and the
+HTTP method are not consulted, and are not passed in: the async PFB
+export posts the same participant-bearing query body to
+``/hpds/auth/v3/query`` and to its ``/status`` and ``/result``
+siblings, so no path tells the calls that carry participant work apart
+from the ones that do not.
+
 No request body and no response body is ever serialized into a dev-mode
 event, whatever this module answers. An event carries a path, a method,
 a status, byte counts and a duration, so the label marks which calls
@@ -35,16 +42,10 @@ _SENSITIVE_RESULT_TYPES = {
 }
 
 
-def body_is_sensitive(
-    path: str,
-    method: str,
-    body: dict[str, Any] | list[Any] | None,
-) -> bool:
+def body_is_sensitive(body: dict[str, Any] | list[Any] | None) -> bool:
     """Whether the event for this request should be labelled participant-bearing.
 
     Args:
-        path: Request path, carried on the event this labels.
-        method: HTTP method, carried likewise.
         body: The JSON request body, or ``None``.
 
     Returns:
@@ -58,10 +59,8 @@ def body_is_sensitive(
 def _body_is_participant_like(body: Any) -> bool:
     """Read the body's ``expectedResultType`` and look it up in the set.
 
-    Decided on the body's shape rather than on the path, because the
-    async PFB export posts the same participant-bearing query body to
-    ``/hpds/auth/v3/query`` and to its ``/status`` and ``/result``
-    siblings, none of which end in ``/query/sync``.
+    A body that is not an object, or that carries no ``query`` object,
+    asks for no per-patient rows and answers ``False``.
     """
     query = body.get("query") if isinstance(body, dict) else None
     if not isinstance(query, dict):

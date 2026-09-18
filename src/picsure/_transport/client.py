@@ -736,7 +736,7 @@ class PicSureClient:
         )
         metadata: dict[str, object] = {}
 
-        if body_is_sensitive(path, method, body):
+        if body_is_sensitive(body):
             metadata["redacted"] = "participant"
 
         cfg.emit(
