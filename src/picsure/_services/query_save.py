@@ -6,7 +6,10 @@ from typing import TYPE_CHECKING
 from picsure._models.clause import Clause
 from picsure._models.clause_group import ClauseGroup
 from picsure._models.query import Query
-from picsure._services._errors import translate_transport_error
+from picsure._services._errors import (
+    bodiless_response_succeeded,
+    translate_transport_error,
+)
 from picsure._services._hpds_paths import (
     NAMED_DATASET_COLLECTION_PATH,
     canonical_server_id,
@@ -137,10 +140,9 @@ def _confirm_bodiless_write(exc: EmptyBodyError, *, operation: str) -> None:
 
     The operations service answers a create with ``201`` and an update
     with ``204``, both without a body, and both mean the record was
-    written. Every other status below 400 arrives here as well, because
-    the client translates only 4xx and 5xx and does not follow redirects,
-    so a ``302`` to an SSO login on an expired gateway session looks
-    identical to a completed write unless the status is checked.
+    written. :func:`bodiless_response_succeeded` is what separates those
+    from the other bodiless statuses, a ``302`` to an SSO login on an
+    expired gateway session among them.
 
     Args:
         exc: The empty-body failure the transport raised.
@@ -149,7 +151,7 @@ def _confirm_bodiless_write(exc: EmptyBodyError, *, operation: str) -> None:
     Raises:
         PicSureQueryError: If the status is anything but a 2xx.
     """
-    if 200 <= exc.status_code < 300:
+    if bodiless_response_succeeded(exc):
         return
     raise PicSureQueryError(
         f"The server answered HTTP {exc.status_code} with an empty body while "

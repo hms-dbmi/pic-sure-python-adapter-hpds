@@ -22,6 +22,7 @@ from picsure._transport.errors import (
     _redact_credentials,
 )
 from picsure.errors import (
+    EmptyBodyError,
     PicSureAuthenticationError,
     PicSureAuthError,
     PicSureAuthorizationError,
@@ -52,6 +53,29 @@ def _server_said(body: str) -> str:
     """
     quoted = _redact_credentials(body.strip()[:200])
     return f" The server said: {quoted}" if quoted else ""
+
+
+def bodiless_response_succeeded(exc: EmptyBodyError) -> bool:
+    """Whether a bodiless response's status says the request succeeded.
+
+    The transport translates only 4xx and 5xx and does not follow
+    redirects, so every status below 400 arrives as an
+    :class:`~picsure.errors.EmptyBodyError`. Some routes answer a
+    success with no body on purpose, a ``200`` on a lookup that found
+    nothing and a ``201`` or ``204`` on a write, while a ``302`` to an
+    SSO login on an expired gateway session is byte-for-byte the same
+    failure to decode. The status is the only thing that tells them
+    apart, so both consumers of the class ask the question here rather
+    than each writing its own comparison.
+
+    Args:
+        exc: The empty-body failure the transport raised.
+
+    Returns:
+        ``True`` for a 2xx, ``False`` for every other status that can
+        reach here.
+    """
+    return 200 <= exc.status_code < 300
 
 
 def rate_limit_message(

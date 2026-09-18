@@ -4,7 +4,10 @@ from urllib.parse import urlencode
 
 import pandas as pd
 
-from picsure._services._errors import translate_transport_error
+from picsure._services._errors import (
+    bodiless_response_succeeded,
+    translate_transport_error,
+)
 from picsure._services._hpds_paths import search_values_path
 from picsure._transport.client import PicSureClient
 from picsure._transport.errors import TransportError, TransportNotFoundError
@@ -78,8 +81,11 @@ def search_genomic_values(
         PicSureQueryError: If the endpoint is absent, if the server answers
             with the empty body it sends for a concept that is not a genomic
             annotation, if the body is not JSON, or if the payload is not a
-            genomic values object. Only the empty body is read as "not a
-            genomic annotation"; the other cases keep the decoder's message.
+            genomic values object. Only a 2xx with an empty body is read as
+            "not a genomic annotation"; a bodiless redirect names its status
+            instead, since an expired gateway session looks the same on the
+            wire and the annotation key is not what failed. The other cases
+            keep the decoder's message.
     """
     if not isinstance(genomic_concept_path, str) or not genomic_concept_path.strip():
         raise PicSureValidationError(
@@ -100,13 +106,7 @@ def search_genomic_values(
     try:
         data = client.get_json(path)
     except EmptyBodyError as exc:
-        raise PicSureQueryError(
-            f"The server returned no genomic values payload for "
-            f"'{genomic_concept_path}'. That concept may not be a genomic "
-            "annotation on this deployment. Valid keys look like "
-            "'Gene_with_variant' or 'Variant_consequence_calculated', not a "
-            "phenotypic concept path."
-        ) from exc
+        raise _empty_body_error(exc, genomic_concept_path) from exc
     except TransportNotFoundError as exc:
         raise PicSureQueryError(
             f"Genomic values endpoint not found (HTTP {exc.status_code}). "
@@ -133,3 +133,40 @@ def search_genomic_values(
         }
     )
     return df
+
+
+def _empty_body_error(
+    exc: EmptyBodyError, genomic_concept_path: str
+) -> PicSureQueryError:
+    """Explain a bodiless response, blaming the concept only on a success status.
+
+    A 200 with no body is how this route reports a key that is not a
+    genomic annotation, so the concept path is the thing to change. Any
+    other status below 400 reaches here too, and a ``302`` to an SSO
+    login on an expired gateway session is the common one: nothing about
+    the concept path is wrong there, and a caller who reads the concept
+    message edits the one argument that was already correct.
+
+    Args:
+        exc: The empty-body failure the transport raised.
+        genomic_concept_path: The annotation key the caller asked for,
+            named only when it is what failed.
+
+    Returns:
+        The public error to raise.
+    """
+    if bodiless_response_succeeded(exc):
+        return PicSureQueryError(
+            f"The server returned no genomic values payload for "
+            f"'{genomic_concept_path}'. That concept may not be a genomic "
+            "annotation on this deployment. Valid keys look like "
+            "'Gene_with_variant' or 'Variant_consequence_calculated', not a "
+            "phenotypic concept path."
+        )
+    return PicSureQueryError(
+        f"The server answered HTTP {exc.status_code} with an empty body on the "
+        f"genomic value lookup, so no values came back. Only a 2xx with no "
+        f"body reports a key that is not a genomic annotation; a redirect "
+        f"usually means the gateway session expired. Reconnect and retry, and "
+        f"leave the annotation key as it is."
+    )

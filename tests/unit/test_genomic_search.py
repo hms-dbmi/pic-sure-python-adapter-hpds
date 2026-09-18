@@ -307,6 +307,52 @@ class TestGenomicValuesNonAnnotationConcept:
         assert "genomic annotation" not in str(exc_info.value)
 
 
+class TestGenomicValuesBodilessRedirect:
+    """A bodiless non-2xx is a session problem, not a concept problem.
+
+    The client translates only 4xx and 5xx and does not follow
+    redirects, so a ``302`` to an SSO login on an expired gateway
+    session reaches the same handler as the ``200`` that reports a key
+    which is not a genomic annotation. A user acts on the message by
+    editing the argument it names, so a redirect must not name the
+    concept.
+    """
+
+    @respx.mock
+    def test_a_bodiless_200_still_blames_the_concept(self):
+        path = "Totally_Not_A_Key"
+        _values_route().mock(return_value=httpx.Response(200, content=b""))
+
+        with pytest.raises(PicSureQueryError) as exc_info:
+            search_genomic_values(
+                PicSureClient(base_url=BASE_URL, token=TOKEN), path, backend="auth"
+            )
+
+        message = str(exc_info.value)
+        assert "may not be a genomic annotation" in message
+        assert path in message
+
+    @respx.mock
+    def test_a_bodiless_302_names_the_status_and_not_the_concept(self):
+        path = "Gene_with_variant"
+        _values_route().mock(
+            return_value=httpx.Response(
+                302, headers={"location": "https://sso.example.com/login"}
+            )
+        )
+
+        with pytest.raises(PicSureQueryError) as exc_info:
+            search_genomic_values(
+                PicSureClient(base_url=BASE_URL, token=TOKEN), path, backend="auth"
+            )
+
+        message = str(exc_info.value)
+        assert "HTTP 302" in message
+        assert "gateway session expired" in message
+        assert "may not be a genomic annotation" not in message
+        assert path not in message
+
+
 class TestGenomicValuesValueList:
     """Empty and malformed value lists."""
 
