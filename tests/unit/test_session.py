@@ -800,6 +800,20 @@ class TestSessionBackendIsValidated:
             )
             assert session._backend == backend
 
+    def test_the_session_and_the_path_builders_give_the_same_message(self):
+        with pytest.raises(PicSureValidationError) as from_session:
+            Session(
+                client=PicSureClient(base_url=BASE_URL),
+                user_email="u@example.com",
+                token_expiration="N/A",
+                backend="aut",
+            )
+
+        with pytest.raises(PicSureValidationError) as from_paths:
+            query_prefix("aut", v3=True)
+
+        assert str(from_session.value) == str(from_paths.value)
+
 
 class TestSessionSavedQueryIdValidation:
     def test_load_query_by_id_rejects_a_non_uuid_id(self):

@@ -18,9 +18,10 @@ runs once per path. httpx normalizes ``..`` segments, so an unchecked id
 re-points an authenticated request at another route on the same host.
 
 ``backend`` is interpolated the same way and is checked against
-:data:`BACKENDS` for the same reason. :class:`picsure._models.session.Session`
-imports that set rather than keeping a second copy, so the value it
-accepts and the values these builders accept cannot drift.
+:data:`BACKENDS` for the same reason. :func:`check_backend` is that
+check, and :class:`picsure._models.session.Session` calls it rather than
+repeating it, so the value a session accepts and the values these
+builders accept share one guard, one message and one error class.
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ BACKENDS = frozenset({"auth", "open"})
 NAMED_DATASET_COLLECTION_PATH = "/picsure/operations/dataset/named"
 
 
-def _check_backend(backend: str) -> None:
+def check_backend(backend: str) -> None:
     """Refuse a backend that is not one of the two the gateway routes.
 
     Args:
@@ -78,7 +79,7 @@ def query_prefix(backend: str, *, v3: bool) -> str:
         PicSureValidationError: If ``backend`` is not one of
             :data:`BACKENDS`.
     """
-    _check_backend(backend)
+    check_backend(backend)
     return f"/picsure/hpds/{backend}/v3" if v3 else f"/picsure/hpds/{backend}"
 
 
@@ -95,7 +96,7 @@ def search_values_path(backend: str) -> str:
         PicSureValidationError: If ``backend`` is not one of
             :data:`BACKENDS`.
     """
-    _check_backend(backend)
+    check_backend(backend)
     return f"/picsure/hpds/{backend}/search/values"
 
 
