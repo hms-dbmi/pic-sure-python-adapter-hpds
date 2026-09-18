@@ -10,10 +10,10 @@ import pandas as pd
 from picsure._models.clause import Clause
 from picsure._models.clause_group import ClauseGroup
 from picsure._models.query import Query
-from picsure._services._errors import translate_stage_error
+from picsure._services._errors import translate_transport_error
 from picsure._services._hpds_paths import query_prefix
 from picsure._services.query_run import build_query_body
-from picsure._transport.client import PicSureClient
+from picsure._transport.client import PicSureClient, json_object
 from picsure._transport.errors import TransportError
 from picsure.errors import (
     PicSureConnectionError,
@@ -102,9 +102,11 @@ def _submit_query(
     body: dict[str, object],
 ) -> dict[str, object]:
     try:
-        return client.post_json(f"{base}/query", body=body)
+        return json_object(
+            client.post_json(f"{base}/query", body=body), path=f"{base}/query"
+        )
     except TransportError as exc:
-        raise translate_stage_error(exc, service="PFB", stage="submit") from exc
+        raise translate_transport_error(exc, operation="submit") from exc
 
 
 def _extract_query_id(response: dict[str, object]) -> str:
@@ -138,9 +140,11 @@ def _poll_until_available(
 
     while True:
         try:
-            status_response = client.post_json(status_path, body=body)
+            status_response = json_object(
+                client.post_json(status_path, body=body), path=status_path
+            )
         except TransportError as exc:
-            raise translate_stage_error(exc, service="PFB", stage="status") from exc
+            raise translate_transport_error(exc, operation="status") from exc
 
         status = _extract_status(status_response)
 
@@ -194,7 +198,7 @@ def _download_result(
             _stream_to_file(response, part_path)
     except TransportError as exc:
         _cleanup_partial(part_path)
-        raise translate_stage_error(exc, service="PFB", stage="result") from exc
+        raise translate_transport_error(exc, operation="result") from exc
     except OSError as exc:
         _cleanup_partial(part_path)
         raise PicSureConnectionError(f"Could not write PFB to {target}: {exc}") from exc

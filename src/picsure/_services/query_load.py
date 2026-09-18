@@ -12,7 +12,7 @@ from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure._models.dictionary import coerce_float
 from picsure._models.genomic_filter import GenomicFilter, is_variant_spec
 from picsure._models.query import Query
-from picsure._services._errors import rate_limit_message, translate_stage_error
+from picsure._services._errors import rate_limit_message, translate_transport_error
 from picsure._transport.errors import (
     TransportAuthenticationError,
     TransportConsentDeniedError,
@@ -224,7 +224,7 @@ def load_query(
     try:
         response = client.get_json(path)
     except (TransportConsentDeniedError, TransportConsentLookupError) as exc:
-        raise translate_stage_error(exc, service="saved query", stage="load") from exc
+        raise translate_transport_error(exc, operation="load") from exc
     except TransportNotFoundError as exc:
         raise PicSureValidationError(
             f"No saved query found with ID '{query_id}' (HTTP {exc.status_code})."

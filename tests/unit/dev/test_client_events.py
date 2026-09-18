@@ -31,11 +31,11 @@ def test_get_json_emits_http_event_when_enabled():
     assert e.status == 200
     assert e.retry == 0
     assert e.error is None
-    assert e.bytes_out is not None and e.bytes_out > 0
+    assert e.bytes_received is not None and e.bytes_received > 0
 
 
 @respx.mock
-def test_post_json_emits_http_event_with_bytes_in():
+def test_post_json_emits_http_event_with_bytes_sent():
     respx.post(f"{BASE_URL}/picsure/search/abc").mock(
         return_value=httpx.Response(200, json={"results": []})
     )
@@ -46,7 +46,34 @@ def test_post_json_emits_http_event_with_bytes_in():
 
     events = cfg.buffer.snapshot()
     assert len(events) == 1
-    assert events[0].bytes_in is not None and events[0].bytes_in > 0
+    assert events[0].bytes_sent is not None and events[0].bytes_sent > 0
+
+
+@respx.mock
+def test_byte_counters_are_not_swapped():
+    """A small request against a large response pins the direction.
+
+    The two counters used to be called ``bytes_in`` / ``bytes_out`` with the
+    request size under ``bytes_in``, so an assertion that only checked
+    "both are positive" passed either way round. Sizing the two bodies
+    differently is what makes a swap fail.
+    """
+    small_request = {"q": "x"}
+    large_response = {"results": ["y" * 500]}
+    respx.post(f"{BASE_URL}/picsure/search/abc").mock(
+        return_value=httpx.Response(200, json=large_response)
+    )
+    cfg = DevConfig(enabled=True, max_events=10)
+    client = PicSureClient(base_url=BASE_URL, token=TOKEN, dev_config=cfg)
+
+    client.post_json("/picsure/search/abc", body=small_request)
+
+    event = cfg.buffer.snapshot()[0]
+    assert event.bytes_sent is not None
+    assert event.bytes_received is not None
+    assert event.bytes_sent < 100
+    assert event.bytes_received > 500
+    assert event.bytes_sent < event.bytes_received
 
 
 @respx.mock
@@ -174,4 +201,7 @@ def test_participant_query_body_not_logged():
     events = cfg.buffer.snapshot()
     http_events = [e for e in events if e.kind == "http"]
     assert http_events[-1].metadata.get("redacted") == "participant"
-    assert http_events[-1].bytes_out is not None and http_events[-1].bytes_out > 0
+    assert (
+        http_events[-1].bytes_received is not None
+        and http_events[-1].bytes_received > 0
+    )

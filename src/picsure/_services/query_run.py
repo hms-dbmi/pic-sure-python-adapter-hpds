@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from io import BytesIO, StringIO
+from typing import NoReturn
 
 import pandas as pd
 
@@ -12,24 +13,13 @@ from picsure._models.count_result import CountResult
 from picsure._models.genomic_filter import GenomicFilter
 from picsure._models.query import Query
 from picsure._models.query_type import QueryType
-from picsure._services._errors import rate_limit_message, translate_stage_error
+from picsure._services._errors import translate_transport_error
 from picsure._services._hpds_paths import query_prefix
 from picsure._transport.client import PicSureClient
-from picsure._transport.errors import (
-    TransportAuthenticationError,
-    TransportConsentDeniedError,
-    TransportConsentLookupError,
-    TransportError,
-    TransportNotFoundError,
-    TransportRateLimitError,
-    TransportServerError,
-    TransportValidationError,
-)
-from picsure.errors import (
-    PicSureConnectionError,
-    PicSureQueryError,
-    PicSureValidationError,
-)
+from picsure._transport.errors import TransportError, TransportServerError
+from picsure.errors import PicSureQueryError, PicSureValidationError
+
+_QUERY_OPERATION = "the query"
 
 _VALID_QUERY_TYPES: dict[str, str] = {
     "count": "COUNT",
@@ -105,33 +95,8 @@ def run_query(
 
     try:
         raw = client.post_raw(path, body=body)
-    except (TransportConsentDeniedError, TransportConsentLookupError) as exc:
-        raise translate_stage_error(exc, service="query", stage="execute") from exc
-    except TransportAuthenticationError as exc:
-        raise translate_stage_error(exc, service="query", stage="execute") from exc
-    except TransportValidationError as exc:
-        raise PicSureValidationError(
-            f"Server rejected the query (HTTP {exc.status_code}): {exc.body[:200]}"
-        ) from exc
-    except TransportNotFoundError as exc:
-        raise PicSureQueryError(
-            f"Query endpoint not found (HTTP {exc.status_code}): {exc.body[:200]}"
-        ) from exc
-    except TransportRateLimitError as exc:
-        raise PicSureConnectionError(rate_limit_message(exc)) from exc
     except TransportError as exc:
-        # A 5xx on a variant result type is the backend signalling it does not
-        # serve that output yet (not a transient outage); surface it clearly.
-        if resolved_type in _VARIANT_RESULT_TYPES and isinstance(
-            exc, TransportServerError
-        ):
-            raise PicSureQueryError(
-                f"{_VARIANT_RESULT_UNSUPPORTED} (The server returned "
-                f"HTTP {exc.status_code}.)"
-            ) from exc
-        raise PicSureConnectionError(
-            "Could not execute query. The server may be temporarily unavailable."
-        ) from exc
+        _raise_query_error(exc, resolved_type)
 
     if resolved_type == "COUNT":
         return _parse_count(raw)
@@ -144,6 +109,22 @@ def run_query(
     if resolved_type in ("VCF_EXCERPT", "AGGREGATE_VCF_EXCERPT"):
         return _parse_vcf_excerpt(raw)
     return _parse_dataframe(raw)
+
+
+def _raise_query_error(exc: TransportError, resolved_type: str) -> NoReturn:
+    """Re-raise a transport failure from a query as the public error.
+
+    A 5xx on a variant result type is the backend signalling it does not
+    serve that output yet (not a transient outage); surface it clearly.
+    """
+    if isinstance(exc, TransportServerError) and resolved_type in (
+        _VARIANT_RESULT_TYPES
+    ):
+        raise PicSureQueryError(
+            f"{_VARIANT_RESULT_UNSUPPORTED} (The server returned "
+            f"HTTP {exc.status_code}.)"
+        ) from exc
+    raise translate_transport_error(exc, operation=_QUERY_OPERATION) from exc
 
 
 def build_query_body(

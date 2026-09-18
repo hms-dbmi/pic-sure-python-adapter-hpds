@@ -494,8 +494,12 @@ class Session:
         Raises:
             PicSureValidationError: If the ID is blank, the saved query
                 cannot be loaded, or the query type is invalid.
-            PicSureAuthError / PicSureConnectionError / PicSureQueryError:
-                As raised by the underlying load and execute calls.
+            PicSureAuthenticationError: If the token is rejected (HTTP 401).
+            PicSureAuthorizationError: If the account may not load or run
+                the query (HTTP 403), including a consent denial.
+            PicSureConnectionError: If the server cannot be reached, or
+                :class:`PicSureServerError` if it answered with a 5xx.
+            PicSureQueryError: If a response cannot be parsed.
 
         Example:
             >>> count = session.runQueryByID(
@@ -524,8 +528,11 @@ class Session:
             PicSureValidationError: If the ID is empty, the query was not
                 found, or the saved query uses features this adapter cannot
                 yet represent (NOT clauses).
-            PicSureAuthError: On 401 / 403.
-            PicSureConnectionError: If the server is unreachable.
+            PicSureAuthenticationError: If the token is rejected (HTTP 401).
+            PicSureAuthorizationError: If the account may not load the
+                query (HTTP 403), including a consent denial.
+            PicSureConnectionError: If the server cannot be reached, or
+                :class:`PicSureServerError` if it answered with a 5xx.
             PicSureQueryError: If the response cannot be parsed.
 
         Example:

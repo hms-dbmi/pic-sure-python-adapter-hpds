@@ -26,12 +26,16 @@ from picsure._services.query_build import (
 from picsure._services.query_edit import removeSubQuery, replaceClause
 from picsure._transport.platforms import Platform
 from picsure.errors import (
+    PicSureAuthenticationError,
     PicSureAuthError,
+    PicSureAuthorizationError,
     PicSureConnectionError,
     PicSureConsentDeniedError,
     PicSureConsentLookupError,
     PicSureError,
     PicSureQueryError,
+    PicSureServerError,
+    PicSureTLSError,
     PicSureValidationError,
 )
 
@@ -66,12 +70,16 @@ __all__ = [
     "GenomicFilterKey",
     "GroupOperator",
     "PhenotypicFilterType",
+    "PicSureAuthenticationError",
     "PicSureAuthError",
+    "PicSureAuthorizationError",
     "PicSureConnectionError",
     "PicSureConsentDeniedError",
     "PicSureConsentLookupError",
     "PicSureError",
     "PicSureQueryError",
+    "PicSureServerError",
+    "PicSureTLSError",
     "PicSureValidationError",
     "Platform",
     "Query",
