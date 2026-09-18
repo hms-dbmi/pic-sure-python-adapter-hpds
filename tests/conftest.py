@@ -27,8 +27,8 @@ def resources_response() -> dict[str, str]:
 def search_response() -> dict:
     """Sample ``POST /picsure/dictionary/concepts`` response.
 
-    Spring Data ``Page`` envelope. Not ``/picsure/proxy/dictionary-api/
-    concepts`` -- that path answers 401 and the adapter does not use it.
+    Spring Data ``Page`` envelope. The ``/picsure/proxy/dictionary-api/concepts``
+    path answers 401 and the adapter does not use it.
     """
     return json.loads((_FIXTURES_DIR / "dictionary_search.json").read_text())
 

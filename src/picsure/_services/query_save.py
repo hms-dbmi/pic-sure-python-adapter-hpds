@@ -28,14 +28,8 @@ if TYPE_CHECKING:
 _NAMED_DATASET_COLLECTION_PATH = "/picsure/operations/dataset/named"
 _NAMED_DATASET_ITEM_PATH = "/picsure/operations/dataset/named/{named_dataset_id}"
 
-# Mirrors the @Pattern on NamedDatasetRequestDto.name in
-# pic-sure-operations-service. That annotation carries no `flags`, so Java's
-# \w is ASCII-only -- hence re.ASCII here. Without it Python's Unicode-aware
-# \w admits names such as "café", which the server then rejects with a 400.
 _NAME_PATTERN = re.compile(r"\A[\w\d \-\\/?+=\[\]\.():\"']+\Z", re.ASCII)
 _NAME_ALLOWED_CHAR = re.compile(r"[\w\d \-\\/?+=\[\]\.():\"']", re.ASCII)
-
-# NamedDataset.name is a length-255 column.
 _NAME_MAX_LEN = 255
 
 
@@ -56,8 +50,8 @@ def save_query_by_name(
         * ``overwrite=False`` (default) → raise :class:`PicSureValidationError`.
         * ``overwrite=True``            → re-point the existing record at the
           freshly-submitted query via
-          ``PUT /picsure/operations/dataset/named/{id}`` — no trailing
-          slash, which Spring 6 answers with a 404.
+          ``PUT /picsure/operations/dataset/named/{id}``. No trailing
+          slash: Spring 6 answers one with a 404.
 
     Open-access deployments are not supported: the
     ``/picsure/operations/dataset/named`` endpoint requires an
@@ -172,7 +166,14 @@ def _update_named_dataset(
 
 
 def _validate_name(name: str) -> None:
-    """Reject a name the server's @Pattern would reject, before any query runs.
+    r"""Reject a name the server's @Pattern would reject, before any query runs.
+
+    ``_NAME_PATTERN`` mirrors the ``@Pattern`` on ``NamedDatasetRequestDto.name``
+    in pic-sure-operations-service. That annotation carries no flags, so Java's
+    ``\w`` is ASCII-only and the mirror compiles with ``re.ASCII``; Python's
+    Unicode-aware ``\w`` would otherwise admit names such as "café" that the
+    server rejects with a 400. ``_NAME_MAX_LEN`` is the width of the
+    ``NamedDataset.name`` column.
 
     Args:
         name: Candidate NamedDataset name.
@@ -195,7 +196,7 @@ def _validate_name(name: str) -> None:
         raise PicSureValidationError(
             f"`name` contains characters the server rejects: {rendered}. "
             "Allowed: ASCII letters, digits, underscore, space, and "
-            "- \\ / ? + = [ ] . ( ) : \" ' — accented and non-Latin "
+            "- \\ / ? + = [ ] . ( ) : \" '. Accented and non-Latin "
             "characters are not accepted. Rename the query and retry; "
             "no query was submitted."
         )

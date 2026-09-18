@@ -103,9 +103,7 @@ class TestRemoveSubQuery:
         assert "\\zz\\" in message
 
     def test_target_matching_only_the_path_raises(self):
-        # Structural matching means a same-path clause with different
-        # categories is a different clause, which is the mistake the
-        # not-found message has to explain.
+        """A same-path clause with other categories is a different clause."""
         a = _clause("\\a\\", "x")
         b = _clause("\\b\\", "y")
         q = buildClauseGroup([a, b], operator=GroupOperator.AND)
@@ -114,9 +112,7 @@ class TestRemoveSubQuery:
             removeSubQuery(q, _clause("\\a\\", "different"))
 
     def test_pathless_target_is_still_named(self):
-        # buildClause/buildClauseGroup both reject empty collections, so a
-        # clause with no concept paths can only arrive by direct
-        # construction -- the message still has to say something.
+        """A pathless clause only arrives by direct construction; still named."""
         q = buildClauseGroup([_clause("\\a\\", "x")], operator=GroupOperator.AND)
         pathless = Clause(keys=(), type=PhenotypicFilterType.REQUIRE)
 

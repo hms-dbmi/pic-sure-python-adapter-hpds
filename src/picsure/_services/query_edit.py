@@ -120,7 +120,7 @@ def _contains(node: Clause | ClauseGroup, target: Clause | ClauseGroup) -> bool:
     """Whether ``target`` occurs anywhere in ``node``, matched structurally.
 
     Checked before an edit so a target that is not in the tree is refused
-    rather than producing an unchanged copy: an edit that quietly does
+    rather than producing an unchanged copy. An edit that quietly does
     nothing reads as success, and the caller goes on to run a query that
     still carries the clause they meant to drop or swap.
     """

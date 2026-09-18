@@ -53,10 +53,10 @@ class Clause:
 
     **Immutability.** The dataclass is frozen and its collection fields are
     tuples, so a clause is hashable and usable as a dict key or set member.
-    ``keys`` and ``categories`` accept any iterable of strings (or a bare
-    string, meaning one element) and store a tuple: a list field would have
-    left the frozen declaration only skin-deep, and ``hash()`` raising on a
-    supposedly-immutable value object.
+    ``keys`` and ``categories`` accept any iterable of strings, or a bare
+    string meaning one element, and store a tuple. A list field would have
+    left the frozen declaration only skin-deep, with ``hash()`` raising on a
+    supposedly immutable value object.
     """
 
     keys: tuple[str, ...]

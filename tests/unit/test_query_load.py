@@ -520,8 +520,7 @@ class TestLoadQueryIdValidation:
         ],
     )
     def test_non_uuid_rejected_before_http(self, bad_id):
-        # No respx mock installed: reaching the network would raise
-        # something other than PicSureValidationError.
+        """No respx mock is installed, so reaching the network raises otherwise."""
         with pytest.raises(PicSureValidationError, match="not a valid query ID"):
             load_query(_make_client(), bad_id, backend="auth")
 
@@ -570,8 +569,7 @@ class TestLoadQueryIdValidation:
         assert route.called
 
     def test_path_traversal_cannot_reach_another_route(self):
-        # The id is escaped as a single path segment, but validation
-        # rejects it first -- so no request is ever built.
+        """Validation rejects the id before any request is built."""
         with pytest.raises(PicSureValidationError):
             load_query(
                 _make_client(), "../../../operations/dataset/named", backend="auth"

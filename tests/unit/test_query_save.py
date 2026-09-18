@@ -315,9 +315,7 @@ class TestSaveQueryByNameNameValidation:
         ],
     )
     def test_rejects_non_ascii_names(self, bad_name):
-        # The server's @Pattern uses Java's ASCII-only \w. Python's \w is
-        # Unicode-aware, so these used to pass client-side and only fail
-        # after the query had already been submitted.
+        r"""Names Python's Unicode ``\w`` accepts but Java's ASCII ``\w`` rejects."""
         with pytest.raises(PicSureValidationError, match="non-Latin"):
             save_query_by_name(
                 _client(),
@@ -327,8 +325,7 @@ class TestSaveQueryByNameNameValidation:
             )
 
     def test_non_ascii_name_rejected_before_any_request(self):
-        # No respx mock is installed: if validation let this through, the
-        # listing GET or the submit POST would raise something else.
+        """No respx mock is installed, so a name that slipped through fails later."""
         with pytest.raises(
             PicSureValidationError, match="characters the server rejects"
         ):
