@@ -35,23 +35,27 @@ def fetch_consents(client: PicSureClient) -> list[str]:
         PicSureAuthorizationError: If the account may not read its own
             consents (HTTP 403).
         PicSureConnectionError: If PSAMA could not be reached or failed,
-            and if the response body was unreadable, which on this route
-            points at the base URL rather than at the response.
-        PicSureQueryError: If the body decodes to a JSON array instead of
-            the ``UserConsents`` object, raised by :func:`json_object`.
+            and if the response body could not be read as the
+            ``UserConsents`` object, which on this route points at the
+            base URL rather than at the response. That covers a body that
+            is not JSON and a body that is JSON but not an object; both
+            are decode failures of the same route and carry the same
+            class, so moving the narrowing step does not change what a
+            caller catches.
     """
     try:
-        payload = client.get_json(_CONSENTS_PATH)
+        response = json_object(client.get_json(_CONSENTS_PATH), path=_CONSENTS_PATH)
     except TransportError as exc:
         raise translate_transport_error(exc, operation=_CONSENTS_OPERATION) from exc
     except PicSureQueryError as exc:
         raise PicSureConnectionError(
             f"{_CONSENTS_PATH} answered with a body the consent list could not "
-            f"be read from. This usually means the URL is not a PIC-SURE "
-            f"deployment root. The decoder said: {exc}"
+            f"be read from: either it is not JSON at all, or it is JSON that "
+            f"is not the UserConsents object this route returns. This usually "
+            f"means the URL is not a PIC-SURE deployment root. The decoder "
+            f"said: {exc}"
         ) from exc
 
-    response = json_object(payload, path=_CONSENTS_PATH)
     consents_map = response.get("consents")
     if not isinstance(consents_map, dict):
         return []
