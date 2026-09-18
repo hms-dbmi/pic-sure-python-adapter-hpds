@@ -249,7 +249,8 @@ class TestEmptyCountBodyDiagnostic:
             run_query(_make_client(), query, "count", backend="auth")
 
         message = str(exc_info.value)
-        assert "answered HTTP 200 with an empty body" in message
+        assert "returned an empty body where a count was expected" in message
+        assert "HTTP 200" not in message
         assert "carried no filters, only the select paths '\\a\\'" in message
         assert "each select path" in message
         assert "min/max" not in message
@@ -1232,7 +1233,8 @@ class TestRunQueryVariantCountEndToEnd:
             run_query(_make_client(), _genomic_query(), "variant_count", backend="auth")
 
         message = str(exc_info.value)
-        assert "answered HTTP 200 with an empty body" in message
+        assert "returned an empty body where a variant count was expected" in message
+        assert "HTTP 200" not in message
         assert "genomic filter keys 'Gene_with_variant'" in message
         assert "not available on this PIC-SURE deployment" in message
 

@@ -357,15 +357,19 @@ def _parse_count(raw: bytes, *, request: _RequestSummary | None = None) -> Count
 def _empty_count_message(request: _RequestSummary | None) -> str:
     """Explain an empty body where a count was expected.
 
-    The server answers HTTP 200 with no body when it did not run the query.
-    With filters set, the usual cause is a filter whose shape does not match
+    The server answers with no body when it did not run the query. With
+    filters set, the usual cause is a filter whose shape does not match
     its concept's type (a numeric ``min``/``max`` on a categorical concept,
     or ``categories`` on a continuous one). Without filters the only input
     left to check is the select paths.
+
+    The parser is handed the response bytes alone, so the status is not
+    known here and the message does not name one. It used to claim a 200,
+    which any sub-400 answer with no body contradicted.
     """
     lead = (
-        "The server answered HTTP 200 with an empty body where a count was "
-        f"expected, which means the query was not run.{_sent(request)}"
+        "The server returned an empty body where a count was expected, "
+        f"which means the query was not run.{_sent(request)}"
     )
     if request is not None and not request.has_filters:
         return (
@@ -609,10 +613,13 @@ def _empty_variant_count_message(request: _RequestSummary | None) -> str:
     A deployment that does not serve the variant result types answers them
     with an empty body, and so does one that serves them when a filter could
     not be applied, so the message names both causes.
+
+    Like :func:`_empty_count_message`, this sees only the response bytes,
+    so it states the empty body without claiming a status for it.
     """
     return (
-        "The server answered HTTP 200 with an empty body where a variant "
-        f"count was expected.{_sent(request)} Either the variant result types "
+        "The server returned an empty body where a variant count was "
+        f"expected.{_sent(request)} Either the variant result types "
         "(variant_count, variant_list, vcf_excerpt, aggregate_vcf_excerpt) "
         "are not available on this PIC-SURE deployment, or a filter could not "
         "be applied to the concept it names. Check that each filter's shape "
