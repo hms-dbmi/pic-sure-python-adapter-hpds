@@ -800,52 +800,68 @@ class PicSureClient:
         )
 
 
-def _raise_for_status(status: int, body: str, response: httpx.Response) -> None:
-    """Map a 4xx status to the appropriate transport exception.
+def _status_error(status: int, body: str, response: httpx.Response) -> TransportError:
+    """Map any 4xx or 5xx status to its transport exception, without raising.
 
-    Shared between :meth:`PicSureClient._request` and the streaming path
-    so the two surfaces translate 4xx identically.  Callers are
-    responsible for handling 5xx themselves (the retry policy differs
-    between GET and POST).
+    The one status-to-exception mapper in this module.  Both request
+    surfaces go through it, so the buffered path and the streaming path
+    cannot drift apart on which class, message or ``Retry-After`` value a
+    status produces.  Returning rather than raising is what lets the
+    streaming path emit its dev-mode events around the failure before the
+    exception leaves the generator.
 
-    401 and 403 are decided by status before the response body is
-    consulted, so every refusal lands in the authentication /
-    authorization family whether or not the server sent a structured
-    payload.
+    Precedence, highest first:
+
+    * 401 and 403 are decided by status before the body is consulted, so
+      every refusal lands in the authentication / authorization family
+      whether or not the server sent a structured payload.  A
+      ``consent_denied`` payload still refines the class, through
+      :func:`_refusal_transport_error`.
+    * A structured consent payload on any other status, which is how a
+      502 becomes :class:`TransportConsentLookupError`.
+    * 404, then 429 with its ``Retry-After`` header.
+    * Any other 4xx is a validation failure.
+    * Anything left, meaning 5xx, is a server error.
+
+    Args:
+        status: The response status code.
+        body: The response body as text.
+        response: The response itself, read only for its headers.
+
+    Returns:
+        The transport exception for this status, ready to raise.
     """
     if status in (401, 403):
-        raise _refusal_transport_error(status, body)
-    structured_error = _structured_transport_error(status, body)
-    if structured_error is not None:
-        raise structured_error
-    if status == 404:
-        raise TransportNotFoundError(status, body)
-    if status == 429:
-        raise TransportRateLimitError(
-            status, body, retry_after=_parse_retry_after(response)
-        )
-    if 400 <= status < 500:
-        # 400, 422, and any other 4xx fall into the validation bucket.
-        raise TransportValidationError(status, body)
-
-
-def _status_error(status: int, body: str, response: httpx.Response) -> TransportError:
-    """Build the transport exception for a 4xx or 5xx without raising it.
-
-    4xx goes through :func:`_raise_for_status`, so the streaming path
-    maps refusals exactly as the buffered one does.  5xx prefers the
-    structured consent error encoded in the body and falls back to
-    :class:`TransportServerError`.  A POST is never retried on 5xx.
-    """
-    if 400 <= status < 500:
-        try:
-            _raise_for_status(status, body, response)
-        except TransportError as exc:
-            return exc
+        return _refusal_transport_error(status, body)
     structured_error = _structured_transport_error(status, body)
     if structured_error is not None:
         return structured_error
+    if status == 404:
+        return TransportNotFoundError(status, body)
+    if status == 429:
+        return TransportRateLimitError(
+            status, body, retry_after=_parse_retry_after(response)
+        )
+    if 400 <= status < 500:
+        return TransportValidationError(status, body)
     return TransportServerError(status, body)
+
+
+def _raise_for_status(status: int, body: str, response: httpx.Response) -> None:
+    """Raise the exception :func:`_status_error` maps a 4xx to.
+
+    The buffered path's wrapper, so :meth:`PicSureClient._request` can
+    keep its 4xx handling as a ``try`` / ``except TransportError`` block
+    that tags the failure as already emitted.  It adds no mapping of its
+    own.
+
+    ``_request`` calls this for 4xx only and handles 5xx itself, because
+    the two have different retry policies: a 5xx on a GET is re-sent
+    once, while the streaming path re-sends nothing on a 5xx, since a
+    POST the server already saw may have executed.  A 4xx is never
+    retried on either path, which is why this half can be shared.
+    """
+    raise _status_error(status, body, response)
 
 
 def _refusal_transport_error(status: int, body: str) -> TransportError:

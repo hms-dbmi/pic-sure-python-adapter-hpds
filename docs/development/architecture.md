@@ -54,7 +54,7 @@ picsure._services.query_run.run_query
   ▼
 picsure._transport.client.PicSureClient._request
   │  httpx.Client.request("POST", "/picsure/hpds/auth/v3/query/sync", ...)
-  │  4xx → _raise_for_status → TransportAuthenticationError /
+  │  4xx → _status_error → TransportAuthenticationError /
   │        TransportConsentDeniedError / TransportValidationError /
   │        TransportNotFoundError / TransportRateLimitError
   │  5xx → TransportServerError, never retried on a POST (only a GET is
@@ -126,7 +126,7 @@ src/picsure/
 
 | Module         | What it owns                                                                  |
 |----------------|-------------------------------------------------------------------------------|
-| `client.py`    | `PicSureClient`. Wraps `httpx.Client` with Bearer-token auth, the `request-source: Authorized|Open` gateway header, a ten-minute default request timeout (`DATA_TIMEOUT_SECONDS`, overridable via `connect(timeout=...)`) alongside the short `VALIDATION_TIMEOUT_SECONDS` the connect-time credential check uses, one retry on connection errors and 5xx for GETs (POSTs are not retried on 5xx because they are non-idempotent), and a streaming variant `post_raw_stream` for binary payloads, `post_raw_to_file` to stream a response into a `.part` staging file promoted by `os.replace`, plus `put_json` for the `saveQueryByName` overwrite path. `_raise_for_status` translates 4xx into the `Transport*Error` set. |
+| `client.py`    | `PicSureClient`. Wraps `httpx.Client` with Bearer-token auth, the `request-source: Authorized|Open` gateway header, a ten-minute default request timeout (`DATA_TIMEOUT_SECONDS`, overridable via `connect(timeout=...)`) alongside the short `VALIDATION_TIMEOUT_SECONDS` the connect-time credential check uses, one retry on connection errors and 5xx for GETs (POSTs are not retried on 5xx because they are non-idempotent), and a streaming variant `post_raw_stream` for binary payloads, `post_raw_to_file` to stream a response into a `.part` staging file promoted by `os.replace`, plus `put_json` for the `saveQueryByName` overwrite path. `_status_error` maps any 4xx or 5xx into the `Transport*Error` set; `_raise_for_status` is the buffered path's thin wrapper that raises what it returns. |
 | `errors.py`    | Internal `TransportError` hierarchy: `TransportAuthenticationError` (401/403), `TransportValidationError` (400/422/other 4xx), `TransportNotFoundError` (404), `TransportRateLimitError` (429, parses `Retry-After`), `TransportServerError` (5xx), `TransportConnectionError` (DNS / timeout / refused), `TransportTLSError` (a certificate this machine will not trust, raised before the request is sent), and the structured pair `TransportConsentDeniedError` / `TransportConsentLookupError`, built from a response body carrying `errorType: consent_denied` or `consent_lookup_failed`. Also the credential redaction every class here applies to a response body before storing it or quoting it into a message, so a token the server echoed cannot reach a traceback through the cause chain. |
 | `platforms.py` | `Platform` enum (`BDC_AUTHORIZED`, `BDC_OPEN`, `BDC_DEV_*`, `BDC_PREDEV_*`, `NHANES_AUTHORIZED`, `NHANES_OPEN`) and `resolve_platform()`. A `Platform` member carries URL, display label, whether dictionary calls need consents, whether the platform requires a token, and whether it serves genomic data; `resolve_platform` also accepts a raw `http(s)://` URL for unlisted deployments. |
 
@@ -245,8 +245,12 @@ for a case of its own catches that transport class before the
 translator sees it, as `genomic_search.py` does for the 404 and the
 empty body, rather than mapping the status a second way.
 
-`_transport/client.py::_raise_for_status` is the single 4xx mapper
-shared by `_request` and `post_raw_stream`, so both code paths agree.
+`_transport/client.py::_status_error` is the single status mapper,
+shared by `_request` and `post_raw_stream`, so both code paths agree
+on the class, the message and the `Retry-After` value a status
+produces. `_raise_for_status` raises what it returns, for the
+buffered path's 4xx block. `_request` still handles 5xx itself,
+because only it re-sends a 5xx on a GET.
 
 ## What a Session carries
 
