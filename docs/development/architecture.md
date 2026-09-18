@@ -113,7 +113,7 @@ src/picsure/
 | `_hpds_paths.py` | `query_prefix(backend, *, v3)` and `search_values_path(backend)` — the single place the `/hpds/{auth,open}[/v3]/…` route shape (and the ignored search `{resourceId}` placeholder) is built. |
 | `export.py`      | `export_pfb` — the async PFB flow (submit → poll with exponential backoff capped at 60s, 10-minute total deadline → stream result to a `.part` file → atomic rename). Plus `export_csv` and `export_tsv` for in-memory DataFrames. |
 | `genomic_search.py` | `search_genomic_values(client, ...)` backing `Session.searchGenomicValues`. GETs `/picsure/hpds/{backend}/search/values` with the annotation key and a page/size, and returns a one-column DataFrame of values with the server's paging in `df.attrs`. A 200 with an empty body means the key is not a genomic annotation on this deployment. |
-| `genomic_data.py`  | `genomicConsequences()` — reads the bundled `_data/variant_consequences.json` into a DataFrame of `severity` / `consequence` rows. No network call. |
+| `genomic_data.py`  | `genomicConsequences()` reads the bundled `_data/variant_consequences.json` into a DataFrame of `severity` / `consequence` rows. No network call. |
 | `consents.py`    | `fetch_consents(client)`. Reads `/psama/user/me/consents` and pulls the `\\_consents\\` study-consent list used by dictionary-api requests on authorized deployments. |
 
 ### `_transport/` — HTTP

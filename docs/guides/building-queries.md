@@ -210,12 +210,12 @@ freq_filter = picsure.buildGenomicFilter(
 )
 ```
 
-`values` is required. Keys are validated against `GenomicFilterKey`; an
-unrecognized string key — or a variant-spec / SNP key (an rsID or
-`chr,pos,ref,alt`) — is rejected with an actionable error.
+`values` is required. Keys are validated against `GenomicFilterKey`. An
+unrecognized string key, or a variant-spec / SNP key (an rsID or
+`chr,pos,ref,alt`), is rejected with an error that names the valid keys.
 
 `VariantFrequency` has five members: `RARE`, `COMMON`, `LOW_FREQUENCY`,
-`ULTRA_RARE`, and `NOVEL`. `NOVEL` is deprecated — it is absent from every
+`ULTRA_RARE`, and `NOVEL`. `NOVEL` is deprecated. It is absent from every
 annotation set observed on a PIC-SURE deployment, and is kept only so
 existing code keeps working. The members are a convenience, not an
 allowlist: `buildGenomicFilter` accepts any string for this key, and
