@@ -92,10 +92,17 @@ session.exportAsPFB(my_query, "my_cohort.pfb")
 ```
 
 !!! note
-    PFB export requires the optional `pypfb` dependency:
-    ```bash
-    pip install picsure[pfb]
+    Exporting needs no extra dependency. The server builds the PFB and
+    the adapter streams its Avro bytes to disk. Opening the file
+    afterwards is what needs a PFB reader, for example `fastavro`:
+    ```python
+    import pandas as pd
+    from fastavro import reader
+
+    with open("my_cohort.pfb", "rb") as handle:
+        df = pd.DataFrame(list(reader(handle)))
     ```
+    `pypfb` reads the same files if you prefer its PFB-aware API.
 
 ## Saving a Query by Name
 
