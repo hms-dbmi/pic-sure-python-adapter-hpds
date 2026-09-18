@@ -346,6 +346,51 @@ class TestNoTokenLeakage:
         ):
             assert token not in str(translate_transport_error(exc, operation=OPERATION))
 
+    TOKEN = (
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJsZWFrLXByb2JlIn0"
+        ".c2lnbmF0dXJlLWJ5dGVz"
+    )
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            TransportAuthenticationError(401, f"Token rejected: {TOKEN}"),
+            TransportAuthenticationError(403, f"Forbidden for Bearer {TOKEN}"),
+            TransportValidationError(400, f"bad request {TOKEN}"),
+            TransportNotFoundError(404, f"no route for {TOKEN}"),
+            TransportServerError(500, f"boom {TOKEN}"),
+        ],
+    )
+    def test_a_token_echoed_in_the_body_is_redacted(self, exc):
+        message = str(translate_transport_error(exc, operation=OPERATION))
+        assert self.TOKEN not in message
+        assert "<redacted token>" in message
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            TransportConsentDeniedError(
+                403, "{}", "consent_denied", f"denied for {TOKEN}"
+            ),
+            TransportConsentLookupError(
+                502, "{}", "consent_lookup_failed", f"lookup failed Bearer {TOKEN}"
+            ),
+        ],
+    )
+    def test_a_token_echoed_in_server_message_is_redacted(self, exc):
+        message = str(translate_transport_error(exc, operation=OPERATION))
+        assert self.TOKEN not in message
+        assert "<redacted token>" in message
+
+    def test_ordinary_server_text_is_quoted_unchanged(self):
+        message = str(
+            translate_transport_error(
+                TransportValidationError(400, "Query name must be ASCII."),
+                operation=OPERATION,
+            )
+        )
+        assert "The server said: Query name must be ASCII." in message
+
 
 class TestTranslatorReturnsPublicErrors:
     def test_every_branch_returns_a_picsure_error(self):

@@ -9,6 +9,8 @@ below read it as an object, so it must not be a bare verb.
 
 from __future__ import annotations
 
+import re
+
 from picsure._transport.errors import (
     TransportAuthenticationError,
     TransportConsentDeniedError,
@@ -40,13 +42,35 @@ _NEW_TOKEN_ADVICE = (
 )
 
 
+_CREDENTIAL_PATTERNS = (
+    re.compile(r"[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{6,}"),
+    re.compile(r"(?i)\bbearer\s+\S+"),
+)
+_REDACTED = "<redacted token>"
+
+
+def _redact_credentials(text: str) -> str:
+    """Replace anything shaped like a credential in server-supplied text.
+
+    A PIC-SURE response can echo the request's bearer token back in an
+    error body. Quoting that body into a public exception message would
+    put the token into every traceback and log line that renders the
+    exception. Two shapes are replaced: a JWT (three base64url segments)
+    and a ``Bearer <value>`` header fragment.
+    """
+    for pattern in _CREDENTIAL_PATTERNS:
+        text = pattern.sub(_REDACTED, text)
+    return text
+
+
 def _server_said(body: str) -> str:
     """Quote the server's own explanation, or nothing when it sent none.
 
     Some PIC-SURE refusals carry an empty body; appending a bare "The
-    server said:" to those reads as a truncated message.
+    server said:" to those reads as a truncated message. The quoted text
+    passes through :func:`_redact_credentials` first.
     """
-    quoted = body.strip()[:200]
+    quoted = _redact_credentials(body.strip()[:200])
     return f" The server said: {quoted}" if quoted else ""
 
 
@@ -96,7 +120,7 @@ def translate_transport_error(
             f"Consent denied for {operation} (HTTP {exc.status_code}). This is a "
             f"consent decision, not an outage: your approved consents do not cover "
             f"the data this request touches. The server said: "
-            f"{exc.server_message}",
+            f"{_redact_credentials(exc.server_message)}",
         )
     if isinstance(exc, TransportConsentLookupError):
         return PicSureConsentLookupError(
@@ -107,7 +131,8 @@ def translate_transport_error(
             f"The server could not resolve your consent permissions for "
             f"{operation} (HTTP {exc.status_code}). This is a failure inside "
             f"PIC-SURE, not a problem with your token or your approvals; try "
-            f"again shortly. The server said: {exc.server_message}",
+            f"again shortly. The server said: "
+            f"{_redact_credentials(exc.server_message)}",
         )
     if isinstance(exc, TransportAuthenticationError):
         return _refusal_error(exc, operation)
