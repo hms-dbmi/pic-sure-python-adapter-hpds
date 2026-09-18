@@ -5,9 +5,9 @@ import respx
 from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure._models.count_result import CountResult
+from picsure._models.genomic_filter import GenomicFilter
 from picsure._models.query import Query
 from picsure._models.query_type import QueryType
-from picsure._models.resource import Resource
 from picsure._models.session import Session
 from picsure._services._hpds_paths import query_prefix
 from picsure._services.query_run import _resolve_query_type, run_query
@@ -23,7 +23,6 @@ from picsure.errors import (
 
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
-RESOURCE_UUID = "resource-uuid-aaaa-1111"
 QUERY_URL = f"{BASE_URL}{query_prefix('auth', v3=True)}/query/sync"
 OPEN_QUERY_URL = f"{BASE_URL}{query_prefix('open', v3=True)}/query/sync"
 
@@ -150,8 +149,118 @@ class TestRunQueryCount:
     def test_empty_response_raises(self):
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
         client = _make_client()
-        with pytest.raises(PicSureQueryError, match="Expected a count"):
+        with pytest.raises(PicSureQueryError, match="empty body"):
             run_query(client, _simple_clause(), "count", backend="auth")
+
+
+class TestEmptyCountBodyDiagnostic:
+    """An empty 200 body means the query probably never ran.
+
+    Verified live: a filter whose shape does not match its concept's type
+    (numeric min/max on a categorical concept, or categories on a continuous
+    one) returns HTTP 200 with a zero-length body, while a merely unknown
+    category value or concept path returns "0". So the empty body points at
+    a filter/concept type mismatch, and the message should say so.
+    """
+
+    @respx.mock
+    def test_message_suggests_the_query_was_not_run(self):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
+        with pytest.raises(PicSureQueryError) as exc_info:
+            run_query(_make_client(), _simple_clause(), "count", backend="auth")
+
+        message = str(exc_info.value)
+        assert "was not run" in message
+        assert "min/max" in message
+        assert "categorical" in message
+
+    @respx.mock
+    def test_message_names_the_filtered_concept(self):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
+        with pytest.raises(PicSureQueryError) as exc_info:
+            run_query(_make_client(), _simple_clause(), "count", backend="auth")
+
+        assert "\\phs1\\sex\\" in str(exc_info.value)
+
+    @respx.mock
+    def test_message_names_genomic_filter_keys(self):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
+        query = Query(
+            phenotypicFilter=None,
+            includeConcepts=(),
+            genomicFilters=(GenomicFilter(key="Gene_with_variant", values=("BRCA1",)),),
+        )
+        with pytest.raises(PicSureQueryError) as exc_info:
+            run_query(_make_client(), query, "count", backend="auth")
+
+        assert "Gene_with_variant" in str(exc_info.value)
+
+    @respx.mock
+    def test_message_does_not_blame_the_server(self):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
+        with pytest.raises(PicSureQueryError) as exc_info:
+            run_query(_make_client(), _simple_clause(), "count", backend="auth")
+
+        message = str(exc_info.value).lower()
+        for blame in ("malformed", "broken", "invalid response", "server error"):
+            assert blame not in message
+
+    @respx.mock
+    def test_names_concepts_from_a_nested_clause_group(self):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
+        group = ClauseGroup(
+            clauses=[
+                Clause(
+                    keys=["\\a\\"],
+                    type=PhenotypicFilterType.FILTER,
+                    categories=["x"],
+                ),
+                ClauseGroup(
+                    clauses=[
+                        Clause(
+                            keys=["\\b\\"],
+                            type=PhenotypicFilterType.FILTER,
+                            min=1.0,
+                        )
+                    ],
+                    operator=GroupOperator.OR,
+                ),
+            ],
+            operator=GroupOperator.AND,
+        )
+        with pytest.raises(PicSureQueryError) as exc_info:
+            run_query(_make_client(), group, "count", backend="auth")
+
+        message = str(exc_info.value)
+        assert "\\a\\" in message
+        assert "\\b\\" in message
+
+    @respx.mock
+    def test_message_without_filters_names_the_select_paths(self):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
+        query = Query(
+            phenotypicFilter=None, includeConcepts=("\\a\\",), genomicFilters=()
+        )
+        with pytest.raises(PicSureQueryError) as exc_info:
+            run_query(_make_client(), query, "count", backend="auth")
+
+        message = str(exc_info.value)
+        assert "answered HTTP 200 with an empty body" in message
+        assert "carried no filters, only the select paths '\\a\\'" in message
+        assert "each select path" in message
+        assert "min/max" not in message
+
+    def test_summarize_request_tolerates_an_unexpected_body(self):
+        from picsure._services.query_run import _summarize_request
+
+        assert _summarize_request({}) is None
+        assert _summarize_request({"query": "not-a-dict"}) is None
+        summary = _summarize_request({"query": {}})
+        assert summary is not None
+        assert not summary.has_filters
+        assert (
+            summary.describe() == "The request carried no filters and no select paths."
+        )
 
 
 class TestRunQueryParticipant:
@@ -716,10 +825,6 @@ class TestSessionRunQueryWithMember:
             client=client,
             user_email="test@example.com",
             token_expiration="N/A",
-            resources=[
-                Resource(uuid=RESOURCE_UUID, name="R", description="d"),
-            ],
-            resource_uuid=RESOURCE_UUID,
         )
 
         result = session.runQuery(_simple_clause(), type=QueryType.COUNT)
@@ -800,10 +905,6 @@ class TestRunQueryBackendRouting:
             client=client,
             user_email="anonymous",
             token_expiration="N/A",
-            resources=[
-                Resource(uuid=RESOURCE_UUID, name="R", description="d"),
-            ],
-            resource_uuid=RESOURCE_UUID,
             backend="open",
         )
 
@@ -827,10 +928,6 @@ class TestRunQueryBackendRouting:
             client=client,
             user_email="test@example.com",
             token_expiration="N/A",
-            resources=[
-                Resource(uuid=RESOURCE_UUID, name="R", description="d"),
-            ],
-            resource_uuid=RESOURCE_UUID,
         )
 
         result = session.runQuery(_simple_clause(), type=QueryType.COUNT)
@@ -997,3 +1094,372 @@ class TestVariantResultParsing:
         respx.post(QUERY_URL).mock(return_value=httpx.Response(500, text="boom"))
         with pytest.raises(PicSureConnectionError, match="temporarily unavailable"):
             run_query(_make_client(), _simple_clause(), "count", backend="auth")
+
+
+VARIANT_COUNT_LIVE = b'{"count":1,"message":"Query ran successfully"}'
+VARIANT_COUNT_NO_FILTERS_LIVE = (
+    b'{"count":"0","message":"No variant filters were supplied, so no query was run."}'
+)
+VARIANT_LIST_NOT_ALLOWED_LIVE = b"VARIANT_LIST query type not allowed"
+VCF_EXCERPT_NOT_ALLOWED_LIVE = b"VCF_EXCERPT query type not allowed"
+AGGREGATE_VCF_NOT_ALLOWED_LIVE = b"AGGREGATE_VCF_EXCERPT query type not allowed"
+
+
+def _genomic_query() -> Query:
+    return Query(
+        phenotypicFilter=None,
+        includeConcepts=(),
+        genomicFilters=(
+            GenomicFilter(key="Gene_with_variant", values=("CONSENTQA902_1",)),
+        ),
+    )
+
+
+class TestRunQueryVariantCountEndToEnd:
+    """Drive VARIANT_COUNT through ``run_query``.
+
+    The server answers with a JSON object, which the old parser rejected
+    because it expected a bare count string. Reproduced live before the fix.
+    The ``*_LIVE`` bodies were captured from a local all-in-one stack with
+    genomic data loaded on 2026-09-10. VARIANT_COUNT is the only variant type
+    that deployment serves; the other three answer with the
+    "query type not allowed" body, so their success shapes are unit-tested
+    only.
+    """
+
+    @respx.mock
+    def test_parses_the_live_json_body(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(
+                200,
+                content=VARIANT_COUNT_LIVE,
+                headers={"content-type": "application/json"},
+            )
+        )
+        result = run_query(
+            _make_client(), _genomic_query(), "variant_count", backend="auth"
+        )
+        assert isinstance(result, CountResult)
+        assert result.value == 1
+        assert result.margin is None
+        assert result.cap is None
+        assert result.obfuscated is False
+
+    @respx.mock
+    def test_raw_preserves_the_whole_body_including_message(self):
+        """The server's message survives because ``raw`` keeps the whole body."""
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=VARIANT_COUNT_LIVE)
+        )
+        result = run_query(
+            _make_client(), _genomic_query(), "variant_count", backend="auth"
+        )
+        assert result.raw == VARIANT_COUNT_LIVE.decode()
+        assert "Query ran successfully" in result.raw
+
+    @respx.mock
+    def test_sends_the_expected_request_body(self):
+        route = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=VARIANT_COUNT_LIVE)
+        )
+        run_query(_make_client(), _genomic_query(), "variant_count", backend="auth")
+
+        import json
+
+        body = json.loads(route.calls[0].request.content)
+        query = body["query"]
+        assert query["expectedResultType"] == "VARIANT_COUNT_FOR_QUERY"
+        assert query["genomicFilters"] == [
+            {"key": "Gene_with_variant", "values": ["CONSENTQA902_1"]}
+        ]
+        assert query["phenotypicClause"] is None
+        assert query["select"] == []
+        assert "resourceUUID" not in body
+
+    @respx.mock
+    def test_accepts_a_string_count(self):
+        """Some responses send ``count`` as a JSON string."""
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b'{"count":"7"}')
+        )
+        result = run_query(
+            _make_client(), _genomic_query(), "variant_count", backend="auth"
+        )
+        assert result.value == 7
+
+    @respx.mock
+    def test_string_count_keeps_obfuscation_metadata(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content='{"count":"11309 ±3"}'.encode())
+        )
+        result = run_query(
+            _make_client(), _genomic_query(), "variant_count", backend="auth"
+        )
+        assert result.value == 11309
+        assert result.margin == 3
+        assert result.obfuscated is True
+
+    @respx.mock
+    def test_suppressed_string_count(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b'{"count":"< 10"}')
+        )
+        result = run_query(
+            _make_client(), _genomic_query(), "variant_count", backend="auth"
+        )
+        assert result.value is None
+        assert result.cap == 10
+        assert result.obfuscated is True
+
+    @respx.mock
+    def test_bare_numeric_body_still_accepted(self):
+        """A bare count string still parses, for deployments that send one."""
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"42"))
+        result = run_query(
+            _make_client(), _genomic_query(), "variant_count", backend="auth"
+        )
+        assert result.value == 42
+        assert result.raw == "42"
+
+    @respx.mock
+    def test_empty_body_names_the_request(self):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
+        with pytest.raises(PicSureQueryError) as exc_info:
+            run_query(_make_client(), _genomic_query(), "variant_count", backend="auth")
+
+        message = str(exc_info.value)
+        assert "answered HTTP 200 with an empty body" in message
+        assert "genomic filter keys 'Gene_with_variant'" in message
+        assert "not available on this PIC-SURE deployment" in message
+
+    @respx.mock
+    def test_no_variant_filters_message_raises_instead_of_reporting_zero(self):
+        """Live shape for a variant count with no genomic filter.
+
+        Returning CountResult(value=0) would read as no matching variants
+        when the server never ran a query at all.
+        """
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=VARIANT_COUNT_NO_FILTERS_LIVE)
+        )
+        with pytest.raises(PicSureQueryError) as exc_info:
+            run_query(_make_client(), _simple_clause(), "variant_count", backend="auth")
+
+        message = str(exc_info.value)
+        assert "at least one genomic filter" in message
+        assert "buildGenomicFilter" in message
+
+    @respx.mock
+    def test_negative_count_is_rejected(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b'{"count":-1,"message":"x"}')
+        )
+        with pytest.raises(PicSureQueryError, match="non-negative"):
+            run_query(_make_client(), _genomic_query(), "variant_count", backend="auth")
+
+    @respx.mock
+    def test_json_object_without_a_count_raises(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b'{"message":"hi"}')
+        )
+        with pytest.raises(PicSureQueryError, match="'count' field"):
+            run_query(_make_client(), _genomic_query(), "variant_count", backend="auth")
+
+    @respx.mock
+    def test_json_object_with_a_boolean_count_raises(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b'{"count":true}')
+        )
+        with pytest.raises(PicSureQueryError, match="'count' field"):
+            run_query(_make_client(), _genomic_query(), "variant_count", backend="auth")
+
+    @respx.mock
+    def test_json_object_with_a_non_scalar_count_raises(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b'{"count":[1,2]}')
+        )
+        with pytest.raises(PicSureQueryError, match="number or a count string"):
+            run_query(_make_client(), _genomic_query(), "variant_count", backend="auth")
+
+    @respx.mock
+    def test_garbage_body_still_raises(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"not a count")
+        )
+        with pytest.raises(PicSureQueryError, match="Expected a count"):
+            run_query(_make_client(), _genomic_query(), "variant_count", backend="auth")
+
+    @respx.mock
+    def test_disabled_result_type_body_raises(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(
+                200, content=b"VARIANT_COUNT_FOR_QUERY query type not allowed"
+            )
+        )
+        with pytest.raises(PicSureQueryError, match="may be disabled"):
+            run_query(_make_client(), _genomic_query(), "variant_count", backend="auth")
+
+
+class TestRunQueryVariantListEndToEnd:
+    """Drive VARIANT_LIST through ``run_query``.
+
+    Disabled on the verified deployment, so the "not allowed" body is the
+    live shape and the success shape is unit-tested only.
+    """
+
+    @respx.mock
+    def test_sends_the_expected_request_body(self):
+        route = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"[]")
+        )
+        run_query(_make_client(), _genomic_query(), "variant_list", backend="auth")
+
+        import json
+
+        query = json.loads(route.calls[0].request.content)["query"]
+        assert query["expectedResultType"] == "VARIANT_LIST_FOR_QUERY"
+        assert query["genomicFilters"] == [
+            {"key": "Gene_with_variant", "values": ["CONSENTQA902_1"]}
+        ]
+
+    @respx.mock
+    def test_parses_a_multi_spec_list(self):
+        body = b"[7,100000,A,T,CHD8,missense_variant, 7,100001,C,G,CHD8,stop_gained]"
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=body))
+        result = run_query(
+            _make_client(), _genomic_query(), "variant_list", backend="auth"
+        )
+        assert result == [
+            "7,100000,A,T,CHD8,missense_variant",
+            "7,100001,C,G,CHD8,stop_gained",
+        ]
+
+    @respx.mock
+    def test_parses_an_empty_list(self):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"[]"))
+        result = run_query(
+            _make_client(), _genomic_query(), "variant_list", backend="auth"
+        )
+        assert result == []
+
+    @respx.mock
+    def test_live_disabled_body_raises(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=VARIANT_LIST_NOT_ALLOWED_LIVE)
+        )
+        with pytest.raises(PicSureQueryError, match="may be disabled"):
+            run_query(_make_client(), _genomic_query(), "variant_list", backend="auth")
+
+    @respx.mock
+    def test_unbracketed_body_raises(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"7,100000,A,T")
+        )
+        with pytest.raises(PicSureQueryError, match="bracketed variant list"):
+            run_query(_make_client(), _genomic_query(), "variant_list", backend="auth")
+
+
+class TestRunQueryVcfExcerptEndToEnd:
+    """Drive both VCF excerpt types through ``run_query``.
+
+    Both are disabled on the verified deployment, so their success shapes
+    are unit-tested only; the "not allowed" bodies are the live ones.
+    """
+
+    @pytest.mark.parametrize(
+        ("query_type", "expected_result_type"),
+        [
+            ("vcf_excerpt", "VCF_EXCERPT"),
+            ("aggregate_vcf_excerpt", "AGGREGATE_VCF_EXCERPT"),
+        ],
+    )
+    @respx.mock
+    def test_sends_the_expected_request_body(self, query_type, expected_result_type):
+        route = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"CHROM\tPOS\n7\t100000\n")
+        )
+        run_query(_make_client(), _genomic_query(), query_type, backend="auth")
+
+        import json
+
+        query = json.loads(route.calls[0].request.content)["query"]
+        assert query["expectedResultType"] == expected_result_type
+        assert query["genomicFilters"] == [
+            {"key": "Gene_with_variant", "values": ["CONSENTQA902_1"]}
+        ]
+
+    @pytest.mark.parametrize("query_type", ["vcf_excerpt", "aggregate_vcf_excerpt"])
+    @respx.mock
+    def test_parses_the_tab_separated_body(self, query_type):
+        body = b"CHROM\tPOS\tREF\tALT\n7\t100000\tA\tT\n7\t100001\tC\tG\n"
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=body))
+        df = run_query(_make_client(), _genomic_query(), query_type, backend="auth")
+        assert list(df.columns) == ["CHROM", "POS", "REF", "ALT"]
+        assert len(df) == 2
+        assert df["POS"].tolist() == [100000, 100001]
+
+    @pytest.mark.parametrize("query_type", ["vcf_excerpt", "aggregate_vcf_excerpt"])
+    @respx.mock
+    def test_no_variants_sentinel_is_an_empty_frame(self, query_type):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"No Variants Found\n")
+        )
+        df = run_query(_make_client(), _genomic_query(), query_type, backend="auth")
+        assert df.empty
+
+    @pytest.mark.parametrize(
+        ("query_type", "body"),
+        [
+            ("vcf_excerpt", VCF_EXCERPT_NOT_ALLOWED_LIVE),
+            ("aggregate_vcf_excerpt", AGGREGATE_VCF_NOT_ALLOWED_LIVE),
+        ],
+    )
+    @respx.mock
+    def test_live_disabled_body_raises(self, query_type, body):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=body))
+        with pytest.raises(PicSureQueryError, match="may be disabled"):
+            run_query(_make_client(), _genomic_query(), query_type, backend="auth")
+
+
+class TestVariantParserDefensiveBranches:
+    """Branches reachable only from a malformed body."""
+
+    def test_clause_concept_paths_ignores_a_non_list_subquery(self):
+        from picsure._services.query_run import _clause_concept_paths
+
+        assert _clause_concept_paths({"phenotypicClauses": "not-a-list"}) == []
+        assert _clause_concept_paths({"operator": "AND"}) == []
+        assert _clause_concept_paths("not-a-dict") == []
+
+    def test_empty_count_message_without_context(self):
+        from picsure._services.query_run import _empty_count_message
+
+        message = _empty_count_message(None)
+        assert "empty body" in message
+        assert "  " not in message
+
+    def test_no_variant_filters_message_without_context(self):
+        from picsure._services.query_run import _parse_variant_count
+
+        with pytest.raises(PicSureQueryError, match="at least one genomic filter"):
+            _parse_variant_count(VARIANT_COUNT_NO_FILTERS_LIVE)
+
+    def test_vcf_excerpt_undecodable_body_raises(self):
+        from picsure._services.query_run import _parse_vcf_excerpt
+
+        with pytest.raises(PicSureQueryError, match="malformed VCF excerpt"):
+            _parse_vcf_excerpt(b"\xff\xfe\x00bad")
+
+    def test_vcf_excerpt_unparsable_table_raises(self):
+        from picsure._services.query_run import _parse_vcf_excerpt
+
+        ragged_rows = b'CHROM\tPOS\n7\t100000\n"unclosed\tquote\t\t\t\n'
+        with pytest.raises(PicSureQueryError, match="malformed VCF excerpt"):
+            _parse_vcf_excerpt(ragged_rows)
+
+
+def test_cross_count_negative_value_is_rejected():
+    from picsure._services.query_run import _parse_cross_count
+
+    with pytest.raises(PicSureQueryError, match="non-negative"):
+        _parse_cross_count(b'{"\\\\a\\\\": -1}')

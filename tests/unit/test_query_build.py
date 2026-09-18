@@ -440,4 +440,142 @@ class TestGenomicFilterKeyEnum:
         with pytest.raises(
             PicSureValidationError, match="not a valid variant severity"
         ):
-            buildGenomicFilter(GenomicFilterKey.VARIANT_SEVERITY, values="HIGH")
+            buildGenomicFilter(GenomicFilterKey.VARIANT_SEVERITY, values="Catastrophic")
+
+    def test_unknown_severity_message_names_both_vocabularies(self):
+        """The rejection names both vocabularies, so discovery output fits."""
+        from picsure import GenomicFilterKey, PicSureValidationError, buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError) as exc_info:
+            buildGenomicFilter(GenomicFilterKey.VARIANT_SEVERITY, values="Catastrophic")
+
+        message = str(exc_info.value)
+        assert "HIGH" in message
+        assert "MODIFIER" in message
+        assert "High Severity" in message
+        assert "searchGenomicValues" in message
+        assert "Variant_consequence_calculated" in message
+
+
+class TestVariantSeverityImpactValues:
+    """The backend's own ``Variant_severity`` vocabulary.
+
+    ``searchGenomicValues("Variant_severity")`` returns HIGH / MODERATE /
+    LOW / MODIFIER and the backend applies the key verbatim, so these are
+    sent through unchanged rather than expanded. Verified live: each of the
+    four returns a distinct non-zero count, and a bogus key or value returns
+    0, so the filter is genuinely applied.
+    """
+
+    @pytest.mark.parametrize("impact", ["HIGH", "MODERATE", "LOW", "MODIFIER"])
+    def test_impact_value_passes_through_on_severity_key(self, impact):
+        from picsure import GenomicFilterKey, buildGenomicFilter
+
+        gf = buildGenomicFilter(GenomicFilterKey.VARIANT_SEVERITY, values=impact)
+        assert gf.key == "Variant_severity"
+        assert gf.values == (impact,)
+
+    def test_impact_values_accepted_as_a_sequence(self):
+        from picsure import GenomicFilterKey, buildGenomicFilter
+
+        gf = buildGenomicFilter(
+            GenomicFilterKey.VARIANT_SEVERITY, values=["HIGH", "MODERATE"]
+        )
+        assert gf.key == "Variant_severity"
+        assert gf.values == ("HIGH", "MODERATE")
+
+    def test_impact_matching_strips_whitespace_only(self):
+        from picsure import buildGenomicFilter
+
+        gf = buildGenomicFilter("Variant_severity", values=["  HIGH ", "MODERATE"])
+        assert gf.key == "Variant_severity"
+        assert gf.values == ("HIGH", "MODERATE")
+
+    @pytest.mark.parametrize(
+        ("value", "spelling"),
+        [("High", "HIGH"), ("low", "LOW"), ("low severity", "Low Severity")],
+    )
+    def test_case_mismatch_is_rejected_with_the_accepted_spelling(
+        self, value, spelling
+    ):
+        from picsure import PicSureValidationError, buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError) as exc_info:
+            buildGenomicFilter("Variant_severity", values=value)
+
+        message = str(exc_info.value)
+        assert f"{value!r} is not a valid variant severity" in message
+        assert f"The accepted spelling is {spelling!r}" in message
+        assert "HIGH, MODERATE, LOW, MODIFIER" in message
+
+    def test_medium_is_rejected_pointing_at_moderate(self):
+        from picsure import PicSureValidationError, buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError) as exc_info:
+            buildGenomicFilter("Variant_severity", values="MEDIUM")
+
+        assert "The accepted spelling is 'MODERATE'" in str(exc_info.value)
+
+    def test_unknown_value_gets_no_spelling_hint(self):
+        from picsure import PicSureValidationError, buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError) as exc_info:
+            buildGenomicFilter("Variant_severity", values="Catastrophic")
+
+        assert "accepted spelling" not in str(exc_info.value)
+
+    def test_duplicate_impacts_are_collapsed(self):
+        from picsure import buildGenomicFilter
+
+        gf = buildGenomicFilter("Variant_severity", values=["HIGH", " HIGH", "HIGH"])
+        assert gf.values == ("HIGH",)
+
+    def test_modifier_is_unreachable_through_severity_buckets(self):
+        """MODIFIER has patients on the live stack but no bucket covers it.
+
+        The 32 patients come through intron_variant, so the impact vocabulary
+        is the only way to express it.
+        """
+        from picsure._models.genomic_filter import (
+            known_severities,
+            severity_consequences,
+        )
+
+        covered = {
+            consequence
+            for bucket in known_severities()
+            for consequence in severity_consequences(bucket)
+        }
+        assert "intron_variant" not in covered
+
+    def test_mixing_vocabularies_in_one_filter_is_rejected(self):
+        from picsure import GenomicFilterKey, PicSureValidationError, buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError, match="cannot mix"):
+            buildGenomicFilter(
+                GenomicFilterKey.VARIANT_SEVERITY,
+                values=["HIGH", "Low Severity"],
+            )
+
+    def test_mixing_message_explains_the_two_keys(self):
+        from picsure import PicSureValidationError, buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError) as exc_info:
+            buildGenomicFilter("Variant_severity", values=["HIGH", "Low Severity"])
+
+        message = str(exc_info.value)
+        assert "'Variant_severity'" in message
+        assert "'Variant_consequence_calculated'" in message
+
+    def test_buckets_still_expand_unchanged(self):
+        from picsure import VariantSeverity, buildGenomicFilter
+
+        gf = buildGenomicFilter("Variant_severity", values=VariantSeverity.HIGH)
+        assert gf.key == "Variant_consequence_calculated"
+        assert "stop_gained" in gf.values
+
+    def test_empty_values_sequence_is_rejected(self):
+        from picsure import PicSureValidationError, buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError, match="non-empty"):
+            buildGenomicFilter("Gene_with_variant", values=[])

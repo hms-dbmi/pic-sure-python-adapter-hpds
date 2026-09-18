@@ -278,6 +278,17 @@ def _user_agent(client_type: str) -> str:
     return f"picsure-{product}/{_package_version()}"
 
 
+class EmptyBodyError(PicSureQueryError):
+    """A response carried no body where a JSON payload was expected.
+
+    PIC-SURE answers some lookups with HTTP 200 and a zero-length body, for
+    example a genomic value search on a concept that is not a genomic
+    annotation. :func:`_decode_json` raises this subclass so a service can
+    tell that case apart from a body that is present but not JSON, while a
+    caller catching :class:`~picsure.errors.PicSureQueryError` still sees it.
+    """
+
+
 def _decode_json(response: httpx.Response, path: str) -> JsonBody:
     """Decode a response body as a JSON object or array.
 
@@ -289,12 +300,17 @@ def _decode_json(response: httpx.Response, path: str) -> JsonBody:
     instead of an ``AttributeError`` in whichever service indexed it.
 
     Raises:
+        EmptyBodyError: If the body is empty or whitespace only.
         PicSureQueryError: If the body is not JSON, or decodes to
             something other than an object or an array.  The decoder's
             own ``ValueError`` is kept as the cause, so the failure stays
             inside the public hierarchy and a caller wrapping the call in
             ``except PicSureError`` still catches it.
     """
+    if not response.content.strip():
+        raise EmptyBodyError(
+            f"{path} returned an empty body; expected a JSON object or an array."
+        )
     try:
         payload = response.json()
     except ValueError as exc:

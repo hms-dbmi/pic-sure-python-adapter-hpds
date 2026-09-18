@@ -1,3 +1,5 @@
+import pytest
+
 from picsure._models.genomic_filter import (
     GenomicFilter,
     VariantFrequency,
@@ -107,3 +109,93 @@ def test_key_and_severity_enums_re_exported():
     assert picsure.VariantSeverity.HIGH == "High Severity"
     assert "GenomicFilterKey" in picsure.__all__
     assert "VariantSeverity" in picsure.__all__
+
+
+class TestVariantFrequencyBuckets:
+    """The ``Variant_frequency_as_text`` vocabulary.
+
+    Captured live from a stack with genomic data loaded: ``Low_frequency``,
+    ``Ultra_rare``, ``Rare``, ``Common``. The backend's own annotated test
+    VCF carries only ``Rare`` and ``Common``, and no source or fixture in
+    the PIC-SURE tree mentions ``Novel``, so the enum is a convenience and
+    ``searchGenomicValues`` is the authoritative source.
+    """
+
+    def test_live_values_are_members(self):
+        for value in ("Rare", "Common", "Low_frequency", "Ultra_rare"):
+            assert value in {member.value for member in VariantFrequency}
+
+    def test_novel_is_kept_for_back_compat(self):
+        assert VariantFrequency.NOVEL == "Novel"
+
+    def test_deprecation_is_documented(self):
+        assert "deprecated" in VariantFrequency.__doc__.lower()
+        assert "searchGenomicValues" in VariantFrequency.__doc__
+
+    def test_frequency_values_are_accepted_by_the_builder(self):
+        from picsure import buildGenomicFilter
+
+        for member in VariantFrequency:
+            gf = buildGenomicFilter("Variant_frequency_as_text", values=member)
+            assert gf.key == "Variant_frequency_as_text"
+            assert gf.values == (member.value,)
+
+
+class TestImpactVocabulary:
+    """The backend's ``Variant_severity`` impact values."""
+
+    def test_known_impacts_matches_the_live_discovery_output(self):
+        from picsure._models.genomic_filter import known_impacts
+
+        assert set(known_impacts()) == {"HIGH", "MODERATE", "LOW", "MODIFIER"}
+
+    def test_known_impacts_is_ordered_by_decreasing_severity(self):
+        from picsure._models.genomic_filter import known_impacts
+
+        assert known_impacts() == ("HIGH", "MODERATE", "LOW", "MODIFIER")
+
+    def test_normalize_impact_accepts_canonical_values(self):
+        from picsure._models.genomic_filter import known_impacts, normalize_impact
+
+        for impact in known_impacts():
+            assert normalize_impact(impact) == impact
+
+    def test_normalize_impact_strips_whitespace_but_keeps_case(self):
+        from picsure._models.genomic_filter import normalize_impact
+
+        assert normalize_impact("  MODIFIER  ") == "MODIFIER"
+        assert normalize_impact("high") is None
+        assert normalize_impact("Modifier") is None
+
+    def test_normalize_impact_rejects_a_severity_bucket(self):
+        from picsure._models.genomic_filter import normalize_impact
+
+        assert normalize_impact("High Severity") is None
+
+    def test_normalize_impact_rejects_an_unknown_value(self):
+        from picsure._models.genomic_filter import normalize_impact
+
+        assert normalize_impact("Catastrophic") is None
+        assert normalize_impact("") is None
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("high", "HIGH"),
+            ("  Modifier ", "MODIFIER"),
+            ("MEDIUM", "MODERATE"),
+            ("medium", "MODERATE"),
+            ("high severity", "High Severity"),
+            ("Catastrophic", None),
+            ("", None),
+        ],
+    )
+    def test_suggest_severity_spelling(self, value, expected):
+        from picsure._models.genomic_filter import suggest_severity_spelling
+
+        assert suggest_severity_spelling(value) == expected
+
+    def test_impact_values_and_severity_buckets_are_disjoint(self):
+        from picsure._models.genomic_filter import known_impacts, known_severities
+
+        assert set(known_impacts()).isdisjoint(set(known_severities()))
