@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import re
 from typing import TYPE_CHECKING
+from urllib.parse import quote
 
 from picsure._models.clause import Clause
 from picsure._models.clause_group import ClauseGroup
 from picsure._models.query import Query
 from picsure._services._errors import translate_transport_error
-from picsure._services._hpds_paths import query_prefix
+from picsure._services._hpds_paths import (
+    query_id_from_submit_response,
+    query_submit_path,
+    server_id_segment,
+)
 from picsure._services.query_run import build_query_body
 from picsure._transport.client import EmptyBodyError, json_object
 from picsure._transport.errors import TransportError
@@ -27,6 +32,8 @@ if TYPE_CHECKING:
 # path must not gain one.
 _NAMED_DATASET_COLLECTION_PATH = "/picsure/operations/dataset/named"
 _NAMED_DATASET_ITEM_PATH = "/picsure/operations/dataset/named/{named_dataset_id}"
+
+_SAVE_OPERATION = "the saved query"
 
 _NAME_PUNCTUATION = "-\\/?+=[].():\"'"
 _NAME_CHARACTER_CLASS = r"\w\d " + "".join(re.escape(c) for c in _NAME_PUNCTUATION)
@@ -75,8 +82,7 @@ def save_query_by_name(
         )
 
     body = build_query_body(query, "COUNT")
-    submit_path = query_prefix(backend, v3=True) + "/query"
-    query_id = _submit_and_extract_id(client, submit_path, body)
+    query_id = _submit_and_extract_id(client, query_submit_path(backend), body)
 
     if existing is None:
         _create_named_dataset(client, query_id=query_id, name=name)
@@ -93,7 +99,10 @@ def save_query_by_name(
         )
         _update_named_dataset(
             client,
-            named_dataset_id=str(existing_uuid),
+            named_dataset_id=server_id_segment(
+                existing_uuid,
+                description=f"The identifier of the named query '{name}'",
+            ),
             query_id=query_id,
             name=name,
             archived=bool(existing.get("archived", False)),
@@ -179,7 +188,8 @@ def _update_named_dataset(
 
     Args:
         client: Authenticated HTTP client.
-        named_dataset_id: UUID of the record to update.
+        named_dataset_id: The record's identifier, already checked as a
+            UUID and escaped into one path segment.
         query_id: The freshly submitted query's PIC-SURE id.
         name: The record's name, resent unchanged.
         archived: The record's archived flag, preserved.
@@ -189,7 +199,9 @@ def _update_named_dataset(
         PicSureError: Whatever :func:`translate_transport_error` maps the
             transport failure to.
     """
-    path = _NAMED_DATASET_ITEM_PATH.format(named_dataset_id=named_dataset_id)
+    path = _NAMED_DATASET_ITEM_PATH.format(
+        named_dataset_id=quote(named_dataset_id, safe="")
+    )
     body = {
         "queryId": query_id,
         "name": name,
@@ -249,18 +261,28 @@ def _validate_name(name: str) -> None:
 def _submit_and_extract_id(
     client: PicSureClient, submit_path: str, body: dict[str, object]
 ) -> str:
+    """Submit the query and return the id the server chose.
+
+    Args:
+        client: Authenticated HTTP client.
+        submit_path: The versioned HPDS submit path.
+        body: The query envelope to post.
+
+    Returns:
+        The canonical query id, escaped for use as one path segment.
+
+    Raises:
+        PicSureQueryError: If the response carries no query id, or one
+            that is not a UUID.
+        PicSureError: Whatever :func:`translate_transport_error` maps the
+            transport failure to.
+    """
     try:
         payload = client.post_json(submit_path, body=body)
     except TransportError as exc:
         raise translate_transport_error(
             exc, operation="the saveQueryByName query submit"
         ) from exc
-    response = json_object(payload, path=submit_path)
-    for field in ("picsureResultId", "resourceResultId", "queryId"):
-        v = response.get(field)
-        if isinstance(v, str) and v:
-            return v
-    raise PicSureQueryError(
-        "Server did not return a query id in the submit response "
-        "(expected 'picsureResultId')."
+    return query_id_from_submit_response(
+        json_object(payload, path=submit_path), operation=_SAVE_OPERATION
     )

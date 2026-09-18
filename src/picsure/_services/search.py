@@ -17,6 +17,7 @@ the whole thing into one DataFrame.
 from __future__ import annotations
 
 import sys
+from urllib.parse import urlencode
 
 import pandas as pd
 
@@ -194,7 +195,8 @@ def _request_page(
     page: int,
     page_size: int,
 ) -> dict[str, object]:
-    url = f"{_CONCEPTS_PATH}?page_number={page}&page_size={page_size}"
+    params = urlencode({"page_number": page, "page_size": page_size})
+    url = f"{_CONCEPTS_PATH}?{params}"
     try:
         payload = client.post_json(url, body=body)
     except TransportError as exc:

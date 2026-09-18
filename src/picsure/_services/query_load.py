@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from typing import TYPE_CHECKING
-from urllib.parse import quote
 from uuid import UUID
 
 from picsure._models.clause import (
@@ -15,6 +14,7 @@ from picsure._models.dictionary import coerce_float
 from picsure._models.genomic_filter import GenomicFilter, is_variant_spec
 from picsure._models.query import Query
 from picsure._services._errors import translate_transport_error
+from picsure._services._hpds_paths import query_metadata_path
 from picsure._transport.errors import TransportError, TransportNotFoundError
 from picsure.errors import PicSureQueryError, PicSureValidationError
 
@@ -169,12 +169,6 @@ def _to_query(
     )
 
 
-# Query metadata is served under the versioned (/v3) query routes -- the
-# non-versioned route 404s on the current gateway. The {backend} segment is
-# required for routing but the read does not depend on which backend is named.
-_HPDS_QUERY_METADATA_PATH = "/picsure/hpds/{backend}/v3/query/{query_id}/metadata"
-
-
 def _validate_query_id(query_id: str) -> str:
     """Normalize a saved-query identifier to canonical UUID form.
 
@@ -245,9 +239,7 @@ def load_query(
             "A non-empty query ID is required to load a saved query."
         )
     normalized_id = _validate_query_id(query_id)
-    path = _HPDS_QUERY_METADATA_PATH.format(
-        backend=backend, query_id=quote(normalized_id, safe="")
-    )
+    path = query_metadata_path(backend, normalized_id)
 
     try:
         response = client.get_json(path)
