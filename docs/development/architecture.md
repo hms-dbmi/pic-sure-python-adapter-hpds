@@ -146,8 +146,17 @@ PicSureError
 │   └── PicSureServerError              # 5xx: the request arrived and failed
 │       └── PicSureConsentLookupError   # 502 consent_lookup_failed
 ├── PicSureQueryError                   # server rejected the query
+│   └── EmptyBodyError                  # 200 with a zero-length body
 └── PicSureValidationError              # invalid input to a picsure function
 ```
+
+`EmptyBodyError` is the one class here that `__init__.py.__all__` does
+not export. It is raised by `_transport/client.py::_decode_json` and
+caught by `_services/query_save.py` and `_services/genomic_search.py`,
+so it is internal control flow that a caller sees only as the
+`PicSureQueryError` it inherits from. Whether it becomes supported
+public surface is an open question; until it is answered, catch
+`PicSureQueryError`.
 
 `PicSureError` is the catch-all, and the nesting is the contract: a
 caller who wants every refusal catches `PicSureAuthError`, and one who

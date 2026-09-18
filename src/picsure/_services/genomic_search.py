@@ -6,9 +6,9 @@ import pandas as pd
 
 from picsure._services._errors import translate_transport_error
 from picsure._services._hpds_paths import search_values_path
-from picsure._transport.client import EmptyBodyError, PicSureClient
+from picsure._transport.client import PicSureClient
 from picsure._transport.errors import TransportError, TransportNotFoundError
-from picsure.errors import PicSureQueryError, PicSureValidationError
+from picsure.errors import EmptyBodyError, PicSureQueryError, PicSureValidationError
 
 _GENOMIC_VALUES_OPERATION = "the genomic value lookup"
 

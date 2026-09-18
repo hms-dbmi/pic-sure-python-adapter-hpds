@@ -47,7 +47,12 @@ from picsure._transport.errors import (
     TransportValidationError,
 )
 from picsure._transport.secret import SecretToken, as_secret_token
-from picsure.errors import PicSureQueryError, PicSureTLSError, PicSureValidationError
+from picsure.errors import (
+    EmptyBodyError,
+    PicSureQueryError,
+    PicSureTLSError,
+    PicSureValidationError,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -281,35 +286,6 @@ def _user_agent(client_type: str) -> str:
     """
     product = client_type.lower().replace("_", "-")
     return f"picsure-{product}/{_package_version()}"
-
-
-class EmptyBodyError(PicSureQueryError):
-    """A response carried no body where a JSON payload was expected.
-
-    PIC-SURE answers some lookups with HTTP 200 and a zero-length body, for
-    example a genomic value search on a concept that is not a genomic
-    annotation. :func:`_decode_json` raises this subclass so a service can
-    tell that case apart from a body that is present but not JSON, while a
-    caller catching :class:`~picsure.errors.PicSureQueryError` still sees it.
-
-    Attributes:
-        status_code: HTTP status of the bodiless response. Every status
-            below 400 reaches here, because :meth:`PicSureClient._request`
-            only translates 4xx and 5xx and the client does not follow
-            redirects. A service that calls an endpoint for its side
-            effect needs this to tell a completed write, answered ``201``
-            or ``204`` with no body, from a ``3xx`` that wrote nothing.
-    """
-
-    def __init__(self, status_code: int, message: str) -> None:
-        """Record the status the bodiless response carried.
-
-        Args:
-            status_code: HTTP status of the response.
-            message: Human-readable account of the empty body.
-        """
-        self.status_code = status_code
-        super().__init__(message)
 
 
 def _decode_json(response: httpx.Response, path: str) -> JsonBody:

@@ -14,9 +14,10 @@ from picsure._services._hpds_paths import (
     server_id_segment,
 )
 from picsure._services.query_run import build_query_body
-from picsure._transport.client import EmptyBodyError, json_object
+from picsure._transport.client import json_object
 from picsure._transport.errors import TransportError
 from picsure.errors import (
+    EmptyBodyError,
     PicSureQueryError,
     PicSureValidationError,
 )

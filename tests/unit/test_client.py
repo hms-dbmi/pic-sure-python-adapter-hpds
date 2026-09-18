@@ -293,7 +293,7 @@ class TestJsonBodyShapes:
     @respx.mock
     @pytest.mark.parametrize("content", [b"", b"   \n"])
     def test_empty_body_raises_empty_body_error(self, content):
-        from picsure._transport.client import EmptyBodyError
+        from picsure.errors import EmptyBodyError
 
         respx.get(f"{BASE_URL}/odd").mock(
             return_value=httpx.Response(200, content=content)
@@ -309,7 +309,7 @@ class TestJsonBodyShapes:
     @respx.mock
     def test_empty_body_error_carries_a_redirect_status(self):
         """The status is what tells a bodiless write from a bodiless redirect."""
-        from picsure._transport.client import EmptyBodyError
+        from picsure.errors import EmptyBodyError
 
         respx.get(f"{BASE_URL}/odd").mock(
             return_value=httpx.Response(
