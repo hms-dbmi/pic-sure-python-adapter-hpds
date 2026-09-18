@@ -40,6 +40,13 @@ class ClauseGroup:
     and so does a string, which is a sequence of characters and would
     otherwise become one child per character.
 
+    **The container.** Anything else that cannot be iterated raises the
+    same class, naming the type that arrived. The check is the attempt
+    itself rather than a list of types, so a
+    :class:`~picsure._models.query.Query`, the case a caller reaches by
+    accident, is covered without this module importing ``query``, which
+    imports it back.
+
     **Children.** Every element is checked as well, because only a
     :class:`Clause` and a :class:`ClauseGroup` carry the
     ``to_query_json`` the group calls. An unchecked child survives
@@ -65,7 +72,14 @@ class ClauseGroup:
                 "or tuple."
             )
         if not isinstance(self.clauses, tuple):
-            object.__setattr__(self, "clauses", tuple(self.clauses))
+            try:
+                object.__setattr__(self, "clauses", tuple(self.clauses))
+            except TypeError as exc:
+                raise PicSureValidationError(
+                    f"ClauseGroup expects a sequence of Clause or ClauseGroup "
+                    f"objects, not a {type(self.clauses).__name__}, which "
+                    f"cannot be iterated. {_replacement_advice(self.clauses)}"
+                ) from exc
         for position, child in enumerate(self.clauses):
             if not isinstance(child, (Clause, ClauseGroup)):
                 raise PicSureValidationError(

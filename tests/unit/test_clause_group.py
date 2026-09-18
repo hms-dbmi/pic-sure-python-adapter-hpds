@@ -248,6 +248,41 @@ class TestClauseGroupInputTypes:
         with pytest.raises(PicSureValidationError, match="not a string"):
             ClauseGroup(clauses="abc", operator=GroupOperator.AND)
 
+    def test_a_query_container_is_refused_inside_the_error_hierarchy(self):
+        """A Query is not iterable, so tuple() alone raised a raw TypeError."""
+        query = Query(phenotypicFilter=_sex_clause())
+
+        with pytest.raises(PicSureValidationError) as exc_info:
+            ClauseGroup(clauses=query, operator=GroupOperator.AND)
+
+        message = str(exc_info.value)
+        assert "Query" in message
+        assert "cannot be iterated" in message
+        assert "phenotypicFilter" in message
+
+    def test_a_non_iterable_container_is_refused_naming_its_type(self):
+        with pytest.raises(PicSureValidationError) as exc_info:
+            ClauseGroup(clauses=42, operator=GroupOperator.AND)
+
+        message = str(exc_info.value)
+        assert "int" in message
+        assert "cannot be iterated" in message
+        assert "buildClause()" in message
+
+    def test_a_list_of_clauses_still_builds(self):
+        group = ClauseGroup(
+            clauses=[_sex_clause(), _age_clause()], operator=GroupOperator.AND
+        )
+
+        assert group.clauses == (_sex_clause(), _age_clause())
+
+    def test_a_tuple_of_clauses_still_builds(self):
+        group = ClauseGroup(
+            clauses=(_sex_clause(), _age_clause()), operator=GroupOperator.OR
+        )
+
+        assert group.clauses == (_sex_clause(), _age_clause())
+
 
 class TestClauseGroupChildTypes:
     """Only a Clause or a ClauseGroup carries the group's wire contract."""
