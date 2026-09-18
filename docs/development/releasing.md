@@ -90,11 +90,13 @@ git push origin vX.Y.Z
 ```
 
 Pushing the tag is the release. `release.yml` triggers on
-`push: tags: ["v*"]` and does the whole run itself: `lint`, then
-`test` across Python 3.10/3.11/3.12, then `build` (which classifies
-the tag, runs `uv build`, and validates the metadata with
-`uvx twine check`), then one of the two publish jobs. A failing lint
-or test job stops the release before anything is uploaded.
+`push: tags: ["v*"]` and does the whole run itself. `lint` and `test`
+(Python 3.10/3.11/3.12) run in parallel. `build` waits for both, then
+classifies the tag, runs `uv build`, and validates the metadata with
+`uvx twine check`. One of the two publish jobs runs last. A failing
+lint or test job stops the release before anything is uploaded. The
+tag check sits inside `build`, so a malformed tag such as `v1.3` still
+costs a full lint run and test matrix before the workflow fails.
 
 ## Publishing to PyPI
 
