@@ -1,4 +1,10 @@
-"""The one place every HPDS route is built.
+"""Every HPDS route, with the identifiers and vocabulary those routes carry.
+
+This module owns the HPDS request paths, the operations service's
+named-dataset paths, the backend vocabulary and its check, and the UUID
+example the identifier errors quote. It does not own every PIC-SURE
+route: ``/picsure/dictionary/*`` and ``/psama/*`` interpolate nothing and
+stay as literals in the service modules that send them.
 
 The PIC-SURE gateway routes HPDS traffic by URL path, not by a resource
 UUID in the request body: ``/picsure/hpds/auth/**`` reaches the authorized

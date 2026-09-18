@@ -14,10 +14,11 @@ siblings, so no path tells the calls that carry participant work apart
 from the ones that do not.
 
 No request body and no response body is ever serialized into a dev-mode
-event, whatever this module answers. An event carries a path, a method,
-a status, byte counts and a duration, so the label marks which calls
-carried participant-scoped work rather than standing in for a body that
-would otherwise have been written down. Nothing here scrubs a secret out
+event, whatever this module answers. An ``http`` event carries a path, a
+status, byte counts, a retry count and a duration, and only an ``error``
+event records the method, so the label marks which calls carried
+participant-scoped work rather than standing in for a body that would
+otherwise have been written down. Nothing here scrubs a secret out
 of anything, and nothing here is on the path a token takes.
 
 ``_SENSITIVE_RESULT_TYPES`` names the result types whose request body
