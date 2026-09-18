@@ -531,7 +531,15 @@ class PicSureClient:
                     body_text = f"<error body unavailable: {exc}>"
                 finally:
                     stream_cm.__exit__(None, None, None)
-                self._emit_http("POST", path, body, response, attempt, start)
+                self._emit_http(
+                    "POST",
+                    path,
+                    body,
+                    response,
+                    bytes_received=_response_bytes(response),
+                    retry=attempt,
+                    start=start,
+                )
                 error = _status_error(status, body_text, response)
                 self._emit_error("POST", path, attempt, start, type(error).__name__)
                 raise _mark_emitted(error)
@@ -601,13 +609,14 @@ class PicSureClient:
                 self._emit_error("POST", path, 0, start, type(exc).__name__)
             _remove_partial(part_path)
             raise
-        self._emit_download(
+        self._emit_http(
+            "POST",
             path,
             body,
             response,
-            written,
-            start,
+            bytes_received=written,
             retry=int(response.extensions.get("picsure_retry", 0)),
+            start=start,
         )
 
     def _request(
@@ -645,7 +654,15 @@ class PicSureClient:
                     continue
                 raise _mark_emitted(_connection_error(exc, self._host)) from exc
 
-            self._emit_http(method, path, body, response, attempt, start)
+            self._emit_http(
+                method,
+                path,
+                body,
+                response,
+                bytes_received=_response_bytes(response),
+                retry=attempt,
+                start=start,
+            )
 
             status = response.status_code
 
@@ -689,9 +706,31 @@ class PicSureClient:
         path: str,
         body: RequestBody | None,
         response: httpx.Response,
-        attempt: int,
+        *,
+        bytes_received: int | None,
+        retry: int,
         start: float,
     ) -> None:
+        """Record one answered HTTP call as a dev-mode ``http`` event.
+
+        Both request surfaces emit through here, so the accounting is
+        written once. ``bytes_received`` is the only thing they disagree
+        on: a buffered response is sized by :func:`_response_bytes`,
+        while a streamed download passes the byte count it wrote to
+        disk, since a streamed response has no ``content`` to measure
+        and reading it would defeat the streaming.
+
+        Args:
+            method: HTTP method of the request.
+            path: Request path, which is the event's name.
+            body: The JSON request body, or ``None``.
+            response: The response, read for its status and its request's
+                size.
+            bytes_received: Size of the response body, or ``None`` when
+                it could not be determined.
+            retry: The attempt that produced this response.
+            start: ``time.monotonic()`` when the attempt began.
+        """
         cfg = self._dev_config
         if cfg is None or not cfg.enabled:
             return
@@ -702,10 +741,6 @@ class PicSureClient:
             if response.request
             else _estimate_bytes(body)
         )
-        try:
-            bytes_received: int | None = len(response.content or b"")
-        except httpx.ResponseNotRead:
-            bytes_received = None
         metadata: dict[str, object] = {}
 
         if body_is_sensitive(path, method, body):
@@ -719,51 +754,6 @@ class PicSureClient:
                 duration_ms=duration_ms,
                 bytes_sent=bytes_sent,
                 bytes_received=bytes_received,
-                status=response.status_code,
-                retry=attempt,
-                error=None,
-                metadata=metadata,
-            )
-        )
-
-    def _emit_download(
-        self,
-        path: str,
-        body: RequestBody | None,
-        response: httpx.Response,
-        bytes_written: int,
-        start: float,
-        retry: int,
-    ) -> None:
-        """Record a completed streamed download as an ``http`` event.
-
-        The buffered path uses :meth:`_emit_http`, which sizes the
-        response with ``len(response.content)``.  A streamed response has
-        no ``content`` to read, and reading it would defeat the point, so
-        the size comes from what was written to disk.  ``retry`` is the
-        attempt that produced the response, as :meth:`post_raw_stream`
-        recorded it.
-        """
-        cfg = self._dev_config
-        if cfg is None or not cfg.enabled:
-            return
-
-        metadata: dict[str, object] = {}
-        if body_is_sensitive(path, "POST", body):
-            metadata["redacted"] = "participant"
-
-        cfg.emit(
-            Event(
-                timestamp=datetime.now(timezone.utc),
-                kind="http",
-                name=path,
-                duration_ms=(time.monotonic() - start) * 1000.0,
-                bytes_sent=(
-                    len(response.request.content or b"")
-                    if response.request
-                    else _estimate_bytes(body)
-                ),
-                bytes_received=bytes_written,
                 status=response.status_code,
                 retry=retry,
                 error=None,
@@ -937,6 +927,20 @@ def _remove_partial(part_path: Path) -> None:
     """
     with contextlib.suppress(OSError):
         part_path.unlink(missing_ok=True)
+
+
+def _response_bytes(response: httpx.Response) -> int | None:
+    """Size a response body, or ``None`` when it has not been read.
+
+    A streamed response raises ``httpx.ResponseNotRead`` rather than
+    answering, and reading it to answer would defeat the streaming. The
+    streaming path's error branch reaches this state too, when reading
+    the small error body itself failed.
+    """
+    try:
+        return len(response.content or b"")
+    except httpx.ResponseNotRead:
+        return None
 
 
 def _estimate_bytes(body: RequestBody | None) -> int | None:
