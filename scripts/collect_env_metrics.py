@@ -271,8 +271,6 @@ def main() -> int:
 
     frames: list[pd.DataFrame] = []
 
-    # connect() itself is the auth-path probe: each iteration builds a
-    # fresh client and, on consent-gated platforms, fetches the consent list.
     print("-- connect")
 
     def do_connect() -> None:

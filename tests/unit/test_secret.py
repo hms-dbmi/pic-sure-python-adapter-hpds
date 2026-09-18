@@ -247,7 +247,7 @@ class TestWireFormatIsUnchanged:
 class TestConnectDoesNotLeakTheTokenIntoTracebacks:
     """The regression: a crash inside connect() published the token.
 
-    ``verify`` naming an absent CA bundle is the realistic trigger -- it
+    ``verify`` naming an absent CA bundle is the realistic trigger. It
     raises inside ``PicSureClient.__init__`` after the Authorization
     header has been built, so both frames the defect covered are on the
     traceback at once.
@@ -266,8 +266,9 @@ class TestConnectDoesNotLeakTheTokenIntoTracebacks:
         raise AssertionError("connect() was expected to raise")
 
     def test_both_frames_are_on_the_traceback(self):
-        # Guards the test itself: if neither frame were present, the
-        # measurements below would pass without proving anything.
+        """Guards the measurements: without both frames they would pass without proving
+        anything.
+        """
         frames = frame_locals_by_function(self._failing_connect())
 
         assert "connect" in frames
@@ -280,7 +281,7 @@ class TestConnectDoesNotLeakTheTokenIntoTracebacks:
         assert longest_token_run(rendered) <= MAX_INCIDENTAL_RUN
 
     def test_the_token_parameter_is_gone_from_connects_frame(self):
-        # Pins the ``del``: the parameter must not merely be rebound.
+        """Pins the ``del``: the parameter must not merely be rebound."""
         frames = frame_locals_by_function(self._failing_connect())
 
         assert "token" not in frames["connect"]
@@ -296,8 +297,9 @@ class TestConnectDoesNotLeakTheTokenIntoTracebacks:
                 )
 
     def test_the_headers_local_does_not_hold_the_bearer_value(self):
-        # The Authorization entry is built into the mapping handed to
-        # httpx, never into this local, which --showlocals would print.
+        """The Authorization entry is built into the mapping handed to httpx, never into
+        this local.
+        """
         headers = frame_locals_by_function(self._failing_connect())["__init__"][
             "headers"
         ]
@@ -333,7 +335,7 @@ def _crash_inside_token_check(monkeypatch) -> ExceptionInfo:
 
 class TestTokenHelpersDoNotLeakIntoTracebacks:
     def test_the_check_frame_is_on_the_traceback(self):
-        # Guards the measurements below against silently testing nothing.
+        """Guards the measurements below against silently testing nothing."""
         with pytest.MonkeyPatch.context() as monkeypatch:
             frames = frame_locals_by_function(_crash_inside_token_check(monkeypatch))
 
@@ -350,8 +352,9 @@ class TestTokenHelpersDoNotLeakIntoTracebacks:
         assert longest_token_run(rendered) <= MAX_INCIDENTAL_RUN
 
     def test_the_check_frame_keeps_no_token_derived_local(self, monkeypatch):
-        # The segment list is the token in three pieces; it now lives only
-        # in _jwt_segment_count, whose frame has returned by this point.
+        """The segment list is the token in three pieces and lives only in
+        _jwt_segment_count.
+        """
         frame = frame_locals_by_function(_crash_inside_token_check(monkeypatch))[
             "_reject_unusable_token"
         ]
@@ -364,8 +367,9 @@ class TestTokenHelpersDoNotLeakIntoTracebacks:
     def test_a_crash_while_decoding_the_payload_carries_no_token_material(
         self, showlocals, monkeypatch
     ):
-        # The encoded payload segment is a long contiguous run of the
-        # token, so this pins the helper that keeps it out of the frame.
+        """The encoded payload segment is a long run of the token, so this pins the
+        helper that hides it.
+        """
         monkeypatch.setattr(connect_module.base64, "urlsafe_b64decode", _fail)
         try:
             connect_module._decode_jwt_payload(SECRET_VALUE)

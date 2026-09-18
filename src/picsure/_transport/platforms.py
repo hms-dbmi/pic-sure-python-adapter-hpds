@@ -25,6 +25,11 @@ class PlatformInfo:
     the connect banner read, so the two can no longer disagree about
     whether a connection is open or authorized.
 
+    ``is_custom_url`` is true when the caller passed a URL string rather
+    than a ``Platform`` member, so ``connect()`` knows the capability
+    flags are defaults it guessed rather than facts recorded for a known
+    deployment.
+
     Raises:
         PicSureValidationError: If ``include_consents`` is set with
             ``requires_auth`` off.  Consent scoping exists only on the
@@ -39,9 +44,6 @@ class PlatformInfo:
     # unless the caller explicitly opts out with ``requires_auth=False``.
     requires_auth: bool = True
     supports_genomic: bool = False
-    # True when the caller passed a URL string rather than a Platform
-    # member, so connect() knows the capability flags are defaults it
-    # guessed rather than facts recorded for a known deployment.
     is_custom_url: bool = False
 
     def __post_init__(self) -> None:
@@ -61,8 +63,8 @@ class PlatformInfo:
     def backend(self) -> str:
         """The HPDS backend this deployment routes to: ``"auth"`` or ``"open"``.
 
-        The gateway selects HPDS by URL path — ``/hpds/auth`` versus
-        ``/hpds/open`` — so this one string decides both the request path
+        The gateway selects HPDS by URL path, ``/picsure/hpds/auth`` versus
+        ``/picsure/hpds/open``, so this one string decides both the request path
         and how the connection is described to the user.  Consent scoping
         implies the authorized backend, which ``__post_init__`` enforces,
         so the auth requirement alone settles it.

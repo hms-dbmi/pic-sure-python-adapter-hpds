@@ -21,7 +21,6 @@ if TYPE_CHECKING:
     from picsure._transport.client import PicSureClient
 
 
-# The only two HPDS backends the gateway routes to, by URL path.
 _BACKENDS = frozenset({"auth", "open"})
 
 
@@ -54,8 +53,12 @@ class Session:
             consents: Study-consent identifiers to scope dictionary
                 requests by.
             dev_config: Developer-mode configuration; defaults to off.
-            backend: ``"auth"`` or ``"open"`` — the HPDS instance every
-                query on this session routes to.
+            backend: ``"auth"`` or ``"open"``, the HPDS instance every
+                query on this session routes to, selected by the
+                ``/picsure/hpds/auth`` or ``/picsure/hpds/open`` request
+                path. ``connect()`` derives it from
+                ``PlatformInfo.backend``, the same value the connect
+                banner reads, so the two cannot disagree.
             supports_genomic: Whether genomic operations are allowed.
             session_id: Correlation id sent on every request.
 
@@ -75,11 +78,6 @@ class Session:
                 f"an unrecognized value would silently produce a 404 on every "
                 f"query."
             )
-        # "auth" or "open": selects the HPDS backend by URL path
-        # (/hpds/auth vs /hpds/open).  Replaces the old resource-UUID
-        # backend selection; both backends use the v3 query lifecycle.
-        # connect() derives it from PlatformInfo.backend, the single value
-        # that both this routing and the connect banner read.
         self._backend = backend
         self._supports_genomic = supports_genomic
         self._dev_config = (

@@ -42,8 +42,7 @@ class TestResolvePlatform:
         assert resolve_platform(Platform.BDC_OPEN).include_consents is False
 
     def test_known_platform_include_consents_override(self):
-        # BDC_OPEN needs no auth, so consent scoping has to be turned on
-        # together with it -- see TestContradictoryFlags.
+        """BDC_OPEN needs no auth, so consent scoping is turned on together with it."""
         info = resolve_platform(
             Platform.BDC_OPEN, include_consents=True, requires_auth=True
         )
@@ -71,9 +70,9 @@ class TestResolvePlatform:
         assert resolve_platform(Platform.BDC_OPEN).requires_auth is False
 
     def test_known_platform_requires_auth_override(self):
-        # BDC_AUTHORIZED carries include_consents=True, so dropping auth
-        # alone is the contradiction; drop both to describe an open
-        # deployment at that URL.
+        """Dropping auth alone on BDC_AUTHORIZED is the contradiction, so both flags
+        drop.
+        """
         info = resolve_platform(
             Platform.BDC_AUTHORIZED, requires_auth=False, include_consents=False
         )
@@ -149,7 +148,7 @@ def test_resolve_platform_member_override_false():
 
 
 class TestBackendIsOneValue:
-    """PL-13: routing and the connect banner read a single derived value."""
+    """Routing and the connect banner read a single derived value."""
 
     def test_authorized_platform_is_the_auth_backend(self):
         assert resolve_platform(Platform.BDC_AUTHORIZED).backend == "auth"
@@ -165,8 +164,9 @@ class TestBackendIsOneValue:
         assert info.backend == "open"
 
     def test_consent_scoping_never_lands_on_the_open_backend(self):
-        # The combination that used to print "open access" while routing
-        # to /hpds/auth is now unrepresentable, so the two cannot drift.
+        """The combination that printed 'open access' while routing to auth is
+        unrepresentable.
+        """
         for platform in (Platform.BDC_AUTHORIZED, "https://my-picsure.example.com"):
             info = resolve_platform(platform, include_consents=True)
             assert info.include_consents is True
@@ -174,7 +174,7 @@ class TestBackendIsOneValue:
 
 
 class TestContradictoryFlags:
-    """PL-13: consent scoping on an unauthenticated connection is rejected."""
+    """Consent scoping on an unauthenticated connection is rejected."""
 
     def test_custom_url_consents_without_auth_raises(self):
         with pytest.raises(PicSureValidationError, match="include_consents=True"):
@@ -185,9 +185,9 @@ class TestContradictoryFlags:
             )
 
     def test_known_platform_consents_without_auth_raises(self):
-        # BDC_AUTHORIZED's own include_consents=True survives the
-        # requires_auth=False override, so this is the same contradiction
-        # reached without naming include_consents at all.
+        """The platform's own include_consents=True makes this the same
+        contradiction.
+        """
         with pytest.raises(PicSureValidationError, match="include_consents=True"):
             resolve_platform(Platform.BDC_AUTHORIZED, requires_auth=False)
 
@@ -208,7 +208,7 @@ class TestContradictoryFlags:
 
 
 class TestCustomUrlMarker:
-    """PL-08: connect() needs to know the flags were guessed, not recorded."""
+    """connect() needs to know the flags were guessed, not recorded."""
 
     def test_custom_url_is_marked(self):
         assert resolve_platform("https://my-picsure.example.com").is_custom_url is True

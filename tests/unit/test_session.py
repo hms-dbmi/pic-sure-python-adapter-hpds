@@ -777,7 +777,7 @@ class TestSessionRunQueryByID:
 
 
 class TestSessionBackendIsValidated:
-    """PL-13: the backend string is interpolated into every HPDS path."""
+    """The backend string is interpolated into every HPDS path."""
 
     def test_unknown_backend_raises(self):
         from picsure._transport.client import PicSureClient

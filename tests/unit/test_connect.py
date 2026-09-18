@@ -52,17 +52,15 @@ def _make_jwt_claims(**claims: object) -> str:
 def _epoch_in(**delta: float) -> int:
     """An epoch-second value offset from now, so tests never go stale.
 
-    The previous fixed expiry (2026-06-15) silently became a past date,
-    which is the defect PL-04 describes -- a test suite pinned to a
-    calendar date reproduces it.
+    The previous fixed expiry (2026-06-15) silently became a past date.
+    A test suite pinned to a calendar date reproduces the defect the
+    expiry checks exist to catch.
     """
     return int((datetime.now(timezone.utc) + timedelta(**delta)).timestamp())
 
 
 BASE_URL = "https://test.example.com"
 _JWT_EXP = _epoch_in(days=30)
-# The connect banner reads the email from the token when the server sends
-# none, so the default test token carries the email the tests assert on.
 TOKEN = _make_jwt_claims(
     sub="test-user", email="researcher@university.edu", exp=_JWT_EXP
 )
@@ -70,9 +68,6 @@ EXPECTED_EXPIRY = datetime.fromtimestamp(_JWT_EXP, tz=timezone.utc).strftime(
     "%Y-%m-%dT%H:%M:%SZ"
 )
 
-# What PSAMA's /user/me answers with. The real record also carries a
-# `token` field, which the adapter must never surface; it is included
-# here so a test would catch it leaking into the banner.
 USER_RECORD = {
     "uuid": "e23d9260-3324-4528-8c2c-7bd3dcb4aa74",
     "email": "researcher@university.edu",
@@ -216,8 +211,7 @@ class TestConnectValidatesTheConnection:
 
     @respx.mock
     def test_validation_is_not_gated_on_consents(self):
-        # The old connect() sent a request only when include_consents was
-        # on; the default custom-URL path sent nothing at all.
+        """The old connect() sent a request only when include_consents was on."""
         route = _mock_validation()
         connect(platform=BASE_URL, token=TOKEN, include_consents=False)
         assert route.called
@@ -259,17 +253,14 @@ class TestConnectValidatesTheConnection:
 
     @respx.mock
     def test_403_raises_an_auth_error(self):
-        # PSAMA answers 403, not 401, to /user/me with a token it will not
-        # accept, so the refusal has to land in the auth family either way.
+        """PSAMA answers 403, not 401, to a token it will not accept."""
         _mock_validation(status=403, payload={})
         with pytest.raises(PicSureAuthError):
             connect(platform=BASE_URL, token=TOKEN)
 
     @respx.mock
     def test_403_does_not_fail_an_open_connection(self):
-        # PSAMA refuses an unauthenticated /user/me. That refusal is
-        # itself proof the host exists and speaks PIC-SURE, which is all
-        # an anonymous connection can verify.
+        """An unauthenticated 403 still proves the host is PIC-SURE."""
         from picsure._transport.platforms import Platform
 
         _mock_validation(Platform.BDC_DEV_OPEN.url, status=403, payload={})
@@ -337,8 +328,9 @@ class TestConnectValidateOptOut:
 
     @respx.mock
     def test_validate_false_skips_the_local_token_checks(self):
-        # Offline and mocked use passes placeholder tokens; the opt-out
-        # has to cover those too or it is not usable.
+        """Offline and mocked use passes placeholder tokens, so the opt-out covers
+        them.
+        """
         session = connect(platform=BASE_URL, token="placeholder", validate=False)
         assert isinstance(session, Session)
 
@@ -354,11 +346,12 @@ class TestConnectHonoursVerify:
 
     @respx.mock
     def test_verify_false_reaches_the_client_that_validates(self, httpx_client_spy):
+        """One httpx client is built, so validation cannot use a second, default-
+        verifying one.
+        """
         _mock_connect()
         session = connect(platform=BASE_URL, token=TOKEN, verify=False)
 
-        # Exactly one httpx client is built, so the validating request
-        # cannot have gone through a second, default-verifying one.
         assert len(httpx_client_spy) == 1
         assert httpx_client_spy[0]["verify"] is False
         context = session._client._http._transport._pool._ssl_context
@@ -410,23 +403,23 @@ class TestConnectLocalTokenChecks:
 
     @respx.mock
     def test_a_token_without_an_exp_claim_is_accepted(self):
-        # Unreadable expiry is not the same as expired; the server is the
-        # verdict, and it accepted this one.
+        """An unreadable expiry is not an expired one. The server gives the verdict."""
         _mock_connect()
         session = connect(platform=BASE_URL, token=_make_jwt(None))
         assert session.token_expiration == "unknown"
 
     @respx.mock
     def test_claims_are_never_treated_as_authorization(self):
-        # A token whose claims look fine is still refused when the server
-        # refuses it.
+        """A token whose claims look fine is still refused when the server refuses
+        it.
+        """
         _mock_validation(status=401, payload={})
         with pytest.raises(PicSureAuthError):
             connect(platform=BASE_URL, token=TOKEN)
 
 
 class TestConnectTokenExpiry:
-    """PL-04: never print a past expiry date under a success banner."""
+    """Never print a past expiry date under a success banner."""
 
     @respx.mock
     def test_expired_token_raises_naming_the_expiry(self):
@@ -455,9 +448,10 @@ class TestConnectTokenExpiry:
 
     @respx.mock
     def test_token_expiring_within_a_day_warns(self, capsys):
+        """The expiry sits off the hour boundary because the rendered duration is
+        floored.
+        """
         _mock_connect()
-        # Offset off the hour boundary: the duration is floored, so an
-        # exact 6h expiry renders as "5 hours" once a millisecond passes.
         soon = _make_jwt_claims(sub="u", exp=_epoch_in(hours=6, minutes=30))
         connect(platform=BASE_URL, token=soon)
         err = capsys.readouterr().err
@@ -474,11 +468,10 @@ class TestConnectTokenExpiry:
     def test_validate_false_warns_instead_of_printing_a_past_date_silently(
         self, capsys
     ):
+        """The banner still shows the date, but no longer as a silent success."""
         expired = _make_jwt_claims(sub="u", exp=_epoch_in(days=-2))
         connect(platform=BASE_URL, token=expired, validate=False)
         captured = capsys.readouterr()
-        # The banner still shows the date, but it is no longer presented
-        # as success with nothing said about it.
         assert "expired on" in captured.err
         assert "validate=False" in captured.err
 
@@ -513,8 +506,9 @@ class TestConnectValidationTimeout:
 
     @respx.mock
     def test_timeout_argument_does_not_lengthen_the_validation_deadline(self):
-        # The whole point: a mistyped hostname must not sit on the data
-        # deadline, however long the caller set that.
+        """A mistyped hostname must not wait out the data deadline, however long it
+        is.
+        """
         _mock_connect()
         connect(platform=BASE_URL, token=TOKEN, timeout=3600.0)
         timeout = respx.calls[0].request.extensions["timeout"]
@@ -529,9 +523,9 @@ class TestResourceUuidRemoved:
 
     @respx.mock
     def test_third_positional_argument_raises_type_error(self):
-        # resource_uuid used to be the third positional parameter. Now that
-        # it is gone the call fails loudly rather than binding the UUID to
-        # a keyword-only argument.
+        """resource_uuid was the third positional parameter. Its removal fails
+        loudly.
+        """
         with pytest.raises(TypeError):
             connect(BASE_URL, TOKEN, "my-custom-uuid")
 
@@ -552,9 +546,9 @@ class TestConnectValidation:
             connect(platform=BASE_URL, include_consents=True, requires_auth=False)
 
     def test_contradiction_is_caught_before_any_client_is_built(self):
-        # No token is passed, so a validation error is the only correct
-        # outcome; a "requires a token" error would mean the flags were
-        # accepted first.
+        """With no token passed, a 'requires a token' error would mean the flags were
+        accepted first.
+        """
         with pytest.raises(PicSureValidationError) as exc_info:
             connect(platform=BASE_URL, include_consents=True, requires_auth=False)
         assert "requires a token" not in str(exc_info.value)
@@ -609,7 +603,7 @@ class TestConnectConsents:
 
 
 class TestConnectConsentDetection:
-    """PL-08: a custom URL must not silently return unscoped results."""
+    """A custom URL must not silently return unscoped results."""
 
     @respx.mock
     def test_custom_url_detects_consent_scoping(self):
@@ -702,8 +696,9 @@ class TestConnectConsentDetection:
 
     @respx.mock
     def test_detection_only_ever_turns_scoping_on(self):
-        # A deployment that answers with consents cannot turn scoping off
-        # for a platform whose recorded policy says it is on.
+        """A consent answer cannot turn scoping off for a platform whose policy says
+        on.
+        """
         from picsure._transport.platforms import Platform
 
         _mock_validation(Platform.BDC_DEV_AUTHORIZED.url)
@@ -750,8 +745,9 @@ class TestConnectOpenAccess:
 
     @respx.mock
     def test_open_connect_ignores_a_psama_user_record(self):
-        # A deployment that happens to answer /user/me does not turn an
-        # anonymous connection into an identified one.
+        """A deployment that answers /user/me does not make an anonymous connection
+        identified.
+        """
         from picsure._transport.platforms import Platform
 
         _mock_validation(Platform.BDC_DEV_OPEN.url)
@@ -764,8 +760,6 @@ class TestConnectOpenAccess:
 class TestConnectBackendSelection:
     @respx.mock
     def test_bdc_open_uses_open_backend(self):
-        # Open-access (no auth) routes to the /hpds/open backend
-        # (which now also uses the versioned /v3 query lifecycle).
         from picsure._transport.platforms import Platform
 
         _mock_validation(Platform.BDC_DEV_OPEN.url, status=403, payload={})
@@ -816,7 +810,7 @@ class TestConnectBackendSelection:
 
 
 class TestBannerAgreesWithRouting:
-    """PL-13: the words the user reads and the path the queries take."""
+    """The words the user reads and the path the queries take agree."""
 
     @respx.mock
     def test_authorized_banner_never_says_open_access(self, capsys):
@@ -842,9 +836,9 @@ class TestBannerAgreesWithRouting:
 
     @respx.mock
     def test_the_misleading_combination_no_longer_exists(self):
-        # requires_auth=False with include_consents=True is what printed
-        # "open access" while routing to /hpds/auth and returning exact
-        # counts. It is now refused outright.
+        """requires_auth=False with include_consents=True printed 'open access' while
+        routing to /hpds/auth.
+        """
         with pytest.raises(PicSureValidationError):
             connect(
                 platform=BASE_URL,

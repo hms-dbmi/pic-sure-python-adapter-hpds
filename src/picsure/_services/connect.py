@@ -1,3 +1,19 @@
+"""Connect to a PIC-SURE deployment and build a :class:`Session`.
+
+The connect-time credential check is a single ``GET /psama/user/me``.
+That route is not interchangeable with ``/picsure/user/me``: the
+gateway matches access rules against the de-prefixed path, no rule
+covers ``/user/me``, and that route answers 401 even for a valid
+admin token. A 200 from PSAMA carries at least one of ``uuid``,
+``email`` and ``privileges``; a 200 without any of them means
+something other than PIC-SURE answered.
+
+A token whose ``exp`` passed within the last 60 seconds is still
+accepted, so a clock a few seconds fast on either side does not
+reject a good token. A token expiring within one day earns a warning,
+early enough to say so before a notebook session outlives it.
+"""
+
 from __future__ import annotations
 
 import base64
@@ -32,24 +48,13 @@ _ANONYMOUS_EXPIRATION = "N/A"
 
 _LOGGER_NAME = "picsure"
 
-# The one route connect() uses to prove the deployment is reachable and the
-# token is good.  It must be /psama/*, which the gateway sends straight to
-# PSAMA.  /picsure/user/me is NOT interchangeable: the gateway matches access
-# rules against the de-prefixed path, no rule covers "/user/me", and the
-# route answers 401 there even for a valid admin token.
 _VALIDATION_PATH = "/psama/user/me"
 _VALIDATION_OPERATION = "the connect-time credential check"
 
-# Fields PSAMA's own user record carries.  Their absence from a 200 means
-# something other than PIC-SURE answered.
 _PSAMA_USER_FIELDS = ("uuid", "email", "privileges")
 
-# Tolerance for a token that has only just expired, so a clock a few
-# seconds fast on either side does not reject a good token.
 _CLOCK_SKEW = timedelta(seconds=60)
 
-# Expiry closer than this earns a warning: long enough to be worth saying
-# before a notebook session outlives its token.
 _EXPIRY_WARNING_WINDOW = timedelta(days=1)
 
 _NEW_TOKEN_ADVICE = (
@@ -114,7 +119,7 @@ def connect(
             validation request honours this setting, so it is a real
             check against the same trust decision your queries will use.
         timeout: Per-request deadline in seconds for the data operations
-            this session performs — counts, participant downloads, export
+            this session performs: counts, participant downloads, export
             polls. Defaults to ten minutes, because a large dataset can
             legitimately take minutes to assemble server-side. The
             connect-time validation request below is not covered by it:
@@ -216,10 +221,6 @@ def connect(
     )
 
     if info.requires_auth:
-        # The token is the PSAMA-issued PIC-SURE JWT (built from
-        # UserClaims), so the expiry comes straight from its claims —
-        # /psama/user/me returns the user record without an expiry, so
-        # there is nothing to read it from server-side.
         expiry = _token_expiry(secret)
         if validate:
             _reject_unusable_token(secret, expiry)
@@ -232,17 +233,8 @@ def connect(
         expiration = _ANONYMOUS_EXPIRATION
 
     if validate:
-        # One real request, on every platform: it is the only thing that
-        # can tell a working deployment from a hostname that does not
-        # resolve.  On an authorized connection it doubles as the token
-        # check, which is why the token's local checks run first — no
-        # point spending a round trip on a token that cannot work.
         server_email = _validate_connection(client, info)
         if server_email is not None and info.requires_auth:
-            # Prefer the server's own answer over the token's claim: it
-            # is the account the request will actually run as.  An
-            # anonymous connection stays anonymous even if the
-            # deployment volunteers a user record.
             email = server_email
 
     consents = _resolve_consents(
@@ -252,8 +244,6 @@ def connect(
         validate=validate,
     )
 
-    # Both the banner and the HPDS route read info.backend, so the words
-    # the user sees and the path the queries take cannot disagree.
     if info.backend == "auth":
         print(f"You're successfully connected to {display_name} as user {email}!")
         print(f"Your token expires on {expiration}.")
@@ -376,7 +366,7 @@ def _validate_connection(client: PicSureClient, info: PlatformInfo) -> str | Non
     than the session's data timeout, so a host that accepts TCP and
     never answers fails in seconds instead of ten minutes.  The request
     goes through the session's own client, so it honours the caller's
-    ``verify`` setting — validating against a certificate we would not
+    ``verify`` setting. Validating against a certificate we would not
     trust for real work would prove nothing.
 
     What counts as success depends on what there is to verify:
@@ -385,7 +375,7 @@ def _validate_connection(client: PicSureClient, info: PlatformInfo) -> str | Non
       server accepting the token is the verdict the local checks cannot
       give.
     * Without one, any HTTP response proves the deployment is there,
-      which is all an anonymous connection can honestly assert — PSAMA
+      which is all an anonymous connection can honestly assert. PSAMA
       answers ``403`` to an unauthenticated ``/user/me``, and that
       ``403`` is itself proof the host exists and is PIC-SURE.
 
@@ -394,7 +384,7 @@ def _validate_connection(client: PicSureClient, info: PlatformInfo) -> str | Non
         ``None`` when it sent none (or there was no token to verify).
 
     Raises:
-        PicSureError: Translated from the transport failure — a rejected
+        PicSureError: Translated from the transport failure: a rejected
             token, an unverifiable certificate, an unreachable host.
         PicSureConnectionError: If the server answers ``200`` with
             something that is not a PIC-SURE user record.
@@ -402,20 +392,12 @@ def _validate_connection(client: PicSureClient, info: PlatformInfo) -> str | Non
     try:
         payload = client.get_json(_VALIDATION_PATH, timeout=VALIDATION_TIMEOUT_SECONDS)
     except TransportConnectionError as exc:
-        # No HTTP response at all: unresolved host, refused connection,
-        # rejected certificate, timeout.  Fatal on every platform, and
-        # the case the old zero-request connect() could not detect.
         raise translate_transport_error(exc, operation=_VALIDATION_OPERATION) from exc
     except TransportError as exc:
-        # A status came back, so the deployment is reachable.  That is
-        # the whole question for an anonymous connection; for an
-        # authorized one the status is a refusal worth reporting.
         if not info.requires_auth:
             return None
         raise translate_transport_error(exc, operation=_VALIDATION_OPERATION) from exc
     except ValueError as exc:
-        # 200 with a body that is not JSON at all — a captive portal or
-        # a plain web server sitting on this hostname.
         raise PicSureConnectionError(_not_picsure_message(info.url)) from exc
 
     if not isinstance(payload, dict) or not any(
@@ -461,21 +443,17 @@ def _resolve_consents(
     only ever turns scoping **on**, only for a custom URL, and only when
     the caller expressed no preference.
 
-    Where detection cannot answer — the route is absent, the record is
-    empty, or validation was skipped — the capability is left off and
-    said out loud, naming the argument that turns it on.
+    When detection cannot answer, because the route is absent, the
+    record is empty, or validation was skipped, the capability is left
+    off and the warning names the argument that turns it on.
     """
     if info.include_consents:
         return fetch_consents(client)
 
     if include_consents_requested is not None or not info.is_custom_url:
-        # An explicit False, or a known Platform whose flag is a recorded
-        # fact rather than a guess.  Nothing to detect.
         return []
 
     if not info.requires_auth:
-        # The caller declared this deployment open, so there is no
-        # consent policy to detect and nothing to warn about.
         return []
 
     if not validate:
@@ -485,9 +463,6 @@ def _resolve_consents(
     try:
         consents = fetch_consents(client)
     except PicSureError:
-        # The consent route is absent or would not answer for this
-        # account.  Not fatal: the credential check already passed, so
-        # the session works — it just cannot be consent-scoped.
         consents = []
 
     if consents:
@@ -560,8 +535,8 @@ def _format_expiry(expiry: datetime | None) -> str:
 def _jwt_segment_count(secret: SecretToken) -> tuple[int, bool]:
     """Count a token's dot-separated segments and whether all are non-empty.
 
-    Split out from :func:`_reject_unusable_token` so the segment list —
-    which is the token itself, in three pieces — lives only in this
+    Split out from :func:`_reject_unusable_token` so the segment list,
+    which is the token itself in three pieces, lives only in this
     frame.  Nothing here can raise, so this frame never reaches a
     rendered traceback, and only the two scalars it returns do.
 
@@ -576,9 +551,9 @@ def _token_expiry(token: str | SecretToken) -> datetime | None:
     """Read the ``exp`` claim from a JWT as an aware UTC datetime.
 
     Returns ``None`` when the token is not a parseable JWT, carries no
-    ``exp``, or carries one that is not a number — the same "we cannot
-    tell" answer in every case, which callers must not read as "not
-    expired".
+    ``exp``, carries one that is not a number, or carries one outside
+    the range a datetime can represent. Each case is the same "we
+    cannot tell" answer, which callers must not read as "not expired".
     """
     payload = _decode_jwt_payload(token)
     if payload is None:
@@ -591,22 +566,20 @@ def _token_expiry(token: str | SecretToken) -> datetime | None:
     try:
         return datetime.fromtimestamp(exp, tz=timezone.utc)
     except (OverflowError, OSError, ValueError):
-        # An exp far outside the representable range: unreadable, not
-        # expired.
         return None
 
 
 def _decode_jwt_payload(token: str | SecretToken) -> dict[str, object] | None:
     """Decode a JWT's payload segment without verifying the signature.
 
-    The signature is intentionally not verified: the server enforces
+    The signature is intentionally not verified. The server enforces
     token validity; we only read display fields (email, expiry) from
     the payload.  Returns the payload dict, or ``None`` if the token is
     not a parseable JWT with a JSON-object payload.
 
     The base64 work is delegated rather than inlined so that the encoded
-    payload segment — a long contiguous run of the token, and identity
-    data in its own right — is never bound in this frame.
+    payload segment, a long contiguous run of the token and identity
+    data in its own right, is never bound in this frame.
     """
     secret = as_secret_token(token)
     del token

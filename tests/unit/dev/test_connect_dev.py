@@ -34,9 +34,9 @@ TOKEN = _make_token()
 
 
 def _mock_platform_endpoints():
-    # The two requests `connect()` makes for a custom URL with the
-    # consent policy unstated: the credential check, then the
-    # consent-scoping probe.
+    """Mock the credential check and the consent probe connect() sends for a custom
+    URL.
+    """
     respx.get(f"{CUSTOM_URL}/psama/user/me").mock(
         return_value=httpx.Response(
             200,
