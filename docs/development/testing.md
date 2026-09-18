@@ -146,13 +146,12 @@ it carries a working value and a comment for every variable above.
 
 ### The token fixture is opaque
 
-`test_token` does not return a `str`. It returns an `OpaqueToken` whose
-`__repr__`, `__str__` and `__format__` all render
-`<PICSURE_TEST_TOKEN redacted>`. Unwrap it at the point the token is
-handed to the library:
+`test_token` does not return a `str`. It returns the library's own
+`SecretToken`, whose `__repr__`, `__str__` and `__format__` all render a
+fixed placeholder, and `picsure.connect()` accepts it as is:
 
 ```python
-session = picsure.connect(platform=test_platform, token=test_token.reveal())
+session = picsure.connect(platform=test_platform, token=test_token)
 ```
 
 This exists because pytest's default `--tb=long` prints the arguments of
@@ -162,17 +161,18 @@ any failure in any test that took it.
 
 Two rules follow:
 
-- **Call `.reveal()` inline, in the call that consumes the token.** Binding
-  it to a local (`raw = test_token.reveal()`) puts the raw string back into
-  a frame that `--showlocals` will dump.
+- **Do not unwrap it unless a raw string is unavoidable.** If a test must,
+  call `test_token.reveal()` inline in the call that consumes it. Binding
+  the result to a local (`raw = test_token.reveal()`) puts the raw string
+  back into a frame that `--showlocals` will dump.
 - **Do not interpolate `test_token` into a message.** It renders as the
   placeholder, so the message says nothing useful; assert on what the
   library did instead.
 
 As a backstop, `conftest.py` scrubs any run of token characters out of
 integration-test failure output and captured stdout/stderr/log sections,
-which covers the frames the wrapper cannot reach — a library function
-holding the unwrapped token as a local, for instance. The scrubber works
+which covers the frames the wrapper cannot reach, such as a library
+function holding the unwrapped token as a local. The scrubber works
 on captured output, so it cannot protect a run with `-s`, where output
 bypasses capture and goes straight to the terminal.
 

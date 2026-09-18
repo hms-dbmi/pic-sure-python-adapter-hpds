@@ -10,6 +10,7 @@ import respx
 from picsure._models.session import Session
 from picsure._services.connect import _token_expiration_from_jwt, connect
 from picsure._services.consents import _CONSENTS_KEY, _CONSENTS_PATH
+from picsure._transport.secret import SecretToken
 from picsure.errors import (
     PicSureValidationError,
 )
@@ -358,3 +359,30 @@ class TestConnectCorrelationHeaders:
         first = connect(platform=BASE_URL, token=TOKEN)
         second = connect(platform=BASE_URL, token=TOKEN)
         assert first.session_id != second.session_id
+
+
+class TestConnectAcceptsSecretToken:
+    @respx.mock
+    def test_a_secret_token_connects_and_is_sent_as_the_bearer(self):
+        route = respx.get(f"{BASE_URL}{_CONSENTS_PATH}").mock(
+            return_value=httpx.Response(200, json={"consents": {}})
+        )
+        session = connect(
+            platform=BASE_URL, token=SecretToken(TOKEN), include_consents=True
+        )
+        assert session._user_email == "researcher@university.edu"
+        assert route.calls[0].request.headers["Authorization"] == f"Bearer {TOKEN}"
+
+    @respx.mock
+    def test_a_secret_token_reads_the_same_claims_as_a_plain_str(self, capsys):
+        connect(platform=BASE_URL, token=SecretToken(TOKEN))
+        wrapped_banner = capsys.readouterr().out
+        connect(platform=BASE_URL, token=TOKEN)
+        plain_banner = capsys.readouterr().out
+        assert wrapped_banner == plain_banner
+        assert "researcher@university.edu" in wrapped_banner
+        assert "2026-06-15" in wrapped_banner
+
+    def test_a_blank_secret_token_on_requires_auth_raises(self):
+        with pytest.raises(PicSureValidationError, match="requires a token"):
+            connect(platform=BASE_URL, token=SecretToken("   "))

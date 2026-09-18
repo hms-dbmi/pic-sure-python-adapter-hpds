@@ -7,6 +7,7 @@ import pytest
 from dotenv import load_dotenv
 
 from picsure._transport.platforms import Platform
+from picsure._transport.secret import SecretToken
 
 # Load a .env file at the repo root if present, so developers can keep
 # their integration-test token there instead of exporting it. Shell-
@@ -19,56 +20,8 @@ _INTEGRATION_DIR = Path(__file__).resolve().parent
 _TOKEN_PLACEHOLDER = "<PICSURE_TEST_TOKEN redacted>"
 
 
-class OpaqueToken:
-    """A bearer token that refuses to render itself.
-
-    pytest reports a failing test by ``saferepr``-ing every fixture value into
-    the failure header, so a fixture returning the token as a plain ``str``
-    prints token material on any failure in any test that takes it. Wrapping
-    it keeps the value out of failure headers, assertion diffs,
-    ``--showlocals`` dumps and f-strings.
-
-    The wrapper is deliberately not a ``str`` subclass: a subclass would keep
-    working everywhere a token string is expected, which is exactly what makes
-    an accidental interpolation silent. Call :meth:`reveal` at the point the
-    token is handed to the library, and nowhere else.
-    """
-
-    __slots__ = ("_value",)
-
-    def __init__(self, value: str) -> None:
-        self._value = value
-
-    def reveal(self) -> str:
-        """Return the raw token string.
-
-        Call this only where the token is handed to the library, so the value
-        never lives in a test-local variable that a traceback could dump.
-        """
-        return self._value
-
-    def __repr__(self) -> str:
-        return _TOKEN_PLACEHOLDER
-
-    def __str__(self) -> str:
-        return _TOKEN_PLACEHOLDER
-
-    def __format__(self, format_spec: str) -> str:
-        return _TOKEN_PLACEHOLDER
-
-    def __bool__(self) -> bool:
-        return bool(self._value)
-
-    def __getattr__(self, name: str) -> object:
-        raise AttributeError(
-            f"{type(self).__name__} has no attribute {name!r}: it is not a str. "
-            "Call .reveal() where the token is passed to the library, e.g. "
-            "picsure.connect(platform=test_platform, token=test_token.reveal())."
-        )
-
-
 PICSURE_INTEGRATION = os.environ.get("PICSURE_INTEGRATION", "0") == "1"
-PICSURE_TEST_TOKEN = OpaqueToken(os.environ.get("PICSURE_TEST_TOKEN", ""))
+PICSURE_TEST_TOKEN = SecretToken(os.environ.get("PICSURE_TEST_TOKEN", ""))
 PICSURE_TEST_PLATFORM = os.environ.get("PICSURE_TEST_PLATFORM", "")
 PICSURE_TEST_CONCEPT_PATH = os.environ.get("PICSURE_TEST_CONCEPT_PATH", "")
 PICSURE_TEST_SEARCH_TERM = os.environ.get("PICSURE_TEST_SEARCH_TERM", "age")
@@ -126,10 +79,10 @@ _TOKEN_GRAMS = _token_grams()
 def scrub_token(text: str) -> str:
     """Replace any run of token characters in ``text`` with the placeholder.
 
-    :class:`OpaqueToken` keeps the token out of the values the harness owns,
+    :class:`SecretToken` keeps the token out of the values the harness owns,
     but pytest's default ``--tb=long`` prints the arguments of every frame in a
-    traceback, so a failure inside the library still renders the raw token that
-    :meth:`OpaqueToken.reveal` handed over. This catches whatever slips
+    traceback, so a failure inside the library can still render the raw token
+    where :meth:`SecretToken.reveal` handed it over. This catches whatever slips
     through, including a truncated ``saferepr`` fragment, which is why it
     matches on runs rather than the whole token.
     """
@@ -161,7 +114,7 @@ def scrub_token(text: str) -> str:
 def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo):
     """Scrub token material out of integration-test failure output.
 
-    Defence in depth behind :class:`OpaqueToken`: it covers the paths the
+    Defence in depth behind :class:`SecretToken`: it covers the paths the
     fixture type cannot reach, such as a library frame's arguments, a
     ``--showlocals`` dump, or a captured log line. A scrubbed ``longrepr``
     loses pytest's structured formatting, so it is only rewritten when a leak
@@ -344,11 +297,13 @@ def _skip_reason(report: pytest.TestReport) -> str:
 
 
 @pytest.fixture()
-def test_token() -> OpaqueToken:
+def test_token() -> SecretToken:
     """Return the configured token wrapped so it cannot render itself.
 
-    Unwrap it at the point of use with ``test_token.reveal()``; the wrapper
-    keeps token material out of pytest failure headers and tracebacks.
+    Pass it straight to ``picsure.connect(token=test_token)``, which accepts
+    the wrapper. It keeps token material out of pytest failure headers and
+    tracebacks; call ``reveal()`` only where a raw string is unavoidable,
+    and inline in the call that consumes it.
     """
     return PICSURE_TEST_TOKEN
 

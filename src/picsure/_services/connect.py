@@ -13,6 +13,7 @@ from picsure._models.session import Session
 from picsure._services.consents import fetch_consents
 from picsure._transport.client import PicSureClient
 from picsure._transport.platforms import Platform, resolve_platform
+from picsure._transport.secret import SecretToken, as_secret_token
 from picsure.errors import (
     PicSureValidationError,
 )
@@ -25,7 +26,7 @@ _LOGGER_NAME = "picsure"
 
 def connect(
     platform: Platform | str,
-    token: str = "",
+    token: str | SecretToken = "",
     resource_uuid: str | None = None,
     *,
     include_consents: bool | None = None,
@@ -41,9 +42,13 @@ def connect(
         platform: A :class:`Platform` enum member (e.g.
             ``Platform.BDC_AUTHORIZED``) or a full URL
             (e.g. ``"https://my-picsure.example.com"``).
-        token: Your PIC-SURE API token.  Leave empty for open-access
-            platforms (e.g. ``Platform.BDC_OPEN``) that don't require
-            authentication.
+        token: Your PIC-SURE API token, as a plain ``str`` or an
+            already-wrapped :class:`SecretToken`.  Leave empty for
+            open-access platforms (e.g. ``Platform.BDC_OPEN``) that
+            don't require authentication.  The value is wrapped in a
+            :class:`SecretToken` as the first step, and the plain
+            binding is deleted, so a traceback that renders this frame
+            shows a placeholder rather than the token.
         resource_uuid: Deprecated and no longer used for routing. The
             gateway now selects the HPDS backend by URL path
             (``/hpds/auth`` vs ``/hpds/open``), derived from the
@@ -103,6 +108,9 @@ def connect(
         >>> # Open-access: no token needed
         >>> session = picsure.connect(platform=picsure.Platform.BDC_OPEN)
     """
+    secret = as_secret_token(token)
+    del token
+
     info = resolve_platform(
         platform,
         include_consents=include_consents,
@@ -116,7 +124,7 @@ def connect(
     # the token, the "request-source: Open" header would be sent, and
     # the backend would later reject with a confusing "token invalid
     # or expired" message.
-    if info.requires_auth and not token.strip():
+    if info.requires_auth and not secret:
         raise PicSureValidationError(
             f"Platform {display_name} requires a token but none was provided. "
             "Pass token=<your PIC-SURE API token> to picsure.connect(), or "
@@ -133,7 +141,7 @@ def connect(
 
     client = PicSureClient(
         base_url=info.url,
-        token=token,
+        token=secret,
         dev_config=dev_config,
         session_id=session_id,
         client_type=client_type,
@@ -144,8 +152,8 @@ def connect(
         # The token is the PSAMA-issued PIC-SURE JWT (built from
         # UserClaims), so both the display email and the expiry come
         # straight from its claims — no round trip to /psama/user/me.
-        email = _email_from_jwt(token)
-        expiration = _token_expiration_from_jwt(token)
+        email = _email_from_jwt(secret.reveal())
+        expiration = _token_expiration_from_jwt(secret.reveal())
     else:
         email = _ANONYMOUS_EMAIL
         expiration = _ANONYMOUS_EXPIRATION
