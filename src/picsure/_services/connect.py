@@ -41,6 +41,7 @@ from picsure.errors import (
     PicSureAuthenticationError,
     PicSureConnectionError,
     PicSureError,
+    PicSureQueryError,
     PicSureValidationError,
 )
 
@@ -476,8 +477,9 @@ def _validate_connection(client: PicSureClient, info: PlatformInfo) -> str | Non
         PicSureError: Translated from the transport failure: a rejected
             token, an unverifiable certificate, an unreachable host.
         PicSureConnectionError: If the server answers ``200`` with
-            something that is not a PIC-SURE user record, or answers
-            ``404`` to a request that carried a token.
+            something that is not a PIC-SURE user record, including a
+            body that is not JSON, or answers ``404`` to a request that
+            carried a token.
     """
     try:
         payload = client.get_json(
@@ -495,7 +497,7 @@ def _validate_connection(client: PicSureClient, info: PlatformInfo) -> str | Non
         if not info.requires_auth:
             return None
         raise translate_transport_error(exc, operation=_VALIDATION_OPERATION) from exc
-    except ValueError as exc:
+    except PicSureQueryError as exc:
         raise PicSureConnectionError(
             _not_picsure_message(info.url, answer=_NOT_A_USER_RECORD)
         ) from exc

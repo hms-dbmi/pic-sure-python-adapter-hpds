@@ -34,8 +34,9 @@ def fetch_consents(client: PicSureClient) -> list[str]:
         PicSureAuthenticationError: If the token is rejected (HTTP 401).
         PicSureAuthorizationError: If the account may not read its own
             consents (HTTP 403).
-        PicSureConnectionError: If PSAMA could not be reached or failed,
-            or answered with a body that is not JSON.
+        PicSureConnectionError: If PSAMA could not be reached or failed.
+        PicSureQueryError: If the body is not JSON or not a JSON object,
+            raised by the shared response decoder.
     """
     try:
         payload = client.get_json(_CONSENTS_PATH)
