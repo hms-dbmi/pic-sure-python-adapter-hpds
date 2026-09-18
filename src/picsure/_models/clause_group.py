@@ -47,6 +47,12 @@ class ClauseGroup:
     accident, is covered without this module importing ``query``, which
     imports it back.
 
+    **Emptiness.** A group with no children is refused here, not only in
+    ``buildClauseGroup``. An empty group serializes to
+    ``phenotypicClauses: []``, which is not a payload the query service
+    accepts, and the failure would surface as a server rejection of a
+    whole query rather than at the line that built the group.
+
     **Children.** Every element is checked as well, because only a
     :class:`Clause` and a :class:`ClauseGroup` carry the
     ``to_query_json`` the group calls. An unchecked child survives
@@ -87,6 +93,13 @@ class ClauseGroup:
                     f"{type(child).__name__}, not a Clause or ClauseGroup. "
                     f"{_replacement_advice(child)}"
                 )
+        if not self.clauses:
+            raise PicSureValidationError(
+                "ClauseGroup must contain at least one Clause or ClauseGroup. "
+                "An empty group serializes to an empty 'phenotypicClauses' "
+                "list, which the query service does not accept. Pass the "
+                "clauses to combine, or leave the group out of the query."
+            )
 
     def concept_paths(self) -> list[str]:
         """All concept paths referenced anywhere in this group, depth-first.
