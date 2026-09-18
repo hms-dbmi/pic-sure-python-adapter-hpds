@@ -16,11 +16,11 @@ from picsure._services.connect import (
     connect,
 )
 from picsure._services.consents import _CONSENTS_KEY, _CONSENTS_PATH
-from picsure._transport.secret import SecretToken
 from picsure._transport.client import (
     DATA_TIMEOUT_SECONDS,
     VALIDATION_TIMEOUT_SECONDS,
 )
+from picsure._transport.secret import SecretToken
 from picsure.errors import (
     PicSureError,
     PicSureAuthenticationError,
@@ -992,6 +992,7 @@ class TestConnectCorrelationHeaders:
 class TestConnectAcceptsSecretToken:
     @respx.mock
     def test_a_secret_token_connects_and_is_sent_as_the_bearer(self):
+        _mock_validation()
         route = respx.get(f"{BASE_URL}{_CONSENTS_PATH}").mock(
             return_value=httpx.Response(200, json={"consents": {}})
         )
@@ -1003,13 +1004,14 @@ class TestConnectAcceptsSecretToken:
 
     @respx.mock
     def test_a_secret_token_reads_the_same_claims_as_a_plain_str(self, capsys):
+        _mock_connect(payload={"uuid": "u", "privileges": []})
         connect(platform=BASE_URL, token=SecretToken(TOKEN))
         wrapped_banner = capsys.readouterr().out
         connect(platform=BASE_URL, token=TOKEN)
         plain_banner = capsys.readouterr().out
         assert wrapped_banner == plain_banner
         assert "researcher@university.edu" in wrapped_banner
-        assert "2026-06-15" in wrapped_banner
+        assert EXPECTED_EXPIRY in wrapped_banner
 
     def test_a_blank_secret_token_on_requires_auth_raises(self):
         with pytest.raises(PicSureValidationError, match="requires a token"):
