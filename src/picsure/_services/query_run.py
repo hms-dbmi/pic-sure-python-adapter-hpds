@@ -308,14 +308,47 @@ def _parse_count_string(s: str) -> CountResult:
     )
 
 
+def _decode_body(raw: bytes, description: str) -> str:
+    """Decode a response body as UTF-8 inside the public error hierarchy.
+
+    ``bytes.decode`` raises :class:`UnicodeDecodeError`, which is a
+    ``ValueError`` and so escapes an ``except PicSureError`` a caller
+    wrapped the query in. Every parser decodes through here instead, so an
+    undecodable body reads the same whichever result type asked for it.
+
+    Args:
+        raw: The response body.
+        description: What the body was expected to be, used as the
+            subject of the error message, e.g. ``"a malformed VCF
+            excerpt"``.
+
+    Returns:
+        The decoded text.
+
+    Raises:
+        PicSureQueryError: If the body is not valid UTF-8. The message
+            quotes the leading bytes.
+    """
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise PicSureQueryError(
+            f"Server returned {description}: {raw[:_PREVIEW_BYTES]!r}"
+        ) from exc
+
+
 def _parse_count(raw: bytes, *, request: _RequestSummary | None = None) -> CountResult:
     """Decode and parse a bytes count response.
 
     Args:
         raw: The response body.
         request: What the request carried, named in the empty-body message.
+
+    Raises:
+        PicSureQueryError: If the body is not valid UTF-8, is empty, or is
+            not a count.
     """
-    text = raw.decode("utf-8")
+    text = _decode_body(raw, "a malformed count response")
     if not text.strip():
         raise PicSureQueryError(_empty_count_message(request))
     return _parse_count_string(text)
@@ -469,7 +502,7 @@ def _parse_cross_count(raw: bytes) -> dict[str, CountResult]:
     Malformed JSON, non-object top-level values, malformed count values,
     and negative counts all raise :class:`PicSureQueryError`.
     """
-    text = raw.decode("utf-8")
+    text = _decode_body(raw, "a malformed cross-count response")
     try:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
@@ -556,7 +589,7 @@ def _parse_variant_count(
             disallowed, says no variant filters were supplied, or carries no
             usable count.
     """
-    text = raw.decode("utf-8").strip()
+    text = _decode_body(raw, "a malformed variant-count response").strip()
     if not text:
         raise PicSureQueryError(_empty_variant_count_message(request))
     if _QUERY_TYPE_NOT_ALLOWED in text:
@@ -649,7 +682,7 @@ def _parse_variant_list(raw: bytes) -> list[str]:
     would shred each spec into its fields. Within a spec the commas have no
     trailing space, so ``", "`` only occurs between specs.
     """
-    text = raw.decode("utf-8").strip()
+    text = _decode_body(raw, "a malformed variant-list response").strip()
     if not text:
         raise PicSureQueryError(_VARIANT_RESULT_UNSUPPORTED)
     if _QUERY_TYPE_NOT_ALLOWED in text:
@@ -677,12 +710,7 @@ def _parse_vcf_excerpt(raw: bytes) -> pd.DataFrame:
     server-driven (info columns vary by deployment), so no fixed schema is
     assumed.
     """
-    try:
-        text = raw.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise PicSureQueryError(
-            f"Server returned a malformed VCF excerpt: {raw[:200]!r}"
-        ) from exc
+    text = _decode_body(raw, "a malformed VCF excerpt")
     stripped = text.strip()
     if not stripped:
         # A served deployment signals "empty" with the "No Variants Found"
