@@ -20,6 +20,8 @@ from __future__ import annotations
 
 from typing import NoReturn
 
+from picsure.errors import PicSureValidationError
+
 _PLACEHOLDER = "<picsure secret token>"
 
 
@@ -47,12 +49,19 @@ class SecretToken:
             value: The token.  Accepts a ``SecretToken``, so wrapping is
                 idempotent and a call site can normalise without first
                 checking what it was handed.
+
+        Raises:
+            PicSureValidationError: If ``value`` is neither a ``str`` nor
+                a ``SecretToken``.  The message names the type that
+                arrived and never the value, so a token that was passed
+                in the wrong wrapper is not echoed while reporting it.
         """
-        object.__setattr__(
-            self,
-            "_value",
-            value.reveal() if isinstance(value, SecretToken) else value.strip(),
-        )
+        if isinstance(value, SecretToken):
+            object.__setattr__(self, "_value", value.reveal())
+            return
+        if not isinstance(value, str):
+            raise PicSureValidationError(_wrong_type_message(value))
+        object.__setattr__(self, "_value", value.strip())
 
     def reveal(self) -> str:
         """Return the token itself, stripped and ready for the wire.
@@ -139,6 +148,38 @@ class SecretToken:
             "to the pickle stream. Pass the token in from configuration at "
             "the point of use instead."
         )
+
+
+def _wrong_type_message(value: object) -> str:
+    """Say what a token must be, naming the type that arrived and not the value.
+
+    Args:
+        value: Whatever was passed where a token belongs.
+
+    Returns:
+        One message naming the offending type, plus the one-line fix for
+        the two types that have one: ``bytes``, which only needs
+        decoding, and ``None``, which is what an unset environment
+        variable reads as.
+    """
+    arrived = type(value).__name__
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        fix = (
+            " Decode it first, as in SecretToken(raw.decode()); the token "
+            "travels as text."
+        )
+    elif value is None:
+        fix = (
+            " A None usually means the environment variable holding the token "
+            "is not set."
+        )
+    else:
+        fix = ""
+    return (
+        f"A PIC-SURE token must be a str or a SecretToken, not a {arrived}. "
+        f"The token is the string copied from the PIC-SURE user interface."
+        f"{fix}"
+    )
 
 
 def as_secret_token(value: str | SecretToken) -> SecretToken:

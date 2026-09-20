@@ -4,6 +4,7 @@ import pytest
 
 from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
+from picsure._models.query import Query
 from picsure.errors import PicSureValidationError
 
 
@@ -242,3 +243,118 @@ class TestClauseGroupInputTypes:
 
         with pytest.raises(PicSureValidationError, match="bare ClauseGroup"):
             ClauseGroup(clauses=inner, operator=GroupOperator.AND)
+
+    def test_a_string_is_refused_rather_than_split_into_characters(self):
+        with pytest.raises(PicSureValidationError, match="not a string"):
+            ClauseGroup(clauses="abc", operator=GroupOperator.AND)
+
+    def test_a_query_container_is_refused_inside_the_error_hierarchy(self):
+        """A Query is not iterable, so tuple() alone raised a raw TypeError."""
+        query = Query(phenotypicFilter=_sex_clause())
+
+        with pytest.raises(PicSureValidationError) as exc_info:
+            ClauseGroup(clauses=query, operator=GroupOperator.AND)
+
+        message = str(exc_info.value)
+        assert "Query" in message
+        assert "cannot be iterated" in message
+        assert "phenotypicFilter" in message
+
+    def test_a_non_iterable_container_is_refused_naming_its_type(self):
+        with pytest.raises(PicSureValidationError) as exc_info:
+            ClauseGroup(clauses=42, operator=GroupOperator.AND)
+
+        message = str(exc_info.value)
+        assert "int" in message
+        assert "cannot be iterated" in message
+        assert "buildClause()" in message
+
+    def test_a_list_of_clauses_still_builds(self):
+        group = ClauseGroup(
+            clauses=[_sex_clause(), _age_clause()], operator=GroupOperator.AND
+        )
+
+        assert group.clauses == (_sex_clause(), _age_clause())
+
+    def test_a_tuple_of_clauses_still_builds(self):
+        group = ClauseGroup(
+            clauses=(_sex_clause(), _age_clause()), operator=GroupOperator.OR
+        )
+
+        assert group.clauses == (_sex_clause(), _age_clause())
+
+
+class TestClauseGroupChildTypes:
+    """Only a Clause or a ClauseGroup carries the group's wire contract."""
+
+    def test_a_query_child_is_refused_with_the_composable_part_named(self):
+        query = Query(phenotypicFilter=_sex_clause())
+
+        with pytest.raises(PicSureValidationError) as exc_info:
+            ClauseGroup(clauses=[query, _age_clause()], operator=GroupOperator.AND)
+
+        message = str(exc_info.value)
+        assert "index 0" in message
+        assert "Query" in message
+        assert "phenotypicFilter" in message
+
+    def test_a_string_child_is_refused_naming_its_position(self):
+        with pytest.raises(PicSureValidationError) as exc_info:
+            ClauseGroup(clauses=[_sex_clause(), "\\x\\"], operator=GroupOperator.AND)
+
+        message = str(exc_info.value)
+        assert "index 1" in message
+        assert "str" in message
+        assert "buildClause()" in message
+
+    def test_an_arbitrary_object_child_is_refused(self):
+        with pytest.raises(PicSureValidationError, match="not a Clause or ClauseGroup"):
+            ClauseGroup(clauses=[object()], operator=GroupOperator.AND)
+
+    def test_a_mix_of_clauses_and_nested_groups_still_builds(self):
+        inner = ClauseGroup(clauses=[_age_clause()], operator=GroupOperator.OR)
+
+        group = ClauseGroup(clauses=[_sex_clause(), inner], operator=GroupOperator.AND)
+
+        assert group.clauses == (_sex_clause(), inner)
+        assert group.to_query_json()["operator"] == "AND"
+
+
+class TestClauseGroupIsNeverEmpty:
+    """ClauseGroup is public, so direct construction is a supported route.
+
+    An empty group used to survive it and serialize to
+    ``phenotypicClauses: []``, a payload the query service does not
+    accept, while ``buildClauseGroup`` refused the same thing.
+    """
+
+    @pytest.mark.parametrize("empty", [(), [], iter(())], ids=["tuple", "list", "iter"])
+    def test_an_empty_group_is_refused(self, empty):
+        with pytest.raises(PicSureValidationError, match="at least one Clause"):
+            ClauseGroup(clauses=empty, operator=GroupOperator.AND)
+
+    @pytest.mark.parametrize("operator", list(GroupOperator))
+    def test_the_operator_does_not_change_that(self, operator):
+        with pytest.raises(PicSureValidationError, match="at least one Clause"):
+            ClauseGroup(clauses=(), operator=operator)
+
+    def test_the_message_names_the_wire_shape_it_would_have_produced(self):
+        with pytest.raises(PicSureValidationError) as exc_info:
+            ClauseGroup(clauses=(), operator=GroupOperator.AND)
+
+        assert "phenotypicClauses" in str(exc_info.value)
+
+    def test_the_builder_keeps_its_own_message(self):
+        from picsure._services.query_build import buildClauseGroup
+
+        with pytest.raises(PicSureValidationError) as exc_info:
+            buildClauseGroup([])
+
+        assert str(exc_info.value) == (
+            "A clause group must contain at least one clause."
+        )
+
+    def test_one_child_is_still_enough(self):
+        group = ClauseGroup(clauses=[_sex_clause()], operator=GroupOperator.AND)
+
+        assert group.clauses == (_sex_clause(),)

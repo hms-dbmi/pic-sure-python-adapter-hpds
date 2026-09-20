@@ -5,6 +5,8 @@ researcher reads when a call fails, so they are pinned exactly rather
 than matched loosely.
 """
 
+import traceback
+
 import pytest
 
 from picsure._services._errors import (
@@ -390,6 +392,133 @@ class TestNoTokenLeakage:
             )
         )
         assert "The server said: Query name must be ASCII." in message
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            TransportAuthenticationError(401, f"Token rejected: Bearer {TOKEN}"),
+            TransportValidationError(400, f"bad request {TOKEN}"),
+            TransportNotFoundError(404, f"no route for {TOKEN}"),
+            TransportRateLimitError(429, f"slow down {TOKEN}", retry_after=5),
+            TransportServerError(500, f"boom {TOKEN}"),
+            TransportConsentDeniedError(
+                403, f'{{"m":"{TOKEN}"}}', "consent_denied", f"denied for {TOKEN}"
+            ),
+            TransportConsentLookupError(
+                502, f'{{"m":"{TOKEN}"}}', "consent_lookup_failed", f"failed {TOKEN}"
+            ),
+        ],
+    )
+    def test_the_transport_error_itself_carries_no_token(self, exc):
+        assert self.TOKEN not in str(exc)
+        assert self.TOKEN not in exc.body
+        assert "<redacted token>" in exc.body
+
+    def test_a_bearer_header_fragment_leaves_exactly_one_placeholder(self):
+        """The bearer pattern runs first, so it cannot eat a placeholder.
+
+        With the JWT pattern first, "Bearer <jwt>" redacted to
+        "<redacted token> token>": the bearer pattern's \\S+ swallowed the
+        leading half of the placeholder the JWT pattern had just left.
+        """
+        exc = TransportAuthenticationError(401, f"Token rejected: Bearer {self.TOKEN}")
+
+        assert exc.body == "Token rejected: <redacted token>"
+        assert exc.body.count("<redacted token>") == 1
+        assert "token>" not in exc.body.replace("<redacted token>", "")
+
+    def test_a_compact_json_body_keeps_everything_after_the_credential(self):
+        """A greedy match erases the rest of a compact JSON error body.
+
+        Spring's default error JSON carries no space after its commas, so
+        a run of non-space starting at the credential reaches the end of
+        the body and takes the status and the path with it.
+        """
+        body = (
+            f'{{"message":"Invalid token: Bearer {self.TOKEN}",'
+            '"status":401,"path":"/picsure/hpds/auth/v3/query/sync"}'
+        )
+
+        exc = TransportAuthenticationError(401, body)
+
+        assert self.TOKEN not in exc.body
+        assert "<redacted token>" in exc.body
+        assert '"status":401' in exc.body
+        assert '"path":"/picsure/hpds/auth/v3/query/sync"' in exc.body
+        assert exc.body.endswith("}")
+
+    def test_the_english_word_bearer_is_left_alone(self):
+        """The word after "bearer" is long enough to clear the length bound.
+
+        The earlier version of this test used "of", a two-character
+        word, so it passed on the length bound alone and never reached
+        the question it was named for.
+        """
+        text = "The bearer authentication scheme failed"
+
+        exc = TransportAuthenticationError(403, text)
+
+        assert exc.body == text
+
+    def test_a_short_word_after_bearer_is_left_alone(self):
+        text = "The bearer of this request is not authorized"
+
+        exc = TransportAuthenticationError(403, text)
+
+        assert exc.body == text
+
+    def test_a_long_all_letter_bearer_value_is_left_alone(self):
+        """Only a run carrying a non-letter is credential-shaped.
+
+        Twenty letters clear the length bound, so the non-letter
+        requirement is the only thing deciding this case.
+        """
+        text = "Bearer abcdefghijklmnopqrst rejected"
+
+        exc = TransportAuthenticationError(401, text)
+
+        assert exc.body == text
+
+    def test_two_credentials_in_one_body_are_both_redacted(self):
+        exc = TransportAuthenticationError(
+            401, f"first Bearer {self.TOKEN} then {self.TOKEN} end"
+        )
+
+        assert exc.body == "first <redacted token> then <redacted token> end"
+
+    def test_a_bare_jwt_is_still_redacted(self):
+        exc = TransportAuthenticationError(401, f"Token rejected: {self.TOKEN}")
+
+        assert exc.body == "Token rejected: <redacted token>"
+        assert self.TOKEN not in exc.body
+
+    def test_a_placeholder_is_not_redacted_again(self):
+        exc = TransportAuthenticationError(
+            401, f"Bearer {self.TOKEN} and {self.TOKEN} both"
+        )
+
+        assert exc.body == "<redacted token> and <redacted token> both"
+
+    def test_a_chained_traceback_carries_no_token(self):
+        """The cause frame is rendered too, so it must be clean as well."""
+        transport = TransportAuthenticationError(
+            401, f'{{"message":"Token rejected: Bearer {self.TOKEN}"}}'
+        )
+        rendered = ""
+        try:
+            try:
+                raise transport
+            except TransportAuthenticationError as exc:
+                raise translate_transport_error(
+                    exc, operation="the connect-time credential check"
+                ) from exc
+        except PicSureError:
+            rendered = traceback.format_exc()
+
+        assert "<redacted token>" in rendered
+        assert self.TOKEN not in rendered
+        for segment in self.TOKEN.split("."):
+            assert segment not in rendered
 
 
 class TestTranslatorReturnsPublicErrors:

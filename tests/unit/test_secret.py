@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import copy
 import pickle
+from pathlib import Path
 
 import httpx
 import pytest
@@ -29,6 +30,7 @@ from _pytest._code import ExceptionInfo
 from picsure._services import connect as connect_module
 from picsure._services.connect import connect
 from picsure._transport.client import PicSureClient
+from picsure._transport.platforms import Platform
 from picsure._transport.secret import SecretToken, as_secret_token
 from picsure.errors import PicSureValidationError
 
@@ -46,6 +48,8 @@ SECRET_VALUE = (
 )
 
 MAX_INCIDENTAL_RUN = 8
+
+NON_TOKEN_IDS = ["none", "bytes", "int", "path"]
 
 
 def longest_token_run(haystack: str) -> int:
@@ -182,6 +186,52 @@ class TestAsSecretToken:
 
     def test_the_constructor_also_accepts_a_secret_token(self):
         assert SecretToken(SecretToken(SECRET_VALUE)).reveal() == SECRET_VALUE
+
+
+class TestSecretTokenRejectsWhatIsNotAToken:
+    """The wrapper is public, so a wrong type has to fail inside the hierarchy."""
+
+    def test_a_str_is_accepted(self):
+        assert SecretToken(SECRET_VALUE).reveal() == SECRET_VALUE
+
+    def test_a_secret_token_is_accepted(self):
+        assert SecretToken(SecretToken(SECRET_VALUE)).reveal() == SECRET_VALUE
+
+    def test_whitespace_is_still_stripped(self):
+        assert SecretToken(f"  {SECRET_VALUE}\n").reveal() == SECRET_VALUE
+
+    def test_wrapping_a_stripped_token_is_still_idempotent(self):
+        once = SecretToken(f"  {SECRET_VALUE}  ")
+
+        assert SecretToken(once).reveal() == SECRET_VALUE
+
+    @pytest.mark.parametrize(
+        "value", [None, b"abc", 7, Path("token.txt")], ids=NON_TOKEN_IDS
+    )
+    def test_the_constructor_refuses_it(self, value):
+        with pytest.raises(PicSureValidationError, match="must be a str or a Secret"):
+            SecretToken(value)
+
+    @pytest.mark.parametrize(
+        "value", [None, b"abc", 7, Path("token.txt")], ids=NON_TOKEN_IDS
+    )
+    def test_connect_refuses_it_before_sending_anything(self, value):
+        with pytest.raises(PicSureValidationError, match="must be a str or a Secret"):
+            connect(Platform.BDC_AUTHORIZED, value)
+
+    def test_the_message_names_the_type_that_arrived(self):
+        with pytest.raises(PicSureValidationError, match="not a bytes"):
+            SecretToken(b"abc")
+
+    def test_bytes_are_told_to_decode(self):
+        with pytest.raises(PicSureValidationError, match=r"raw\.decode\(\)"):
+            SecretToken(SECRET_VALUE.encode())
+
+    def test_the_message_does_not_carry_the_value(self):
+        with pytest.raises(PicSureValidationError) as excinfo:
+            SecretToken(SECRET_VALUE.encode())
+
+        assert longest_token_run(str(excinfo.value)) <= MAX_INCIDENTAL_RUN
 
 
 class TestSecretTokenDoesNotDecayToStr:
@@ -380,3 +430,25 @@ class TestTokenHelpersDoNotLeakIntoTracebacks:
 
         rendered = render_traceback(excinfo, showlocals=showlocals)
         assert longest_token_run(rendered) <= MAX_INCIDENTAL_RUN
+
+
+class TestSecretTokenIsPublic:
+    """connect() names SecretToken in its signature, so a caller can name it too."""
+
+    def test_importable_from_the_package_root(self):
+        import picsure
+
+        assert picsure.SecretToken is SecretToken
+
+    def test_listed_in_all(self):
+        import picsure
+
+        assert "SecretToken" in picsure.__all__
+
+    def test_connect_accepts_the_exported_class(self):
+        import inspect
+
+        import picsure
+
+        annotation = inspect.signature(picsure.connect).parameters["token"].annotation
+        assert "SecretToken" in str(annotation)

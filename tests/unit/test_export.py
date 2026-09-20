@@ -21,7 +21,7 @@ from picsure.errors import (
 
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
-QUERY_ID = "abc-123"
+QUERY_ID = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
 
 SUBMIT_URL = f"{BASE_URL}{query_prefix('auth', v3=True)}/query"
 STATUS_URL = f"{BASE_URL}{query_prefix('auth', v3=True)}/query/{QUERY_ID}/status"
@@ -302,6 +302,58 @@ class TestExportPFB4xx:
             export_pfb(_make_client(), _simple_clause(), output, backend="auth")
 
         assert not output.exists()
+
+
+class TestExportPFBServerSuppliedQueryId:
+    """The id the submit response carries is the server's, so it is checked.
+
+    httpx normalizes ``..`` segments, so an unchecked id re-points the
+    authenticated poll and download at another route on the same host and
+    writes whatever it answers into the caller's .pfb file.
+    """
+
+    @respx.mock
+    def test_a_traversal_id_is_refused_before_any_poll(self, tmp_path):
+        respx.post(SUBMIT_URL).mock(
+            return_value=httpx.Response(
+                200, json={"picsureResultId": "../../../psama/user/me/consents"}
+            )
+        )
+
+        output = tmp_path / "out.pfb"
+        with pytest.raises(PicSureQueryError, match="not a UUID"):
+            export_pfb(_make_client(), _simple_clause(), output, backend="auth")
+
+        assert [call.request.url.path for call in respx.calls] == [
+            query_prefix("auth", v3=True) + "/query"
+        ]
+        assert not output.exists()
+
+    @respx.mock
+    def test_a_non_uuid_id_is_refused(self, tmp_path):
+        respx.post(SUBMIT_URL).mock(
+            return_value=httpx.Response(200, json={"picsureResultId": "abc-123"})
+        )
+
+        with pytest.raises(PicSureQueryError, match="not a UUID"):
+            export_pfb(
+                _make_client(), _simple_clause(), tmp_path / "out.pfb", backend="auth"
+            )
+
+    @respx.mock
+    def test_a_uuid_id_still_reaches_the_status_and_result_routes(self, tmp_path):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        status = respx.post(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+        result = respx.post(RESULT_URL).mock(
+            return_value=httpx.Response(200, content=b"pfb_content")
+        )
+
+        output = tmp_path / "out.pfb"
+        export_pfb(_make_client(), _simple_clause(), output, backend="auth")
+
+        assert status.called
+        assert result.called
+        assert output.read_bytes() == b"pfb_content"
 
 
 class TestExportPFBAtomicWrite:

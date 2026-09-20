@@ -236,7 +236,8 @@ class TestToQuery:
 import httpx
 import respx
 
-from picsure._services.query_load import _HPDS_QUERY_METADATA_PATH, load_query
+from picsure._services._hpds_paths import query_metadata_path
+from picsure._services.query_load import load_query
 from picsure._transport.client import PicSureClient
 from picsure.errors import (
     PicSureAuthError,
@@ -248,9 +249,7 @@ from picsure.errors import (
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
 QUERY_ID = "11111111-2222-3333-4444-555555555555"
-META_URL = f"{BASE_URL}" + _HPDS_QUERY_METADATA_PATH.format(
-    backend="auth", query_id=QUERY_ID
-)
+META_URL = f"{BASE_URL}" + query_metadata_path("auth", QUERY_ID)
 # The retired non-versioned route, used only as a negative in routing tests.
 LEGACY_META_URL = f"{BASE_URL}/picsure/hpds/auth/query/{QUERY_ID}/metadata"
 

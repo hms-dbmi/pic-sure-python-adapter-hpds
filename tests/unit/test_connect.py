@@ -12,7 +12,10 @@ import respx
 from picsure._models.session import Session
 from picsure._services.connect import (
     _VALIDATION_PATH,
-    _token_expiration_from_jwt,
+    _decode_jwt_payload,
+    _email_from_payload,
+    _expiry_from_payload,
+    _format_expiry,
     connect,
 )
 from picsure._services.consents import _CONSENTS_KEY, _CONSENTS_PATH
@@ -47,6 +50,20 @@ def _make_jwt_claims(**claims: object) -> str:
     """Build an unsigned JWT carrying the given payload claims."""
     header = _b64({"alg": "none", "typ": "JWT"})
     return f"{header}.{_b64(dict(claims))}.sig"
+
+
+def _expiration_of(token) -> str:
+    """The expiry string connect() would print for this token.
+
+    Composes exactly what _build_session does: decode the payload once,
+    read the exp claim from it, format the result.
+    """
+    return _format_expiry(_expiry_from_payload(_decode_jwt_payload(token)))
+
+
+def _email_of(token) -> str:
+    """The banner email connect() would show for this token."""
+    return _email_from_payload(_decode_jwt_payload(token))
 
 
 def _epoch_in(**delta: float) -> int:
@@ -864,62 +881,54 @@ class TestConnectSupportsGenomic:
         assert session._supports_genomic is False
 
 
-class TestTokenExpirationFromJwt:
+class TestTokenExpiration:
+    """The expiry the banner shows, read the way _build_session reads it."""
+
     def test_extracts_exp_claim(self):
         token = _make_jwt(_JWT_EXP)
-        assert _token_expiration_from_jwt(token) == EXPECTED_EXPIRY
+        assert _expiration_of(token) == EXPECTED_EXPIRY
 
     def test_missing_exp_returns_unknown(self):
-        assert _token_expiration_from_jwt(_make_jwt(None)) == "unknown"
+        assert _expiration_of(_make_jwt(None)) == "unknown"
 
     def test_non_jwt_returns_unknown(self):
-        assert _token_expiration_from_jwt("not-a-jwt") == "unknown"
+        assert _expiration_of("not-a-jwt") == "unknown"
 
     def test_garbage_payload_returns_unknown(self):
-        assert _token_expiration_from_jwt("aaa.@@@.bbb") == "unknown"
+        assert _expiration_of("aaa.@@@.bbb") == "unknown"
 
     def test_non_numeric_exp_returns_unknown(self):
-        assert _token_expiration_from_jwt(_make_jwt("tomorrow")) == "unknown"  # type: ignore[arg-type]
+        assert _expiration_of(_make_jwt("tomorrow")) == "unknown"  # type: ignore[arg-type]
 
     def test_out_of_range_exp_returns_unknown(self):
-        assert _token_expiration_from_jwt(_make_jwt(10**30)) == "unknown"
+        assert _expiration_of(_make_jwt(10**30)) == "unknown"
 
 
-class TestEmailFromJwt:
+class TestEmailClaimPreference:
+    """The banner email, read the way _build_session reads it."""
+
     def test_reads_email_claim(self):
-        from picsure._services.connect import _email_from_jwt
-
         token = _make_jwt_claims(email="user@example.com", sub="abc")
-        assert _email_from_jwt(token) == "user@example.com"
+        assert _email_of(token) == "user@example.com"
 
     def test_falls_back_to_preferred_username(self):
-        from picsure._services.connect import _email_from_jwt
-
         token = _make_jwt_claims(preferred_username="jdoe@idp", sub="abc")
-        assert _email_from_jwt(token) == "jdoe@idp"
+        assert _email_of(token) == "jdoe@idp"
 
     def test_falls_back_to_sub(self):
-        from picsure._services.connect import _email_from_jwt
-
         token = _make_jwt_claims(sub="subject-123")
-        assert _email_from_jwt(token) == "subject-123"
+        assert _email_of(token) == "subject-123"
 
     def test_empty_email_skips_to_next_claim(self):
-        from picsure._services.connect import _email_from_jwt
-
         token = _make_jwt_claims(email="   ", preferred_username="jdoe@idp")
-        assert _email_from_jwt(token) == "jdoe@idp"
+        assert _email_of(token) == "jdoe@idp"
 
     def test_no_usable_claim_returns_unknown(self):
-        from picsure._services.connect import _email_from_jwt
-
         token = _make_jwt_claims(name="First Last")
-        assert _email_from_jwt(token) == "unknown"
+        assert _email_of(token) == "unknown"
 
     def test_non_jwt_returns_unknown(self):
-        from picsure._services.connect import _email_from_jwt
-
-        assert _email_from_jwt("not-a-jwt") == "unknown"
+        assert _email_of("not-a-jwt") == "unknown"
 
 
 class TestDescribeAge:
@@ -1055,10 +1064,8 @@ class TestConnectFrameHoldsNoPlainToken:
         assert TOKEN[:24] not in rendered
 
     def test_the_jwt_helpers_accept_the_wrapper(self):
-        from picsure._services.connect import _email_from_jwt
-
-        assert _email_from_jwt(SecretToken(TOKEN)) == "researcher@university.edu"
-        assert _token_expiration_from_jwt(SecretToken(TOKEN)) == EXPECTED_EXPIRY
+        assert _email_of(SecretToken(TOKEN)) == "researcher@university.edu"
+        assert _expiration_of(SecretToken(TOKEN)) == EXPECTED_EXPIRY
 
 
 class TestConsentProbeFailureIsReported:
@@ -1122,6 +1129,35 @@ class TestValidationNotFound:
         message = str(exc_info.value)
         assert BASE_URL in message
         assert "404" in message
+
+    @respx.mock
+    def test_404_without_a_token_still_connects(self):
+        """An open deployment may not map /psama/user/me at all.
+
+        There is no token to verify, so the only thing the check can
+        honestly assert is that something answered, and a 404 is an
+        answer. Failing here would refuse a working open platform.
+        """
+        from picsure._transport.platforms import Platform
+
+        route = _mock_validation(
+            Platform.BDC_DEV_OPEN.url, status=404, payload={"errorType": "not_found"}
+        )
+
+        session = connect(platform=Platform.BDC_DEV_OPEN)
+
+        assert route.called
+        assert session.user_email == "anonymous"
+        assert session.consents == []
+
+    @respx.mock
+    def test_404_on_a_custom_open_url_still_connects(self):
+        route = _mock_validation(status=404, payload={"errorType": "not_found"})
+
+        session = connect(platform=BASE_URL, requires_auth=False)
+
+        assert route.called
+        assert session.user_email == "anonymous"
 
 
 class TestUserFacingMessagesHaveNoEmDashes:

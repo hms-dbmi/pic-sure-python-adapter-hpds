@@ -8,8 +8,7 @@ import respx
 import picsure
 from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.session import Session
-from picsure._services._hpds_paths import query_prefix
-from picsure._services.query_load import _HPDS_QUERY_METADATA_PATH
+from picsure._services._hpds_paths import query_metadata_path, query_prefix
 from picsure._services.search import (
     _CONCEPTS_PATH,
     _DEFAULT_PAGE_SIZE,
@@ -275,9 +274,7 @@ _SAVED_QUERY_ID = "11111111-2222-3333-4444-555555555555"
 
 
 def _meta_url(query_id: str, backend: str = "auth") -> str:
-    return f"{BASE_URL}" + _HPDS_QUERY_METADATA_PATH.format(
-        backend=backend, query_id=query_id
-    )
+    return f"{BASE_URL}" + query_metadata_path(backend, query_id)
 
 
 class TestSessionSearch:
@@ -534,7 +531,7 @@ class TestSessionExport:
     def test_export_pfb(self, tmp_path):
         # Session.exportAsPFB drives the async flow:
         # submit -> poll status -> stream result.
-        query_id = "session-pfb-1"
+        query_id = "6b2f4d1e-9c3a-4f5b-8d7e-1a2b3c4d5e6f"
         respx.post(_AUTH_QUERY_BASE).mock(
             return_value=httpx.Response(200, json={"picsureResultId": query_id})
         )
@@ -802,6 +799,20 @@ class TestSessionBackendIsValidated:
                 backend=backend,
             )
             assert session._backend == backend
+
+    def test_the_session_and_the_path_builders_give_the_same_message(self):
+        with pytest.raises(PicSureValidationError) as from_session:
+            Session(
+                client=PicSureClient(base_url=BASE_URL),
+                user_email="u@example.com",
+                token_expiration="N/A",
+                backend="aut",
+            )
+
+        with pytest.raises(PicSureValidationError) as from_paths:
+            query_prefix("aut", v3=True)
+
+        assert str(from_session.value) == str(from_paths.value)
 
 
 class TestSessionSavedQueryIdValidation:

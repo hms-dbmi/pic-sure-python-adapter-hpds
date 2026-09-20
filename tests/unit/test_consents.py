@@ -167,14 +167,52 @@ class TestFetchConsentsRefusalIsNotAvailability:
 
 
 class TestFetchConsentsMalformedBody:
-    @respx.mock
-    def test_non_json_200_raises_from_the_public_hierarchy_not_a_decode_error(self):
-        from picsure.errors import PicSureError
+    """An unreadable body points at the base URL, not at the response.
 
+    The shared decoder raises PicSureQueryError, so the handler has to
+    catch that rather than the raw ValueError the decoder used to let
+    through, or the deployment-root explanation never reaches the user.
+
+    Both decode failures of this route, a body that is not JSON and a
+    body that is JSON but not an object, carry the same class and name
+    the route, so the one class has one meaning here.
+    """
+
+    @respx.mock
+    def test_non_json_200_is_reported_as_a_connection_error(self):
         respx.get(CONSENTS_URL).mock(
             return_value=httpx.Response(200, text="<html>captive portal</html>")
         )
-        with pytest.raises(PicSureError) as exc_info:
+        with pytest.raises(PicSureConnectionError) as exc_info:
             fetch_consents(_make_client())
         assert not isinstance(exc_info.value, ValueError)
         assert "/psama/user/me/consents" in str(exc_info.value)
+        assert "PIC-SURE deployment root" in str(exc_info.value)
+
+    @respx.mock
+    def test_json_array_200_is_reported_as_a_connection_error(self):
+        respx.get(CONSENTS_URL).mock(
+            return_value=httpx.Response(200, json=["phs000007.c1"])
+        )
+        with pytest.raises(PicSureConnectionError) as exc_info:
+            fetch_consents(_make_client())
+        assert "/psama/user/me/consents" in str(exc_info.value)
+        assert "PIC-SURE deployment root" in str(exc_info.value)
+
+    @respx.mock
+    def test_both_decode_failures_carry_the_same_class(self):
+        respx.get(CONSENTS_URL).mock(return_value=httpx.Response(200, text="not json"))
+        with pytest.raises(PicSureConnectionError) as not_json:
+            fetch_consents(_make_client())
+        respx.get(CONSENTS_URL).mock(return_value=httpx.Response(200, json=[]))
+        with pytest.raises(PicSureConnectionError) as not_an_object:
+            fetch_consents(_make_client())
+        assert type(not_json.value) is type(not_an_object.value)
+
+    @respx.mock
+    def test_empty_200_body_is_reported_as_a_connection_error(self):
+        respx.get(CONSENTS_URL).mock(return_value=httpx.Response(200, text=""))
+        with pytest.raises(PicSureConnectionError) as exc_info:
+            fetch_consents(_make_client())
+        assert "PIC-SURE deployment root" in str(exc_info.value)
+        assert "empty body" in str(exc_info.value)

@@ -285,7 +285,7 @@ count_result = session.runQuery(genomic_query, type="count")
 Phenotypic and genomic filters are AND-combined:
 
 ```python
-from picsure import buildClause, buildClauseGroup, buildQuery, PhenotypicFilterType, GroupOperator
+from picsure import buildClause, buildClauseGroup, buildGenomicFilter, buildQuery, PhenotypicFilterType, GroupOperator, VariantFrequency
 
 sex_filter = buildClause("\\phs1\\sex\\", type=PhenotypicFilterType.FILTER, categories="Female")
 age_filter = buildClause("\\phs1\\age\\", type=PhenotypicFilterType.FILTER, min=18, max=45)

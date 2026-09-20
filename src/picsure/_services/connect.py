@@ -121,10 +121,17 @@ def connect(
         timeout: Per-request deadline in seconds for the data operations
             this session performs: counts, participant downloads, export
             polls. Defaults to ten minutes, because a large dataset can
-            legitimately take minutes to assemble server-side. The
-            connect-time validation request below is not covered by it:
-            that one keeps its own short deadline so a mistyped hostname
-            fails in seconds.
+            legitimately take minutes to assemble server-side. It bounds
+            one request, not a whole operation, and two things sit
+            outside it. The connect-time validation request below keeps
+            its own short deadline, so a mistyped hostname fails in
+            seconds. :meth:`Session.exportAsPFB` puts a ten-minute
+            budget on its polling loop alone, which this argument
+            neither raises nor lowers: a larger ``timeout`` only lets
+            one slow poll eat more of that fixed budget. The export's
+            submit and download carry this deadline like any other
+            request, so an export can take longer than ten minutes end
+            to end.
         validate: Whether to verify the connection before returning a
             Session. ``True`` (default) checks the token's shape and
             expiry locally, then sends one ``GET /psama/user/me`` to
@@ -682,11 +689,6 @@ def _jwt_segment_count(secret: SecretToken) -> tuple[int, bool]:
     return len(segments), all(segments)
 
 
-def _token_expiry(token: str | SecretToken) -> datetime | None:
-    """Decode a JWT and read its ``exp`` claim; see :func:`_expiry_from_payload`."""
-    return _expiry_from_payload(_decode_jwt_payload(token))
-
-
 def _expiry_from_payload(payload: dict[str, object] | None) -> datetime | None:
     """Read the ``exp`` claim from a decoded JWT payload as an aware UTC datetime.
 
@@ -760,26 +762,12 @@ def _padded_payload_segment(secret: SecretToken) -> str:
     return segments[1] + "=" * (-len(segments[1]) % 4)
 
 
-def _token_expiration_from_jwt(token: str | SecretToken) -> str:
-    """Extract the ``exp`` claim from a JWT and format it as UTC ISO.
-
-    Returns ``"unknown"`` if the token is not a parseable JWT or has no
-    numeric ``exp`` claim.
-    """
-    return _format_expiry(_token_expiry(token))
-
-
 # Preference order for the display email in the connect banner.  PSAMA
 # builds the PIC-SURE token from UserClaims, which carries ``email``
 # (plus ``preferred_username`` and ``sub``).  ``email`` is not immutable
 # per RAS guidance, but we only display it, so degrade gracefully to
 # progressively less specific claims rather than fail the connect.
 _EMAIL_CLAIMS = ("email", "preferred_username", "sub")
-
-
-def _email_from_jwt(token: str | SecretToken) -> str:
-    """Decode a JWT and read its display email; see :func:`_email_from_payload`."""
-    return _email_from_payload(_decode_jwt_payload(token))
 
 
 def _email_from_payload(payload: dict[str, object] | None) -> str:
@@ -803,6 +791,14 @@ def _install_default_handler() -> None:
     """Attach a stderr handler to the picsure logger if no handlers exist.
 
     Idempotent: repeat calls do nothing once a handler is present.
+
+    The logger's own level is raised to ``DEBUG`` only when it has no
+    level of its own, meaning ``logging.NOTSET``. An application that
+    embeds this library and configured the ``picsure`` logger at, say,
+    ``WARNING`` made a decision that belongs to it, and a library that
+    resets it because dev mode is on is overruling its host. The handler
+    carries its own ``DEBUG`` level either way, so dev-mode output is
+    unchanged in the ordinary case where nothing configured the logger.
     """
     logger = logging.getLogger(_LOGGER_NAME)
     if logger.handlers:
@@ -811,4 +807,5 @@ def _install_default_handler() -> None:
     handler.setLevel(logging.DEBUG)
     handler.setFormatter(logging.Formatter("%(name)s %(message)s"))
     logger.addHandler(handler)
-    logger.setLevel(logging.DEBUG)
+    if logger.level == logging.NOTSET:
+        logger.setLevel(logging.DEBUG)

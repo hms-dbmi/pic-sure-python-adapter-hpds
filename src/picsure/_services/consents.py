@@ -3,7 +3,7 @@ from __future__ import annotations
 from picsure._services._errors import translate_transport_error
 from picsure._transport.client import PicSureClient, json_object
 from picsure._transport.errors import TransportError
-from picsure.errors import PicSureConnectionError
+from picsure.errors import PicSureConnectionError, PicSureQueryError
 
 _CONSENTS_PATH = "/psama/user/me/consents"
 _CONSENTS_KEY = "\\_consents\\"
@@ -34,22 +34,33 @@ def fetch_consents(client: PicSureClient) -> list[str]:
         PicSureAuthenticationError: If the token is rejected (HTTP 401).
         PicSureAuthorizationError: If the account may not read its own
             consents (HTTP 403).
-        PicSureConnectionError: If PSAMA could not be reached or failed.
-        PicSureQueryError: If the body is not JSON or not a JSON object,
-            raised by the shared response decoder.
+        PicSureConnectionError: If PSAMA could not be reached or failed,
+            and if the response body could not be read as the
+            ``UserConsents`` object, which on this route points at the
+            base URL rather than at the response. That covers a body that
+            is not JSON and a body that is JSON but not an object, a
+            top-level array for instance. Narrowing inside the ``try``
+            changed the second case, which used to raise
+            :class:`~picsure.errors.PicSureQueryError`. The two classes
+            are siblings under ``PicSureError`` and neither catches the
+            other, and ``connect()`` calls this function unguarded on a
+            consent-gated platform, so an ``except PicSureQueryError``
+            around ``picsure.connect(...)`` no longer catches an array
+            here.
     """
     try:
-        payload = client.get_json(_CONSENTS_PATH)
+        response = json_object(client.get_json(_CONSENTS_PATH), path=_CONSENTS_PATH)
     except TransportError as exc:
         raise translate_transport_error(exc, operation=_CONSENTS_OPERATION) from exc
-    except ValueError as exc:
+    except PicSureQueryError as exc:
         raise PicSureConnectionError(
-            f"{_CONSENTS_PATH} answered with a body that is not JSON, so the "
-            f"consent list could not be read. This usually means the URL is not "
-            f"a PIC-SURE deployment root."
+            f"{_CONSENTS_PATH} answered with a body the consent list could not "
+            f"be read from: either it is not JSON at all, or it is JSON that "
+            f"is not the UserConsents object this route returns. This usually "
+            f"means the URL is not a PIC-SURE deployment root. The decoder "
+            f"said: {exc}"
         ) from exc
 
-    response = json_object(payload, path=_CONSENTS_PATH)
     consents_map = response.get("consents")
     if not isinstance(consents_map, dict):
         return []

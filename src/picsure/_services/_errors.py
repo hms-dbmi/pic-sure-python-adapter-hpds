@@ -9,8 +9,6 @@ below read it as an object, so it must not be a bare verb.
 
 from __future__ import annotations
 
-import re
-
 from picsure._transport.errors import (
     TransportAuthenticationError,
     TransportConsentDeniedError,
@@ -21,8 +19,10 @@ from picsure._transport.errors import (
     TransportServerError,
     TransportTLSError,
     TransportValidationError,
+    redact_credentials,
 )
 from picsure.errors import (
+    EmptyBodyError,
     PicSureAuthenticationError,
     PicSureAuthError,
     PicSureAuthorizationError,
@@ -42,36 +42,45 @@ _NEW_TOKEN_ADVICE = (
 )
 
 
-_CREDENTIAL_PATTERNS = (
-    re.compile(r"[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{6,}"),
-    re.compile(r"(?i)\bbearer\s+\S+"),
-)
-_REDACTED = "<redacted token>"
-
-
-def _redact_credentials(text: str) -> str:
-    """Replace anything shaped like a credential in server-supplied text.
-
-    A PIC-SURE response can echo the request's bearer token back in an
-    error body. Quoting that body into a public exception message would
-    put the token into every traceback and log line that renders the
-    exception. Two shapes are replaced: a JWT (three base64url segments)
-    and a ``Bearer <value>`` header fragment.
-    """
-    for pattern in _CREDENTIAL_PATTERNS:
-        text = pattern.sub(_REDACTED, text)
-    return text
-
-
 def _server_said(body: str) -> str:
     """Quote the server's own explanation, or nothing when it sent none.
 
     Some PIC-SURE refusals carry an empty body; appending a bare "The
-    server said:" to those reads as a truncated message. The quoted text
-    passes through :func:`_redact_credentials` first.
+    server said:" to those reads as a truncated message.
+
+    The quoted text is redacted twice on purpose. Every transport class
+    that stores a body already ran
+    :func:`picsure._transport.errors.redact_credentials` over it in its
+    constructor, and this repeats the pass on the way into a message a
+    user will see. The redundancy costs one regex sweep of at most 200
+    characters and covers a constructor that is added later without the
+    first pass.
     """
-    quoted = _redact_credentials(body.strip()[:200])
+    quoted = redact_credentials(body.strip()[:200])
     return f" The server said: {quoted}" if quoted else ""
+
+
+def bodiless_response_succeeded(exc: EmptyBodyError) -> bool:
+    """Whether a bodiless response's status says the request succeeded.
+
+    The transport translates only 4xx and 5xx and does not follow
+    redirects, so every status below 400 arrives as an
+    :class:`~picsure.errors.EmptyBodyError`. Some routes answer a
+    success with no body on purpose, a ``200`` on a lookup that found
+    nothing and a ``201`` or ``204`` on a write, while a ``302`` to an
+    SSO login on an expired gateway session is byte-for-byte the same
+    failure to decode. The status is the only thing that tells them
+    apart, so both consumers of the class ask the question here rather
+    than each writing its own comparison.
+
+    Args:
+        exc: The empty-body failure the transport raised.
+
+    Returns:
+        ``True`` for a 2xx, ``False`` for every other status that can
+        reach here.
+    """
+    return 200 <= exc.status_code < 300
 
 
 def rate_limit_message(
@@ -81,8 +90,10 @@ def rate_limit_message(
 ) -> str:
     """Render a consistent rate-limit message across services.
 
-    ``suffix`` is appended after "Rate limited" so callers can add
-    operation-specific context (e.g. " on the PFB export download").
+    Split out of :func:`translate_transport_error` for readability
+    rather than for reuse: the one caller is twenty lines below, and
+    ``suffix`` is the operation phrase it passes (e.g. " on the PFB
+    export download").
     """
     base = f"Rate limited{suffix}"
     if exc.retry_after is not None:
@@ -120,7 +131,7 @@ def translate_transport_error(
             f"Consent denied for {operation} (HTTP {exc.status_code}). This is a "
             f"consent decision, not an outage: your approved consents do not cover "
             f"the data this request touches. The server said: "
-            f"{_redact_credentials(exc.server_message)}",
+            f"{redact_credentials(exc.server_message)}",
         )
     if isinstance(exc, TransportConsentLookupError):
         return PicSureConsentLookupError(
@@ -132,7 +143,7 @@ def translate_transport_error(
             f"{operation} (HTTP {exc.status_code}). This is a failure inside "
             f"PIC-SURE, not a problem with your token or your approvals; try "
             f"again shortly. The server said: "
-            f"{_redact_credentials(exc.server_message)}",
+            f"{redact_credentials(exc.server_message)}",
         )
     if isinstance(exc, TransportAuthenticationError):
         return _refusal_error(exc, operation)
@@ -159,9 +170,11 @@ def _unreachable_error(
 ) -> PicSureConnectionError:
     """Translate a transport failure that produced no usable response.
 
-    Split out so a service with its own fallback branch still reports a
-    rejected certificate and a 5xx as the distinct types callers can
-    handle, rather than flattening both into "temporarily unavailable".
+    Split out of :func:`translate_transport_error` for readability
+    rather than for reuse; its one caller is the fallback branch at the
+    end of that function. It keeps a rejected certificate and a 5xx as
+    the distinct types callers can handle, rather than flattening both
+    into "temporarily unavailable".
     """
     if isinstance(exc, TransportTLSError):
         return PicSureTLSError(str(exc))

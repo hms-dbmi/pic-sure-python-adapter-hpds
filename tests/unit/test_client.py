@@ -26,6 +26,7 @@ from picsure._transport.errors import (
     TransportConnectionError,
     TransportConsentDeniedError,
     TransportConsentLookupError,
+    TransportError,
     TransportNotFoundError,
     TransportRateLimitError,
     TransportServerError,
@@ -293,7 +294,7 @@ class TestJsonBodyShapes:
     @respx.mock
     @pytest.mark.parametrize("content", [b"", b"   \n"])
     def test_empty_body_raises_empty_body_error(self, content):
-        from picsure._transport.client import EmptyBodyError
+        from picsure.errors import EmptyBodyError
 
         respx.get(f"{BASE_URL}/odd").mock(
             return_value=httpx.Response(200, content=content)
@@ -304,6 +305,24 @@ class TestJsonBodyShapes:
             client.get_json("/odd")
 
         assert isinstance(exc_info.value, PicSureQueryError)
+        assert exc_info.value.status_code == 200
+
+    @respx.mock
+    def test_empty_body_error_carries_a_redirect_status(self):
+        """The status is what tells a bodiless write from a bodiless redirect."""
+        from picsure.errors import EmptyBodyError
+
+        respx.get(f"{BASE_URL}/odd").mock(
+            return_value=httpx.Response(
+                302, headers={"location": "https://sso.example.com/login"}
+            )
+        )
+
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+        with pytest.raises(EmptyBodyError) as exc_info:
+            client.get_json("/odd")
+
+        assert exc_info.value.status_code == 302
 
     @respx.mock
     def test_post_json_scalar_top_level_raises_query_error(self):
@@ -892,6 +911,94 @@ class TestRefusalStatusWinsOverBody:
         with pytest.raises(TransportConsentDeniedError) as exc_info:
             PicSureClient(base_url=BASE_URL, token=TOKEN).get_json("/saved-result")
         assert exc_info.value.server_message == "no consent"
+
+
+_SHARED_STATUS_CASES = [
+    (401, "Token is invalid or expired", {}),
+    (403, '{"errorType": "consent_denied", "message": "no consent"}', {}),
+    (404, "Not Found", {}),
+    (422, "Unprocessable Entity", {}),
+    (429, "Slow down", {"Retry-After": "30"}),
+    (500, "Internal Server Error", {}),
+    (502, '{"errorType": "consent_lookup_failed", "message": "PSAMA is down"}', {}),
+]
+
+
+class TestOneStatusMapperForBothPaths:
+    """The buffered and the streaming path map a status identically.
+
+    _status_error is the single mapper and _raise_for_status is a thin
+    wrapper over it, so a status cannot produce one class on a buffered
+    POST and another on a streamed one.
+    """
+
+    @respx.mock
+    @pytest.mark.parametrize(("status", "body", "headers"), _SHARED_STATUS_CASES)
+    def test_same_class_and_message(self, status, body, headers):
+        respx.post(f"{BASE_URL}/x").mock(
+            return_value=httpx.Response(status, text=body, headers=headers)
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+
+        with pytest.raises(TransportError) as buffered:
+            client.post_json("/x", body={})
+        with (
+            pytest.raises(TransportError) as streamed,
+            client.post_raw_stream("/x", body={}),
+        ):
+            pass
+
+        assert type(buffered.value) is type(streamed.value)
+        assert str(buffered.value) == str(streamed.value)
+
+    @respx.mock
+    @pytest.mark.parametrize(
+        ("status", "body"),
+        [
+            (500, "Internal Server Error"),
+            (502, '{"errorType": "consent_lookup_failed", "message": "PSAMA is down"}'),
+        ],
+        ids=["plain-5xx", "structured-5xx"],
+    )
+    def test_a_5xx_maps_the_same_on_both_paths(self, status, body):
+        """The buffered path's 5xx branch reads the same mapper as the stream.
+
+        It used to re-implement the tail of _status_error inline, so the
+        two could drift on which class or message a 5xx produced.
+        """
+        respx.post(f"{BASE_URL}/x").mock(return_value=httpx.Response(status, text=body))
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+
+        with pytest.raises(TransportError) as buffered:
+            client.post_json("/x", body={})
+        with (
+            pytest.raises(TransportError) as streamed,
+            client.post_raw_stream("/x", body={}),
+        ):
+            pass
+
+        assert type(buffered.value) is type(streamed.value)
+        assert str(buffered.value) == str(streamed.value)
+
+    @respx.mock
+    def test_retry_after_reaches_both_paths(self):
+        respx.post(f"{BASE_URL}/x").mock(
+            return_value=httpx.Response(
+                429, text="Slow down", headers={"Retry-After": "30"}
+            )
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+
+        with pytest.raises(TransportRateLimitError) as buffered:
+            client.post_json("/x", body={})
+        with (
+            pytest.raises(TransportRateLimitError) as streamed,
+            client.post_raw_stream("/x", body={}),
+        ):
+            pass
+
+        assert buffered.value.retry_after == 30
+        assert streamed.value.retry_after == 30
 
 
 _TEST_CA_NAME = "picsure-adapter-test-ca"

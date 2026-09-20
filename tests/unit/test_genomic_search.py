@@ -76,6 +76,45 @@ def test_blank_key_raises():
         search_genomic_values(client, "   ", backend="auth")
 
 
+class TestGenomicValuesPagingValidation:
+    """Paging arguments are checked before anything is urlencoded.
+
+    Paging on this route is one-based, unlike the dictionary search's
+    zero-based ``page``, so ``page=0`` is out of range here.
+    """
+
+    @pytest.mark.parametrize(
+        ("kwargs", "expected"),
+        [
+            ({"page": 0}, "`page` must be 1 or greater"),
+            ({"page": -1}, "`page` must be 1 or greater"),
+            ({"size": 0}, "`size` must be 1 or greater"),
+            ({"size": -1}, "`size` must be 1 or greater"),
+            ({"page": "2"}, "`page` must be an integer"),
+            ({"page": 1.5}, "`page` must be an integer"),
+            ({"page": True}, "`page` must be an integer"),
+            ({"size": "50"}, "`size` must be an integer"),
+            ({"size": False}, "`size` must be an integer"),
+        ],
+    )
+    def test_out_of_range_or_wrong_type_raises_before_any_request(
+        self, kwargs, expected
+    ):
+        client = _FakeClient({"results": []})
+
+        with pytest.raises(PicSureValidationError, match=expected):
+            search_genomic_values(client, "Gene_with_variant", backend="auth", **kwargs)
+
+        assert client.last_path is None
+
+    def test_the_first_page_is_one_not_zero(self):
+        client = _FakeClient({"results": ["BRCA1"], "page": 1, "total": 1})
+
+        search_genomic_values(client, "Gene_with_variant", backend="auth", page=1)
+
+        assert "page=1" in client.last_path
+
+
 @respx.mock
 def test_consent_denied_raises_typed_error():
     respx.get(GENOMIC_VALUES_URL).mock(
@@ -266,6 +305,52 @@ class TestGenomicValuesNonAnnotationConcept:
             )
 
         assert "genomic annotation" not in str(exc_info.value)
+
+
+class TestGenomicValuesBodilessRedirect:
+    """A bodiless non-2xx is a session problem, not a concept problem.
+
+    The client translates only 4xx and 5xx and does not follow
+    redirects, so a ``302`` to an SSO login on an expired gateway
+    session reaches the same handler as the ``200`` that reports a key
+    which is not a genomic annotation. A user acts on the message by
+    editing the argument it names, so a redirect must not name the
+    concept.
+    """
+
+    @respx.mock
+    def test_a_bodiless_200_still_blames_the_concept(self):
+        path = "Totally_Not_A_Key"
+        _values_route().mock(return_value=httpx.Response(200, content=b""))
+
+        with pytest.raises(PicSureQueryError) as exc_info:
+            search_genomic_values(
+                PicSureClient(base_url=BASE_URL, token=TOKEN), path, backend="auth"
+            )
+
+        message = str(exc_info.value)
+        assert "may not be a genomic annotation" in message
+        assert path in message
+
+    @respx.mock
+    def test_a_bodiless_302_names_the_status_and_not_the_concept(self):
+        path = "Gene_with_variant"
+        _values_route().mock(
+            return_value=httpx.Response(
+                302, headers={"location": "https://sso.example.com/login"}
+            )
+        )
+
+        with pytest.raises(PicSureQueryError) as exc_info:
+            search_genomic_values(
+                PicSureClient(base_url=BASE_URL, token=TOKEN), path, backend="auth"
+            )
+
+        message = str(exc_info.value)
+        assert "HTTP 302" in message
+        assert "gateway session expired" in message
+        assert "may not be a genomic annotation" not in message
+        assert path not in message
 
 
 class TestGenomicValuesValueList:

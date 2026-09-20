@@ -47,7 +47,12 @@ from picsure._transport.errors import (
     TransportValidationError,
 )
 from picsure._transport.secret import SecretToken, as_secret_token
-from picsure.errors import PicSureQueryError, PicSureTLSError, PicSureValidationError
+from picsure.errors import (
+    EmptyBodyError,
+    PicSureQueryError,
+    PicSureTLSError,
+    PicSureValidationError,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -283,17 +288,6 @@ def _user_agent(client_type: str) -> str:
     return f"picsure-{product}/{_package_version()}"
 
 
-class EmptyBodyError(PicSureQueryError):
-    """A response carried no body where a JSON payload was expected.
-
-    PIC-SURE answers some lookups with HTTP 200 and a zero-length body, for
-    example a genomic value search on a concept that is not a genomic
-    annotation. :func:`_decode_json` raises this subclass so a service can
-    tell that case apart from a body that is present but not JSON, while a
-    caller catching :class:`~picsure.errors.PicSureQueryError` still sees it.
-    """
-
-
 def _decode_json(response: httpx.Response, path: str) -> JsonBody:
     """Decode a response body as a JSON object or array.
 
@@ -314,7 +308,8 @@ def _decode_json(response: httpx.Response, path: str) -> JsonBody:
     """
     if not response.content.strip():
         raise EmptyBodyError(
-            f"{path} returned an empty body; expected a JSON object or an array."
+            response.status_code,
+            f"{path} returned an empty body; expected a JSON object or an array.",
         )
     try:
         payload = response.json()
@@ -536,7 +531,15 @@ class PicSureClient:
                     body_text = f"<error body unavailable: {exc}>"
                 finally:
                     stream_cm.__exit__(None, None, None)
-                self._emit_http("POST", path, body, response, attempt, start)
+                self._emit_http(
+                    "POST",
+                    path,
+                    body,
+                    response,
+                    bytes_received=_response_bytes(response),
+                    retry=attempt,
+                    start=start,
+                )
                 error = _status_error(status, body_text, response)
                 self._emit_error("POST", path, attempt, start, type(error).__name__)
                 raise _mark_emitted(error)
@@ -606,13 +609,14 @@ class PicSureClient:
                 self._emit_error("POST", path, 0, start, type(exc).__name__)
             _remove_partial(part_path)
             raise
-        self._emit_download(
+        self._emit_http(
+            "POST",
             path,
             body,
             response,
-            written,
-            start,
+            bytes_received=written,
             retry=int(response.extensions.get("picsure_retry", 0)),
+            start=start,
         )
 
     def _request(
@@ -650,7 +654,15 @@ class PicSureClient:
                     continue
                 raise _mark_emitted(_connection_error(exc, self._host)) from exc
 
-            self._emit_http(method, path, body, response, attempt, start)
+            self._emit_http(
+                method,
+                path,
+                body,
+                response,
+                bytes_received=_response_bytes(response),
+                retry=attempt,
+                start=start,
+            )
 
             status = response.status_code
 
@@ -663,18 +675,11 @@ class PicSureClient:
                     raise
 
             if status >= 500:
-                structured_error = _structured_transport_error(status, response.text)
-                if structured_error is not None:
-                    self._emit_error(
-                        method, path, attempt, start, type(structured_error).__name__
-                    )
-                    raise _mark_emitted(structured_error)
-                # POST is non-idempotent: a 5xx after the request reached
-                # the server may have partially executed.  Only retry GETs.
-                if method == "GET" and attempt < max_retries:
+                error = _status_error(status, response.text, response)
+                if _is_resendable_server_error(method, error) and attempt < max_retries:
                     continue
-                self._emit_error(method, path, attempt, start, "TransportServerError")
-                raise _mark_emitted(TransportServerError(status, response.text))
+                self._emit_error(method, path, attempt, start, type(error).__name__)
+                raise _mark_emitted(error)
 
             return response
 
@@ -694,9 +699,31 @@ class PicSureClient:
         path: str,
         body: RequestBody | None,
         response: httpx.Response,
-        attempt: int,
+        *,
+        bytes_received: int | None,
+        retry: int,
         start: float,
     ) -> None:
+        """Record one answered HTTP call as a dev-mode ``http`` event.
+
+        Both request surfaces emit through here, so the accounting is
+        written once. ``bytes_received`` is the only thing they disagree
+        on: a buffered response is sized by :func:`_response_bytes`,
+        while a streamed download passes the byte count it wrote to
+        disk, since a streamed response has no ``content`` to measure
+        and reading it would defeat the streaming.
+
+        Args:
+            method: HTTP method of the request.
+            path: Request path, which is the event's name.
+            body: The JSON request body, or ``None``.
+            response: The response, read for its status and its request's
+                size.
+            bytes_received: Size of the response body, or ``None`` when
+                it could not be determined.
+            retry: The attempt that produced this response.
+            start: ``time.monotonic()`` when the attempt began.
+        """
         cfg = self._dev_config
         if cfg is None or not cfg.enabled:
             return
@@ -707,13 +734,9 @@ class PicSureClient:
             if response.request
             else _estimate_bytes(body)
         )
-        try:
-            bytes_received: int | None = len(response.content or b"")
-        except httpx.ResponseNotRead:
-            bytes_received = None
         metadata: dict[str, object] = {}
 
-        if body_is_sensitive(path, method, body):
+        if body_is_sensitive(body):
             metadata["redacted"] = "participant"
 
         cfg.emit(
@@ -724,51 +747,6 @@ class PicSureClient:
                 duration_ms=duration_ms,
                 bytes_sent=bytes_sent,
                 bytes_received=bytes_received,
-                status=response.status_code,
-                retry=attempt,
-                error=None,
-                metadata=metadata,
-            )
-        )
-
-    def _emit_download(
-        self,
-        path: str,
-        body: RequestBody | None,
-        response: httpx.Response,
-        bytes_written: int,
-        start: float,
-        retry: int,
-    ) -> None:
-        """Record a completed streamed download as an ``http`` event.
-
-        The buffered path uses :meth:`_emit_http`, which sizes the
-        response with ``len(response.content)``.  A streamed response has
-        no ``content`` to read, and reading it would defeat the point, so
-        the size comes from what was written to disk.  ``retry`` is the
-        attempt that produced the response, as :meth:`post_raw_stream`
-        recorded it.
-        """
-        cfg = self._dev_config
-        if cfg is None or not cfg.enabled:
-            return
-
-        metadata: dict[str, object] = {}
-        if body_is_sensitive(path, "POST", body):
-            metadata["redacted"] = "participant"
-
-        cfg.emit(
-            Event(
-                timestamp=datetime.now(timezone.utc),
-                kind="http",
-                name=path,
-                duration_ms=(time.monotonic() - start) * 1000.0,
-                bytes_sent=(
-                    len(response.request.content or b"")
-                    if response.request
-                    else _estimate_bytes(body)
-                ),
-                bytes_received=bytes_written,
                 status=response.status_code,
                 retry=retry,
                 error=None,
@@ -805,52 +783,90 @@ class PicSureClient:
         )
 
 
-def _raise_for_status(status: int, body: str, response: httpx.Response) -> None:
-    """Map a 4xx status to the appropriate transport exception.
+def _status_error(status: int, body: str, response: httpx.Response) -> TransportError:
+    """Map any 4xx or 5xx status to its transport exception, without raising.
 
-    Shared between :meth:`PicSureClient._request` and the streaming path
-    so the two surfaces translate 4xx identically.  Callers are
-    responsible for handling 5xx themselves (the retry policy differs
-    between GET and POST).
+    The one status-to-exception mapper in this module.  Both request
+    surfaces go through it, so the buffered path and the streaming path
+    cannot drift apart on which class, message or ``Retry-After`` value a
+    status produces.  Returning rather than raising is what lets the
+    streaming path emit its dev-mode events around the failure before the
+    exception leaves the generator.
 
-    401 and 403 are decided by status before the response body is
-    consulted, so every refusal lands in the authentication /
-    authorization family whether or not the server sent a structured
-    payload.
+    Precedence, highest first:
+
+    * 401 and 403 are decided by status before the body is consulted, so
+      every refusal lands in the authentication / authorization family
+      whether or not the server sent a structured payload.  A
+      ``consent_denied`` payload still refines the class, through
+      :func:`_refusal_transport_error`.
+    * A structured consent payload on any other status, which is how a
+      502 becomes :class:`TransportConsentLookupError`.
+    * 404, then 429 with its ``Retry-After`` header.
+    * Any other 4xx is a validation failure.
+    * Anything left, meaning 5xx, is a server error.
+
+    Args:
+        status: The response status code.
+        body: The response body as text.
+        response: The response itself, read only for its headers.
+
+    Returns:
+        The transport exception for this status, ready to raise.
     """
     if status in (401, 403):
-        raise _refusal_transport_error(status, body)
-    structured_error = _structured_transport_error(status, body)
-    if structured_error is not None:
-        raise structured_error
-    if status == 404:
-        raise TransportNotFoundError(status, body)
-    if status == 429:
-        raise TransportRateLimitError(
-            status, body, retry_after=_parse_retry_after(response)
-        )
-    if 400 <= status < 500:
-        # 400, 422, and any other 4xx fall into the validation bucket.
-        raise TransportValidationError(status, body)
-
-
-def _status_error(status: int, body: str, response: httpx.Response) -> TransportError:
-    """Build the transport exception for a 4xx or 5xx without raising it.
-
-    4xx goes through :func:`_raise_for_status`, so the streaming path
-    maps refusals exactly as the buffered one does.  5xx prefers the
-    structured consent error encoded in the body and falls back to
-    :class:`TransportServerError`.  A POST is never retried on 5xx.
-    """
-    if 400 <= status < 500:
-        try:
-            _raise_for_status(status, body, response)
-        except TransportError as exc:
-            return exc
+        return _refusal_transport_error(status, body)
     structured_error = _structured_transport_error(status, body)
     if structured_error is not None:
         return structured_error
+    if status == 404:
+        return TransportNotFoundError(status, body)
+    if status == 429:
+        return TransportRateLimitError(
+            status, body, retry_after=_parse_retry_after(response)
+        )
+    if 400 <= status < 500:
+        return TransportValidationError(status, body)
     return TransportServerError(status, body)
+
+
+def _raise_for_status(status: int, body: str, response: httpx.Response) -> None:
+    """Raise the exception :func:`_status_error` maps a 4xx to.
+
+    The buffered path's wrapper, so :meth:`PicSureClient._request` can
+    keep its 4xx handling as a ``try`` / ``except TransportError`` block
+    that tags the failure as already emitted.  It adds no mapping of its
+    own.
+
+    ``_request`` calls this for 4xx only and keeps its own 5xx branch,
+    because the two have different retry policies: a 5xx on a GET is
+    re-sent once, while the streaming path re-sends nothing on a 5xx,
+    since a POST the server already saw may have executed.  A 4xx is
+    never retried on either path, which is why this half can be shared.
+    That branch calls :func:`_status_error` directly and reads the retry
+    decision off the exception it returns, so the mapping itself still
+    lives in one place.
+    """
+    raise _status_error(status, body, response)
+
+
+def _is_resendable_server_error(method: str, error: TransportError) -> bool:
+    """Whether a 5xx that mapped to ``error`` may be sent again.
+
+    A structured consent failure is the server reporting a decision it
+    could not reach, not an outage, and it maps to a class of its own
+    rather than to :class:`TransportServerError`; re-sending it changes
+    nothing, so it never is.  A plain 5xx is re-sent on a GET only,
+    because a POST the server already saw may have partially executed.
+
+    Args:
+        method: HTTP method of the request that failed.
+        error: What :func:`_status_error` mapped the response to.
+
+    Returns:
+        ``True`` when another attempt is safe and worth making.
+    """
+    return isinstance(error, TransportServerError) and method == "GET"
 
 
 def _refusal_transport_error(status: int, body: str) -> TransportError:
@@ -926,6 +942,20 @@ def _remove_partial(part_path: Path) -> None:
     """
     with contextlib.suppress(OSError):
         part_path.unlink(missing_ok=True)
+
+
+def _response_bytes(response: httpx.Response) -> int | None:
+    """Size a response body, or ``None`` when it has not been read.
+
+    A streamed response raises ``httpx.ResponseNotRead`` rather than
+    answering, and reading it to answer would defeat the streaming. The
+    streaming path's error branch reaches this state too, when reading
+    the small error body itself failed.
+    """
+    try:
+        return len(response.content or b"")
+    except httpx.ResponseNotRead:
+        return None
 
 
 def _estimate_bytes(body: RequestBody | None) -> int | None:

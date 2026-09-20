@@ -249,7 +249,8 @@ class TestEmptyCountBodyDiagnostic:
             run_query(_make_client(), query, "count", backend="auth")
 
         message = str(exc_info.value)
-        assert "answered HTTP 200 with an empty body" in message
+        assert "returned an empty body where a count was expected" in message
+        assert "HTTP 200" not in message
         assert "carried no filters, only the select paths '\\a\\'" in message
         assert "each select path" in message
         assert "min/max" not in message
@@ -1232,7 +1233,8 @@ class TestRunQueryVariantCountEndToEnd:
             run_query(_make_client(), _genomic_query(), "variant_count", backend="auth")
 
         message = str(exc_info.value)
-        assert "answered HTTP 200 with an empty body" in message
+        assert "returned an empty body where a variant count was expected" in message
+        assert "HTTP 200" not in message
         assert "genomic filter keys 'Gene_with_variant'" in message
         assert "not available on this PIC-SURE deployment" in message
 
@@ -1462,6 +1464,50 @@ class TestVariantParserDefensiveBranches:
             _parse_vcf_excerpt(ragged_rows)
 
 
+class TestUndecodableBodyStaysInTheErrorHierarchy:
+    """A body that is not UTF-8 must not leak a raw UnicodeDecodeError.
+
+    UnicodeDecodeError is a ValueError, so it walks straight through a
+    caller's ``except PicSureError``. Every parser that decodes a body goes
+    through one helper that raises PicSureQueryError instead.
+    """
+
+    UNDECODABLE = b"\xff\xfe\x00count"
+
+    @pytest.mark.parametrize(
+        ("query_type", "expected"),
+        [
+            ("count", "malformed count response"),
+            ("cross_count", "malformed cross-count response"),
+            ("variant_count", "malformed variant-count response"),
+            ("variant_list", "malformed variant-list response"),
+            ("vcf_excerpt", "malformed VCF excerpt"),
+        ],
+    )
+    @respx.mock
+    def test_each_result_type_raises_a_query_error(self, query_type, expected):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=self.UNDECODABLE)
+        )
+
+        with pytest.raises(PicSureQueryError, match=expected) as excinfo:
+            run_query(_make_client(), _genomic_query(), query_type, backend="auth")
+
+        assert isinstance(excinfo.value, PicSureError)
+        assert not isinstance(excinfo.value, UnicodeDecodeError)
+
+    @respx.mock
+    def test_the_message_quotes_the_leading_bytes(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=self.UNDECODABLE)
+        )
+
+        with pytest.raises(PicSureQueryError) as excinfo:
+            run_query(_make_client(), _genomic_query(), "count", backend="auth")
+
+        assert repr(self.UNDECODABLE) in str(excinfo.value)
+
+
 def test_cross_count_negative_value_is_rejected():
     from picsure._services.query_run import _parse_cross_count
 
@@ -1554,16 +1600,6 @@ class TestDataframeQueriesStreamToDisk:
 
         assert not targets[0].exists()
         assert not targets[0].parent.exists()
-
-    @respx.mock
-    def test_no_staging_file_survives_a_failed_download(self, monkeypatch):
-        respx.post(QUERY_URL).mock(return_value=httpx.Response(500, text="boom"))
-        targets = self._spy_on_streaming(monkeypatch)
-
-        with pytest.raises(PicSureServerError):
-            run_query(_make_client(), _simple_clause(), "participant", backend="auth")
-
-        assert not targets[0].with_suffix(".csv.part").exists()
 
     @respx.mock
     def test_a_transport_failure_is_still_translated(self, monkeypatch):

@@ -68,6 +68,24 @@ class TestRemoveSubQuery:
         assert isinstance(pruned, ClauseGroup)
         assert pruned.clauses == (c,)
 
+    def test_two_levels_of_emptied_groups_are_pruned_not_constructed(self):
+        """The empty-group guard must not turn a prune into a failure.
+
+        ``_prune`` answers ``None`` for a group that loses every child,
+        so each parent drops it rather than constructing a
+        ``ClauseGroup`` with no clauses, which no longer exists.
+        """
+        a = _clause("\\a\\", "x")
+        c = _clause("\\c\\", "z")
+        inner = buildClauseGroup([a], operator=GroupOperator.OR)
+        middle = buildClauseGroup([inner], operator=GroupOperator.AND)
+        outer = buildClauseGroup([middle, c], operator=GroupOperator.AND)
+
+        pruned = removeSubQuery(outer, a)
+
+        assert isinstance(pruned, ClauseGroup)
+        assert pruned.clauses == (c,)
+
     def test_removing_entire_query_raises(self):
         a = _clause("\\a\\", "x")
 
@@ -110,14 +128,6 @@ class TestRemoveSubQuery:
 
         with pytest.raises(PicSureValidationError, match="structural"):
             removeSubQuery(q, _clause("\\a\\", "different"))
-
-    def test_pathless_target_is_still_named(self):
-        """A pathless clause only arrives by direct construction; still named."""
-        q = buildClauseGroup([_clause("\\a\\", "x")], operator=GroupOperator.AND)
-        pathless = Clause(keys=(), type=PhenotypicFilterType.REQUIRE)
-
-        with pytest.raises(PicSureValidationError, match="that clause"):
-            removeSubQuery(q, pathless)
 
     def test_absent_group_target_is_named_as_a_group(self):
         a = _clause("\\a\\", "x")

@@ -308,14 +308,47 @@ def _parse_count_string(s: str) -> CountResult:
     )
 
 
+def _decode_body(raw: bytes, description: str) -> str:
+    """Decode a response body as UTF-8 inside the public error hierarchy.
+
+    ``bytes.decode`` raises :class:`UnicodeDecodeError`, which is a
+    ``ValueError`` and so escapes an ``except PicSureError`` a caller
+    wrapped the query in. Every parser decodes through here instead, so an
+    undecodable body reads the same whichever result type asked for it.
+
+    Args:
+        raw: The response body.
+        description: What the body was expected to be, used as the
+            subject of the error message, e.g. ``"a malformed VCF
+            excerpt"``.
+
+    Returns:
+        The decoded text.
+
+    Raises:
+        PicSureQueryError: If the body is not valid UTF-8. The message
+            quotes the leading bytes.
+    """
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise PicSureQueryError(
+            f"Server returned {description}: {raw[:_PREVIEW_BYTES]!r}"
+        ) from exc
+
+
 def _parse_count(raw: bytes, *, request: _RequestSummary | None = None) -> CountResult:
     """Decode and parse a bytes count response.
 
     Args:
         raw: The response body.
         request: What the request carried, named in the empty-body message.
+
+    Raises:
+        PicSureQueryError: If the body is not valid UTF-8, is empty, or is
+            not a count.
     """
-    text = raw.decode("utf-8")
+    text = _decode_body(raw, "a malformed count response")
     if not text.strip():
         raise PicSureQueryError(_empty_count_message(request))
     return _parse_count_string(text)
@@ -324,15 +357,19 @@ def _parse_count(raw: bytes, *, request: _RequestSummary | None = None) -> Count
 def _empty_count_message(request: _RequestSummary | None) -> str:
     """Explain an empty body where a count was expected.
 
-    The server answers HTTP 200 with no body when it did not run the query.
-    With filters set, the usual cause is a filter whose shape does not match
+    The server answers with no body when it did not run the query. With
+    filters set, the usual cause is a filter whose shape does not match
     its concept's type (a numeric ``min``/``max`` on a categorical concept,
     or ``categories`` on a continuous one). Without filters the only input
     left to check is the select paths.
+
+    The parser is handed the response bytes alone, so the status is not
+    known here and the message does not name one. It used to claim a 200,
+    which any sub-400 answer with no body contradicted.
     """
     lead = (
-        "The server answered HTTP 200 with an empty body where a count was "
-        f"expected, which means the query was not run.{_sent(request)}"
+        "The server returned an empty body where a count was expected, "
+        f"which means the query was not run.{_sent(request)}"
     )
     if request is not None and not request.has_filters:
         return (
@@ -469,7 +506,7 @@ def _parse_cross_count(raw: bytes) -> dict[str, CountResult]:
     Malformed JSON, non-object top-level values, malformed count values,
     and negative counts all raise :class:`PicSureQueryError`.
     """
-    text = raw.decode("utf-8")
+    text = _decode_body(raw, "a malformed cross-count response")
     try:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
@@ -556,7 +593,7 @@ def _parse_variant_count(
             disallowed, says no variant filters were supplied, or carries no
             usable count.
     """
-    text = raw.decode("utf-8").strip()
+    text = _decode_body(raw, "a malformed variant-count response").strip()
     if not text:
         raise PicSureQueryError(_empty_variant_count_message(request))
     if _QUERY_TYPE_NOT_ALLOWED in text:
@@ -576,10 +613,13 @@ def _empty_variant_count_message(request: _RequestSummary | None) -> str:
     A deployment that does not serve the variant result types answers them
     with an empty body, and so does one that serves them when a filter could
     not be applied, so the message names both causes.
+
+    Like :func:`_empty_count_message`, this sees only the response bytes,
+    so it states the empty body without claiming a status for it.
     """
     return (
-        "The server answered HTTP 200 with an empty body where a variant "
-        f"count was expected.{_sent(request)} Either the variant result types "
+        "The server returned an empty body where a variant count was "
+        f"expected.{_sent(request)} Either the variant result types "
         "(variant_count, variant_list, vcf_excerpt, aggregate_vcf_excerpt) "
         "are not available on this PIC-SURE deployment, or a filter could not "
         "be applied to the concept it names. Check that each filter's shape "
@@ -649,7 +689,7 @@ def _parse_variant_list(raw: bytes) -> list[str]:
     would shred each spec into its fields. Within a spec the commas have no
     trailing space, so ``", "`` only occurs between specs.
     """
-    text = raw.decode("utf-8").strip()
+    text = _decode_body(raw, "a malformed variant-list response").strip()
     if not text:
         raise PicSureQueryError(_VARIANT_RESULT_UNSUPPORTED)
     if _QUERY_TYPE_NOT_ALLOWED in text:
@@ -677,12 +717,7 @@ def _parse_vcf_excerpt(raw: bytes) -> pd.DataFrame:
     server-driven (info columns vary by deployment), so no fixed schema is
     assumed.
     """
-    try:
-        text = raw.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise PicSureQueryError(
-            f"Server returned a malformed VCF excerpt: {raw[:200]!r}"
-        ) from exc
+    text = _decode_body(raw, "a malformed VCF excerpt")
     stripped = text.strip()
     if not stripped:
         # A served deployment signals "empty" with the "No Variants Found"

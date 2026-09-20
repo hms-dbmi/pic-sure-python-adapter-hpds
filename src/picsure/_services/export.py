@@ -10,7 +10,12 @@ from picsure._models.clause_group import ClauseGroup
 from picsure._models.count_result import CountResult
 from picsure._models.query import Query
 from picsure._services._errors import translate_transport_error
-from picsure._services._hpds_paths import query_prefix
+from picsure._services._hpds_paths import (
+    query_id_from_submit_response,
+    query_result_path,
+    query_status_path,
+    query_submit_path,
+)
 from picsure._services.query_run import build_query_body
 from picsure._transport.client import PicSureClient, json_object
 from picsure._transport.errors import TransportError
@@ -27,6 +32,8 @@ from picsure.errors import (
 # keep polling, bounded by ``_TOTAL_TIMEOUT_SECONDS`` (10 minutes).
 _STATUS_AVAILABLE = "AVAILABLE"
 _STATUS_ERROR = "ERROR"
+
+_EXPORT_OPERATION = "the PFB export"
 
 # Polling parameters.  The sequence is 1s, 2s, 4s, 8s, 16s, 32s, 60s, 60s, ...
 # (doubling, capped at 60s per poll).  Cumulative elapsed time is bounded
@@ -45,15 +52,22 @@ def export_pfb(
 ) -> None:
     """Execute a query and stream the PFB result to disk.
 
-    Uses PIC-SURE's async flow on the authorized v3 routes, built from
-    ``backend`` by :func:`~picsure._services._hpds_paths.query_prefix`:
+    Uses PIC-SURE's async flow on the authorized v3 routes, every one of
+    them built from ``backend`` by
+    :mod:`picsure._services._hpds_paths`, which checks that the query id
+    the server chose is a UUID and escapes it into a single path segment:
 
     1. ``POST /picsure/hpds/auth/v3/query`` submits the query and returns
        a query id.
     2. ``POST /picsure/hpds/auth/v3/query/{id}/status`` is polled with
        exponential backoff (1s, 2s, 4s, ..., capped at 60s per poll) until
-       the server reports ``AVAILABLE``.  Total elapsed time is bounded at
-       10 minutes.
+       the server reports ``AVAILABLE``.  Time spent in this loop is
+       bounded at 10 minutes, measured from the first poll and read only
+       after a poll answers, so one poll that runs to the per-request
+       deadline completes before the budget is enforced.  Steps 1 and 3
+       are outside that budget and carry the client's per-request
+       deadline alone, so the function as a whole is not bounded at 10
+       minutes.
     3. ``POST /picsure/hpds/auth/v3/query/{id}/result`` streams the
        Avro-binary PFB bytes straight to disk.
 
@@ -71,39 +85,48 @@ def export_pfb(
             sessions (the caller rejects ``"open"`` before reaching here).
 
     Raises:
-        PicSureValidationError: If the server rejects the request
-            (HTTP 400 / 422 / other 4xx) at any stage.
+        PicSureValidationError: If the server rejects the submit, a poll
+            or the download with a 4xx other than 401, 403, 404 and 429.
         PicSureQueryError: If the server returns 404 for the submit,
-            status, or result endpoint.
+            status, or result endpoint, answers the submit with no query
+            id or with one that is not a UUID, answers a poll with no
+            status field, or fails the query (terminal status ``ERROR``).
         PicSureAuthenticationError: If the server returns 401.
-        PicSureAuthorizationError: If the server returns 403.
+        PicSureAuthorizationError: If the server returns 403, including a
+            consent denial, which arrives as
+            :class:`~picsure.errors.PicSureConsentDeniedError`.
         PicSureConnectionError: If the server is unreachable, rate
-            limits the request, returns 5xx after retries, fails the
-            query (terminal status ``ERROR``), does not produce a result
-            within 10 minutes, or the local disk write fails.
+            limits the request, leaves polling past its ten-minute
+            budget with the result still unavailable, or the local disk
+            write fails. A 5xx after retries
+            arrives as :class:`~picsure.errors.PicSureServerError` and a
+            rejected certificate as
+            :class:`~picsure.errors.PicSureTLSError`, both subclasses of
+            it.
     """
     target = Path(path)
 
-    base = query_prefix(backend, v3=True)
     body = build_query_body(query, "DATAFRAME_PFB")
 
     # 1. Submit the query.
-    submit_response = _submit_query(client, base, body)
-    query_id = _extract_query_id(submit_response)
+    submit_response = _submit_query(client, backend, body)
+    query_id = query_id_from_submit_response(
+        submit_response, operation=_EXPORT_OPERATION
+    )
 
     # 2. Poll until AVAILABLE (or timeout / error).
-    _poll_until_available(client, base, query_id, body)
+    _poll_until_available(client, backend, query_id, body)
 
     # 3. Stream the result to disk atomically.
-    _download_result(client, base, query_id, body, target)
+    _download_result(client, backend, query_id, body, target)
 
 
 def _submit_query(
     client: PicSureClient,
-    base: str,
+    backend: str,
     body: dict[str, object],
 ) -> dict[str, object]:
-    submit_path = f"{base}/query"
+    submit_path = query_submit_path(backend)
     try:
         payload = client.post_json(submit_path, body=body)
     except TransportError as exc:
@@ -111,31 +134,13 @@ def _submit_query(
     return json_object(payload, path=submit_path)
 
 
-def _extract_query_id(response: dict[str, object]) -> str:
-    """Pull the query id out of the submit response.
-
-    The gateway populates ``picsureResultId`` (and mirrors it into
-    ``resourceResultId``).  Either field is acceptable; prefer
-    ``picsureResultId`` because that's the path parameter the
-    ``/query/{id}/status`` and ``/query/{id}/result`` routes match on.
-    """
-    for field in ("picsureResultId", "resourceResultId", "queryId"):
-        value = response.get(field)
-        if isinstance(value, str) and value:
-            return value
-    raise PicSureQueryError(
-        "Server did not return a query id in the PFB submit response "
-        "(expected 'picsureResultId')."
-    )
-
-
 def _poll_until_available(
     client: PicSureClient,
-    base: str,
+    backend: str,
     query_id: str,
     body: dict[str, object],
 ) -> None:
-    status_path = f"{base}/query/{query_id}/status"
+    status_path = query_status_path(backend, query_id)
 
     interval = _INITIAL_POLL_INTERVAL_SECONDS
     start = time.monotonic()
@@ -187,7 +192,7 @@ def _extract_status(response: dict[str, object]) -> str:
 
 def _download_result(
     client: PicSureClient,
-    base: str,
+    backend: str,
     query_id: str,
     body: dict[str, object],
     target: Path,
@@ -200,7 +205,7 @@ def _download_result(
     status, a local write or rename failure to
     :class:`PicSureConnectionError` naming the destination.
     """
-    result_path = f"{base}/query/{query_id}/result"
+    result_path = query_result_path(backend, query_id)
     try:
         client.post_raw_to_file(result_path, target, body=body)
     except TransportError as exc:

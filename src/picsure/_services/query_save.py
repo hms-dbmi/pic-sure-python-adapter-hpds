@@ -6,12 +6,22 @@ from typing import TYPE_CHECKING
 from picsure._models.clause import Clause
 from picsure._models.clause_group import ClauseGroup
 from picsure._models.query import Query
-from picsure._services._errors import translate_transport_error
-from picsure._services._hpds_paths import query_prefix
+from picsure._services._errors import (
+    bodiless_response_succeeded,
+    translate_transport_error,
+)
+from picsure._services._hpds_paths import (
+    NAMED_DATASET_COLLECTION_PATH,
+    canonical_server_id,
+    named_dataset_item_path,
+    query_id_from_submit_response,
+    query_submit_path,
+)
 from picsure._services.query_run import build_query_body
 from picsure._transport.client import json_object
 from picsure._transport.errors import TransportError
 from picsure.errors import (
+    EmptyBodyError,
     PicSureQueryError,
     PicSureValidationError,
 )
@@ -19,14 +29,7 @@ from picsure.errors import (
 if TYPE_CHECKING:
     from picsure._transport.client import PicSureClient
 
-# The named-dataset collection lives on the operations service, not HPDS. The
-# gateway routes ``/operations/**`` there and does not strip the prefix, so the
-# client path is ``/picsure/operations/dataset/named``. There is no gateway
-# catch-all; an unrouted path falls through to the SPA and 404s. The mapping is
-# slash-less server-side, and Spring 6 404s a trailing slash -- so the item
-# path must not gain one.
-_NAMED_DATASET_COLLECTION_PATH = "/picsure/operations/dataset/named"
-_NAMED_DATASET_ITEM_PATH = "/picsure/operations/dataset/named/{named_dataset_id}"
+_SAVE_OPERATION = "the saved query"
 
 _NAME_PUNCTUATION = "-\\/?+=[].():\"'"
 _NAME_CHARACTER_CLASS = r"\w\d " + "".join(re.escape(c) for c in _NAME_PUNCTUATION)
@@ -45,8 +48,8 @@ def save_query_by_name(
 ) -> str:
     """Submit a query, then save it to the user's profile under ``name``.
 
-    Returns the PIC-SURE-generated query ID — the same id that
-    :func:`load_query` can re-fetch.
+    Returns the PIC-SURE-generated query ID in canonical UUID form, the
+    same id that :func:`load_query` can re-fetch.
 
     If a NamedDataset already exists for this user with ``name``:
         * ``overwrite=False`` (default) → raise :class:`PicSureValidationError`.
@@ -75,8 +78,7 @@ def save_query_by_name(
         )
 
     body = build_query_body(query, "COUNT")
-    submit_path = query_prefix(backend, v3=True) + "/query"
-    query_id = _submit_and_extract_id(client, submit_path, body)
+    query_id = _submit_and_extract_id(client, query_submit_path(backend), body)
 
     if existing is None:
         _create_named_dataset(client, query_id=query_id, name=name)
@@ -93,7 +95,10 @@ def save_query_by_name(
         )
         _update_named_dataset(
             client,
-            named_dataset_id=str(existing_uuid),
+            named_dataset_id=canonical_server_id(
+                existing_uuid,
+                description=f"The identifier of the named query '{name}'",
+            ),
             query_id=query_id,
             name=name,
             archived=bool(existing.get("archived", False)),
@@ -112,7 +117,7 @@ def _find_existing_by_name(
     uuid) so behavior is stable.
     """
     try:
-        response = client.get_json(_NAMED_DATASET_COLLECTION_PATH)
+        response = client.get_json(NAMED_DATASET_COLLECTION_PATH)
     except TransportError as exc:
         raise translate_transport_error(
             exc, operation="the saved-query name lookup"
@@ -130,7 +135,53 @@ def _find_existing_by_name(
     return sorted(matches, key=lambda r: str(r.get("uuid") or ""))[0]
 
 
+def _confirm_bodiless_write(exc: EmptyBodyError, *, operation: str) -> None:
+    """Accept a bodiless named-dataset response only on a success status.
+
+    The operations service answers a create with ``201`` and an update
+    with ``204``, both without a body, and both mean the record was
+    written. :func:`bodiless_response_succeeded` is what separates those
+    from the other bodiless statuses, a ``302`` to an SSO login on an
+    expired gateway session among them.
+
+    Args:
+        exc: The empty-body failure the transport raised.
+        operation: What the caller was doing, named in the message.
+
+    Raises:
+        PicSureQueryError: If the status is anything but a 2xx.
+    """
+    if bodiless_response_succeeded(exc):
+        return
+    raise PicSureQueryError(
+        f"The server answered HTTP {exc.status_code} with an empty body while "
+        f"{operation}, so the save could not be confirmed and the named query "
+        "may not exist. Only a 2xx with no body is a completed write; a "
+        "redirect usually means the gateway session expired. Reconnect, list "
+        "your saved queries, and retry."
+    ) from exc
+
+
 def _create_named_dataset(client: PicSureClient, *, query_id: str, name: str) -> None:
+    """POST a new NamedDataset record for ``query_id``.
+
+    The call is made for its side effect, so a bodiless ``201 Created``
+    is a success rather than a failure: failing it would send the caller
+    into the duplicate-name refusal on a retry of a save the server
+    already committed. :func:`_confirm_bodiless_write` keeps that
+    tolerance to the statuses that mean the write landed.
+
+    Args:
+        client: Authenticated HTTP client.
+        query_id: The submitted query's PIC-SURE id.
+        name: The name to store the record under.
+
+    Raises:
+        PicSureQueryError: If the response carried no body under a status
+            that does not confirm the write.
+        PicSureError: Whatever :func:`translate_transport_error` maps the
+            transport failure to.
+    """
     body = {
         "queryId": query_id,
         "name": name,
@@ -138,7 +189,9 @@ def _create_named_dataset(client: PicSureClient, *, query_id: str, name: str) ->
         "metadata": {},
     }
     try:
-        client.post_json(_NAMED_DATASET_COLLECTION_PATH, body=body)
+        client.post_json(NAMED_DATASET_COLLECTION_PATH, body=body)
+    except EmptyBodyError as exc:
+        _confirm_bodiless_write(exc, operation=f"saving the named query '{name}'")
     except TransportError as exc:
         raise translate_transport_error(exc, operation="the saved-query save") from exc
 
@@ -152,7 +205,29 @@ def _update_named_dataset(
     archived: bool,
     metadata: dict[str, object],
 ) -> None:
-    path = _NAMED_DATASET_ITEM_PATH.format(named_dataset_id=named_dataset_id)
+    """Re-point an existing NamedDataset record at ``query_id``.
+
+    Like :func:`_create_named_dataset`, the response body is not needed,
+    so a bodiless ``204 No Content`` is the normal answer to this PUT and
+    reads as a success. :func:`_confirm_bodiless_write` rejects the other
+    bodiless statuses.
+
+    Args:
+        client: Authenticated HTTP client.
+        named_dataset_id: The record's canonical identifier, already
+            checked as a UUID. The path builder escapes it.
+        query_id: The freshly submitted query's PIC-SURE id.
+        name: The record's name, resent unchanged.
+        archived: The record's archived flag, preserved.
+        metadata: The record's metadata, preserved.
+
+    Raises:
+        PicSureQueryError: If the response carried no body under a status
+            that does not confirm the write.
+        PicSureError: Whatever :func:`translate_transport_error` maps the
+            transport failure to.
+    """
+    path = named_dataset_item_path(named_dataset_id)
     body = {
         "queryId": query_id,
         "name": name,
@@ -161,6 +236,8 @@ def _update_named_dataset(
     }
     try:
         client.put_json(path, body=body)
+    except EmptyBodyError as exc:
+        _confirm_bodiless_write(exc, operation=f"updating the named query '{name}'")
     except TransportError as exc:
         raise translate_transport_error(
             exc, operation="the saved-query update"
@@ -210,18 +287,29 @@ def _validate_name(name: str) -> None:
 def _submit_and_extract_id(
     client: PicSureClient, submit_path: str, body: dict[str, object]
 ) -> str:
+    """Submit the query and return the id the server chose.
+
+    Args:
+        client: Authenticated HTTP client.
+        submit_path: The versioned HPDS submit path.
+        body: The query envelope to post.
+
+    Returns:
+        The canonical query id, unescaped: it goes into a request body
+        and back to the caller as well as into a path.
+
+    Raises:
+        PicSureQueryError: If the response carries no query id, or one
+            that is not a UUID.
+        PicSureError: Whatever :func:`translate_transport_error` maps the
+            transport failure to.
+    """
     try:
         payload = client.post_json(submit_path, body=body)
     except TransportError as exc:
         raise translate_transport_error(
             exc, operation="the saveQueryByName query submit"
         ) from exc
-    response = json_object(payload, path=submit_path)
-    for field in ("picsureResultId", "resourceResultId", "queryId"):
-        v = response.get(field)
-        if isinstance(v, str) and v:
-            return v
-    raise PicSureQueryError(
-        "Server did not return a query id in the submit response "
-        "(expected 'picsureResultId')."
+    return query_id_from_submit_response(
+        json_object(payload, path=submit_path), operation=_SAVE_OPERATION
     )

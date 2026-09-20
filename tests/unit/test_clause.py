@@ -3,7 +3,9 @@ import dataclasses
 import pytest
 
 from picsure._models.clause import Clause, PhenotypicFilterType
+from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure._services.query_build import buildClause
+from picsure.errors import PicSureValidationError
 
 
 class TestPhenotypicFilterType:
@@ -258,3 +260,36 @@ class TestClauseInputTypes:
         )
 
         assert clause.categories == ("Male", "Female")
+
+
+class TestClauseEmptiness:
+    def test_an_empty_keys_list_is_refused(self):
+        with pytest.raises(PicSureValidationError, match="at least one concept path"):
+            Clause(keys=[], type=PhenotypicFilterType.REQUIRE)
+
+    def test_an_empty_keys_tuple_is_refused(self):
+        with pytest.raises(PicSureValidationError, match="at least one concept path"):
+            Clause(keys=(), type=PhenotypicFilterType.REQUIRE)
+
+    def test_an_empty_generator_of_keys_is_refused(self):
+        with pytest.raises(PicSureValidationError, match="at least one concept path"):
+            Clause(keys=(path for path in []), type=PhenotypicFilterType.ANYRECORD)
+
+    def test_the_message_names_the_wire_shape_it_prevents(self):
+        with pytest.raises(PicSureValidationError, match="phenotypicClauses"):
+            Clause(keys=[], type=PhenotypicFilterType.REQUIRE)
+
+    def test_an_empty_clause_cannot_hide_inside_a_group(self):
+        with pytest.raises(PicSureValidationError, match="at least one concept path"):
+            ClauseGroup(
+                clauses=[
+                    Clause(keys=[], type=PhenotypicFilterType.REQUIRE),
+                    Clause(keys=["\\p\\"], type=PhenotypicFilterType.REQUIRE),
+                ],
+                operator=GroupOperator.AND,
+            )
+
+    def test_a_one_key_clause_is_still_accepted(self):
+        clause = Clause(keys="\\p\\", type=PhenotypicFilterType.REQUIRE)
+
+        assert clause.keys == ("\\p\\",)

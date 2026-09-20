@@ -4,7 +4,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from typing import cast
 
-from picsure.errors import PicSureValidationError
+from picsure.errors import PicSureQueryError, PicSureValidationError
 
 
 def _coerce_count(raw: object) -> int:
@@ -104,14 +104,35 @@ class FacetCategory:
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> FacetCategory:
+        """Build a category from one element of the facets response.
+
+        Args:
+            data: The decoded category object.
+
+        Returns:
+            The category and its options, nested children included.
+
+        Raises:
+            PicSureQueryError: If an element of the category's option
+                array is not a JSON object. It is a malformed server
+                response rather than a caller mistake, so it carries the
+                class the rest of the library reports one with.
+        """
+        name = str(data.get("name", ""))
         raw_options = data.get("facets", data.get("categories", []))
-        options: list[Facet] = (
-            [Facet.from_dict(cast(dict[str, object], c)) for c in raw_options]
-            if isinstance(raw_options, list)
-            else []
-        )
+        options: list[Facet] = []
+        if isinstance(raw_options, list):
+            for position, option in enumerate(raw_options):
+                if not isinstance(option, dict):
+                    raise PicSureQueryError(
+                        f"The facet category {name!r} carries an option at "
+                        f"index {position} that is a {type(option).__name__}, "
+                        f"not an object: {option!r}. Each option is a JSON "
+                        f"object with a 'name' and a 'count'."
+                    )
+                options.append(Facet.from_dict(cast(dict[str, object], option)))
         return cls(
-            name=str(data.get("name", "")),
+            name=name,
             display=str(data.get("display", "")),
             options=options,
             description=str(data.get("description") or ""),

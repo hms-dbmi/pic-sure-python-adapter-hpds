@@ -135,6 +135,60 @@ class TestBuildClauseValidation:
             buildClause([], type=PhenotypicFilterType.FILTER, categories="x")
 
 
+class TestBuildClauseEmptyCategories:
+    def test_an_empty_category_list_is_no_criteria_at_all(self):
+        with pytest.raises(
+            PicSureValidationError, match="require at least one of: categories"
+        ):
+            buildClause("\\path\\", type=PhenotypicFilterType.FILTER, categories=[])
+
+    def test_an_empty_category_list_does_not_conflict_with_min(self):
+        clause = buildClause(
+            "\\path\\",
+            type=PhenotypicFilterType.FILTER,
+            categories=[],
+            min=40.0,
+        )
+
+        assert clause.categories is None
+        assert clause.min == 40.0
+
+    def test_an_empty_category_list_never_reaches_the_wire_as_empty_values(self):
+        clause = buildClause(
+            "\\path\\",
+            type=PhenotypicFilterType.FILTER,
+            categories=[],
+            max=80.0,
+        )
+
+        assert "values" not in clause.to_query_json()
+
+    def test_a_blank_category_string_is_refused(self):
+        with pytest.raises(PicSureValidationError, match="empty or blank strings"):
+            buildClause("\\path\\", type=PhenotypicFilterType.FILTER, categories="")
+
+    def test_a_blank_category_in_a_list_is_refused(self):
+        with pytest.raises(PicSureValidationError, match="empty or blank strings"):
+            buildClause("\\path\\", type=PhenotypicFilterType.FILTER, categories=[""])
+
+    def test_a_whitespace_only_category_is_refused(self):
+        with pytest.raises(PicSureValidationError, match="empty or blank strings"):
+            buildClause(
+                "\\path\\",
+                type=PhenotypicFilterType.FILTER,
+                categories=["Male", "   "],
+            )
+
+    def test_real_categories_still_build_a_values_filter(self):
+        clause = buildClause(
+            "\\path\\",
+            type=PhenotypicFilterType.FILTER,
+            categories=["Male", "Female"],
+        )
+
+        assert clause.to_query_json()["values"] == ["Male", "Female"]
+
+
 class TestSelectRemoved:
     def test_select_member_is_gone(self):
         assert not hasattr(PhenotypicFilterType, "SELECT")
@@ -173,6 +227,35 @@ class TestBuildClauseGroup:
         with pytest.raises(PicSureValidationError, match="at least one"):
             buildClauseGroup([])
 
+    def test_bare_clause_raises_the_documented_validation_error(self):
+        clause = buildClause("\\p1\\", type=PhenotypicFilterType.FILTER, categories="A")
+
+        with pytest.raises(PicSureValidationError, match="Clause or ClauseGroup"):
+            buildClauseGroup(clause)
+
+    def test_bare_group_raises_the_documented_validation_error(self):
+        clause = buildClause("\\p1\\", type=PhenotypicFilterType.FILTER, categories="A")
+        inner = buildClauseGroup([clause], operator=GroupOperator.OR)
+
+        with pytest.raises(PicSureValidationError, match="bare ClauseGroup"):
+            buildClauseGroup(inner)
+
+    def test_a_string_raises_instead_of_becoming_character_children(self):
+        with pytest.raises(PicSureValidationError, match="not a string"):
+            buildClauseGroup("abc")
+
+    def test_a_loaded_query_among_the_children_raises(self):
+        """A saved query loads as a Query, which is not composable."""
+        clause = buildClause("\\p1\\", type=PhenotypicFilterType.FILTER, categories="A")
+        saved = buildQuery(phenotypicFilter=clause, includeConcepts=["\\p2\\"])
+
+        with pytest.raises(PicSureValidationError) as exc_info:
+            buildClauseGroup([saved, clause])
+
+        message = str(exc_info.value)
+        assert "Query" in message
+        assert "phenotypicFilter" in message
+
     def test_copies_caller_list(self):
         c1 = buildClause("\\p1\\", type=PhenotypicFilterType.FILTER, categories="A")
         c2 = buildClause("\\p2\\", type=PhenotypicFilterType.FILTER, categories="B")
@@ -203,6 +286,40 @@ class TestBuildClauseGroup:
         assert children[0]["phenotypicFilterType"] == "FILTER"  # type: ignore[index]
         assert children[0]["conceptPath"] == "\\sex\\"  # type: ignore[index]
         assert children[2]["operator"] == "OR"  # type: ignore[index]
+
+
+class TestBuildClauseGroupNonSequence:
+    def test_none_names_the_argument_type(self):
+        with pytest.raises(PicSureValidationError, match="NoneType") as info:
+            buildClauseGroup(None)  # type: ignore[arg-type]
+
+        assert "at least one clause" not in str(info.value)
+
+    def test_an_include_only_saved_query_filter_is_named_as_a_missing_sequence(self):
+        include_only = buildQuery(includeConcepts=["\\p1\\"])
+
+        with pytest.raises(PicSureValidationError, match="cannot be iterated"):
+            buildClauseGroup(include_only.phenotypicFilter)  # type: ignore[arg-type]
+
+    def test_an_empty_string_names_the_type(self):
+        with pytest.raises(PicSureValidationError, match="not a string"):
+            buildClauseGroup("")  # type: ignore[arg-type]
+
+    def test_a_number_names_the_type(self):
+        with pytest.raises(PicSureValidationError, match="not a int"):
+            buildClauseGroup(0)  # type: ignore[arg-type]
+
+    def test_an_empty_list_keeps_its_own_message(self):
+        with pytest.raises(PicSureValidationError) as info:
+            buildClauseGroup([])
+
+        assert str(info.value) == "A clause group must contain at least one clause."
+
+    def test_an_empty_tuple_keeps_the_same_message(self):
+        with pytest.raises(PicSureValidationError) as info:
+            buildClauseGroup(())
+
+        assert str(info.value) == "A clause group must contain at least one clause."
 
 
 class TestBuildQuery:

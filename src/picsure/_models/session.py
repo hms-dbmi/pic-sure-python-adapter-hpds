@@ -8,6 +8,7 @@ from picsure._dev.config import DevConfig
 from picsure._dev.reporting import events_to_df, stats_to_df
 from picsure._dev.timing import timed
 from picsure._models.query_type import QueryType
+from picsure._services._hpds_paths import check_backend
 from picsure.errors import PicSureValidationError
 
 if TYPE_CHECKING:
@@ -19,9 +20,6 @@ if TYPE_CHECKING:
     from picsure._models.facet import FacetSet
     from picsure._models.query import Query
     from picsure._transport.client import PicSureClient
-
-
-_BACKENDS = frozenset({"auth", "open"})
 
 
 class Session:
@@ -71,13 +69,7 @@ class Session:
         self._token_expiration = token_expiration
         self._session_id = session_id
         self._consents: list[str] = list(consents) if consents else []
-        if backend not in _BACKENDS:
-            raise PicSureValidationError(
-                f"backend must be one of {sorted(_BACKENDS)}, not {backend!r}. "
-                f"It is interpolated straight into the HPDS request path, so "
-                f"an unrecognized value would silently produce a 404 on every "
-                f"query."
-            )
+        check_backend(backend)
         self._backend = backend
         self._supports_genomic = supports_genomic
         self._dev_config = (
@@ -283,12 +275,18 @@ class Session:
         ``page``, ``size``) is preserved on ``df.attrs``. Raise ``size`` to
         pull more results per call, or step ``page`` to walk the full set.
 
+        Paging here is **one-based**: the first page is ``page=1``. This
+        is not the convention :meth:`searchDictionary` uses, where
+        ``page`` is zero-based and the page size argument is called
+        ``page_size``. The two routes are served by different backends
+        and each keeps the convention its own API documents.
+
         Args:
             genomicConceptPath: The genomic key, e.g. ``"Gene_with_variant"``
                 or ``"Variant_consequence_calculated"``.
             query: Optional case-insensitive search term to narrow results
                 (e.g. ``"BRCA"``). Empty returns the first page of all values.
-            page: 1-based page number.
+            page: One-based page number, so the first page is ``page=1``.
             size: Page size (number of values per call).
 
         Returns:
@@ -296,7 +294,9 @@ class Session:
 
         Raises:
             PicSureValidationError: If the session is not on a genomic-capable
-                platform, or the key is empty.
+                platform, if the key is empty, or if ``page`` or ``size`` is
+                not an integer of 1 or greater. All are checked before any
+                request is sent.
 
         Example:
             >>> df = session.searchGenomicValues("Gene_with_variant", query="BRCA")
@@ -388,13 +388,38 @@ class Session:
         async flow is exposed only on the authorized v3 endpoints, which
         the BDC API gateway rejects without a token.
 
+        The polling loop, and only the polling loop, carries a ten-minute
+        budget. The clock starts when the submit returns and is read
+        after each poll answers, so one poll that runs to the
+        per-request deadline completes before the budget is enforced.
+        The submit and the download are outside it, bounded by the
+        per-request deadline alone, which is what
+        ``picsure.connect(timeout=...)`` sets. The call as a whole can
+        therefore run longer than ten minutes.
+
         Args:
             query: A Query, Clause, or ClauseGroup.
             path: File path to write the PFB data to.
 
         Raises:
             PicSureValidationError: If the session was connected to an
-                open-access platform.
+                open-access platform, or the server rejects the submit,
+                poll or download with a 4xx other than 401, 403, 404 and
+                429.
+            PicSureAuthenticationError: If the token is rejected (HTTP
+                401).
+            PicSureAuthorizationError: If the account may not run the
+                export (HTTP 403), including a consent denial.
+            PicSureQueryError: If any of the three routes answers 404, if
+                the server finishes the query with ``status=ERROR``, or if
+                it answers the submit with no query id or one that is not
+                a UUID, or a poll with no status field.
+            PicSureConnectionError: If polling passes its ten-minute
+                budget with the result still unavailable, if the server
+                cannot be reached or
+                rate limits the request, if it answers 5xx (as
+                :class:`~picsure.errors.PicSureServerError`), or if the
+                output file cannot be written.
         """
         if self._backend == "open":
             raise PicSureValidationError(

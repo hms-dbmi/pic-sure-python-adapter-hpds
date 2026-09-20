@@ -34,7 +34,10 @@ def buildClause(  # noqa: N802
             categorical or range filters, ``PhenotypicFilterType.ANYRECORD``
             to match the presence of any value, or
             ``PhenotypicFilterType.REQUIRE`` to require a non-null value.
-        categories: For FILTER clauses on categorical variables.
+        categories: For FILTER clauses on categorical variables. An empty
+            list counts as no categories at all, so it does not satisfy a
+            FILTER's criteria requirement and does not conflict with
+            ``min``/``max``. A blank or whitespace-only value is refused.
         min: For FILTER clauses on numeric variables, minimum value.
         max: For FILTER clauses on numeric variables, maximum value.
 
@@ -44,7 +47,8 @@ def buildClause(  # noqa: N802
         ``Session.runQuery()``.
 
     Raises:
-        PicSureValidationError: If the clause configuration is invalid.
+        PicSureValidationError: If the clause configuration is invalid, or a
+            supplied category value is empty or blank.
 
     Note:
         Variables you filter on are returned as output columns automatically.
@@ -66,11 +70,18 @@ def buildClause(  # noqa: N802
         ... )
     """
     key_paths = (keys,) if isinstance(keys, str) else tuple(keys)
-    category_values = (
-        None
+    supplied_categories = (
+        ()
         if categories is None
         else ((categories,) if isinstance(categories, str) else tuple(categories))
     )
+    if any(not str(value).strip() for value in supplied_categories):
+        raise PicSureValidationError(
+            "buildClause 'categories' must not contain empty or blank strings. "
+            "Pass the category labels to match, or leave categories out and "
+            "filter with min/max."
+        )
+    category_values = supplied_categories or None
 
     if not key_paths:
         raise PicSureValidationError("Clause must have at least one concept path.")
@@ -134,7 +145,17 @@ def buildClauseGroup(  # noqa: N802
         ``Session.runQuery()``.
 
     Raises:
-        PicSureValidationError: If the clause list is empty.
+        PicSureValidationError: If the clause list is empty, if
+            ``clauses`` is a bare Clause, a bare ClauseGroup, a string or
+            anything else that is not a sequence of them, or if any
+            element is neither a Clause nor a ClauseGroup. A Query is the
+            common case, since ``Session.loadQueryByID`` may return one;
+            its ``phenotypicFilter`` is the part that composes, and on an
+            include-only saved query that attribute is ``None``. An empty
+            sequence is answered here; every other argument reaches
+            :class:`ClauseGroup` unconverted, so its guards name the type
+            that arrived rather than reporting an empty group, an
+            unwrapped ``TypeError`` or a later ``AttributeError``.
 
     Example:
         >>> from picsure import buildClauseGroup, GroupOperator
@@ -143,10 +164,10 @@ def buildClauseGroup(  # noqa: N802
         ...     operator=GroupOperator.AND,
         ... )
     """
-    if not clauses:
+    if isinstance(clauses, Sequence) and not isinstance(clauses, str) and not clauses:
         raise PicSureValidationError("A clause group must contain at least one clause.")
 
-    return ClauseGroup(clauses=tuple(clauses), operator=operator)
+    return ClauseGroup(clauses=clauses, operator=operator)
 
 
 def buildQuery(  # noqa: N802

@@ -22,14 +22,70 @@ Pass an empty string (or no argument) to return all variables:
 all_vars = session.searchDictionary()
 ```
 
+The server sends the dictionary a page at a time, so this walks the
+pages and returns the whole result set as one DataFrame. It is not a
+single request: the walk issues one HTTP call per 500 rows by default.
+
+A production dictionary is large enough that the call above can fail.
+An unpaged search refuses to collect more than 100,000 rows and raises
+`PicSureValidationError` when the match count is above it, naming the
+count and telling you to page. Narrowing with a term or a facet is the
+other way out.
+
+### Paging
+
+Pass `page` to fetch exactly one page and stop. Pages are **zero-based**:
+`page=0` is the first one. `page_size` sets the rows per HTTP request
+and defaults to 500.
+
+```python
+first = session.searchDictionary("blood pressure", page=0, page_size=100)
+second = session.searchDictionary("blood pressure", page=1, page_size=100)
+```
+
+Every returned DataFrame carries the paging state in
+[`df.attrs`](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.attrs.html):
+
+| Key | Meaning |
+|---|---|
+| `total_elements` | The server's total match count, or `None` when the response omitted it. |
+| `has_more` | Whether pages remain beyond what was returned. |
+| `page` | The page you asked for, or `None` when every page was collected. |
+| `page_size` | Rows requested per HTTP call. |
+| `pages_fetched` | How many HTTP calls the result took. |
+
+`has_more` is what to loop on, since the last page is usually a short
+one rather than an empty one:
+
+```python
+page = 0
+while True:
+    chunk = session.searchDictionary("blood pressure", page=page, page_size=1000)
+    process(chunk)
+    if not chunk.attrs["has_more"]:
+        break
+    page += 1
+```
+
+On an unpaged call `page` comes back `None` and `has_more` is `True`
+only in one case: the server reported no match count and the final page
+carried the walk past the 100,000-row ceiling, so the surplus rows were
+dropped.
+
 ### Exclude Values
 
-For faster searches on large dictionaries, set `include_values=False`
-to omit the `values` column:
+Set `include_values=False` to leave the `values` column out of the
+returned DataFrame:
 
 ```python
 results = session.searchDictionary("age", include_values=False)
 ```
+
+The flag never reaches the wire. It is read once, after the full payload
+has been downloaded and parsed, to pick which columns the DataFrame
+carries, so the request bytes, the round trips and the wall time are the
+same either way. To make a search on a large dictionary cheaper, narrow
+it with `term` or `facets`, or read it a page at a time with `page`.
 
 ## Facet Filtering
 
@@ -97,14 +153,23 @@ facets.add("invalid_category", "value")
 
 ## Genomic Value Discovery
 
-On genomic-capable platforms (BDC_AUTHORIZED, NHANES_AUTHORIZED), you can look
-up valid values for any genomic key before building a filter.
+On genomic-capable platforms (the authorized ones, such as BDC_AUTHORIZED
+and NHANES_AUTHORIZED), you can look up valid values for any genomic key
+before building a filter.
 
 ### Search genomic values
 
-`session.searchGenomicValues` queries the server and returns a DataFrame of
-matching values. Results are paginated; metadata (total, page, size) is on
-`df.attrs`.
+`session.searchGenomicValues` queries the server and returns a
+single-column `value` DataFrame of matching values. Results are
+paginated, and every call puts four keys on `df.attrs`: `total` and
+`page` as the server reported them, `size` as you asked for it, and
+`genomic_concept_path`, the key you looked up.
+
+This route's paging is **one-based**, so the first page is `page=1`, and
+its page-size argument is called `size`. `searchDictionary` above is
+zero-based with `page_size`. The two are served by different backends.
+Both `page` and `size` must be integers of 1 or greater; anything else is
+refused before a request is sent.
 
 ```python
 # Find genes matching "BRCA"
@@ -116,8 +181,14 @@ all_consequences = session.searchGenomicValues("Variant_consequence_calculated")
 
 # Page through large result sets
 page2 = session.searchGenomicValues("Gene_with_variant", query="", page=2, size=100)
-print(df.attrs)  # {'total': ..., 'page': 2, 'size': 100}
+print(page2.attrs)
+# {'total': ..., 'page': 2, 'size': 100,
+#  'genomic_concept_path': 'Gene_with_variant'}
 ```
+
+A key that is not a genomic annotation on the deployment comes back as an
+empty body, which raises `PicSureQueryError` rather than an empty
+DataFrame.
 
 ### Variant consequences (offline)
 
