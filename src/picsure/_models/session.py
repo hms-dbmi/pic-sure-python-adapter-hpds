@@ -324,6 +324,14 @@ class Session:
     ) -> CountResult | dict[str, CountResult] | pd.DataFrame | list[str]:
         """Execute a query and return the result.
 
+        A ``"participant"`` or ``"timestamp"`` result is built by a job on
+        the server: the call submits the query, waits until the server
+        reports the result ready and then downloads it. The submit and
+        the wait together are bounded by the ``timeout`` given to
+        :func:`picsure.connect`, ten minutes by default. A status poll
+        that is throttled, answered with a 5xx or lost to a network
+        failure is sent again inside that budget.
+
         Args:
             query: A Query (from buildQuery), or a bare Clause/ClauseGroup
                 (from buildClause/buildClauseGroup). Variables referenced in
@@ -349,12 +357,26 @@ class Session:
             A :class:`CountResult`, a ``dict[str, CountResult]``, a
             DataFrame, or a ``list[str]`` depending on ``type``.
 
-        A ``"participant"`` or ``"timestamp"`` result is built by a job on
-        the server, so the call submits the query, waits until the server
-        reports the result ready and then downloads it, with the submit
-        and the wait together bounded by the ``timeout`` given to
-        :func:`picsure.connect`; passing that budget raises
-        :class:`~picsure.errors.PicSureConnectionError`.
+        Raises:
+            PicSureValidationError: If ``type`` is not a recognised
+                result type, or the server rejects the request with a
+                4xx other than 401, 403, 404 and 429.
+            PicSureAuthenticationError: If the token is rejected (HTTP
+                401).
+            PicSureAuthorizationError: If the account may not run the
+                query (HTTP 403), including a consent denial.
+            PicSureQueryError: If the response cannot be parsed, or a
+                ``"participant"`` or ``"timestamp"`` query is answered
+                with a 404, a query id that is not a UUID, a poll
+                without a status field, or a terminal ``ERROR`` status,
+                which the server reports without further detail.
+            PicSureConnectionError: If the server cannot be reached or
+                rate limits the request, if it answers 5xx (as
+                :class:`~picsure.errors.PicSureServerError`), or if a
+                ``"participant"`` or ``"timestamp"`` query is still
+                unfinished when the ``timeout`` passes; that message
+                names the query id, the budget and, when the last poll
+                failed rather than answered, the failure.
 
         Example:
             >>> count = session.runQuery(my_query, type="count")
@@ -398,11 +420,13 @@ class Session:
         The submit and the polling loop together are bounded by the
         request timeout ``picsure.connect(timeout=...)`` sets, ten
         minutes by default. The clock starts just before the submit and
-        is read after each poll answers, so one poll that runs to the
-        per-request deadline completes before the budget is enforced.
-        The download that follows carries the same value as its own
-        per-request deadline, so the call as a whole can run longer
-        than the timeout.
+        is read after each poll answers; a poll that is throttled,
+        answered with a 5xx or lost to a network failure is sent again
+        inside the budget. The last sleep is clamped to what is left of
+        it, so the final poll is sent at the budget rather than after
+        it; that poll and the download that follows each carry the same
+        value as their own per-request deadline, so the call as a whole
+        can still run past it.
 
         Args:
             query: A Query, Clause, or ClauseGroup.
@@ -422,7 +446,8 @@ class Session:
                 it answers the submit with no query id or one that is not
                 a UUID, or a poll with no status field.
             PicSureConnectionError: If the submit and polling pass the
-                request timeout with the result still unavailable, if
+                request timeout with the result still unavailable
+                (naming the last poll's failure when it failed), if
                 the server cannot be reached or
                 rate limits the request, if it answers 5xx (as
                 :class:`~picsure.errors.PicSureServerError`), or if the

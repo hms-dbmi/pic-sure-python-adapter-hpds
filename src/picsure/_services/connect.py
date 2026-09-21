@@ -126,9 +126,11 @@ def connect(
             server runs as a job, participant and timestamp queries and
             :meth:`Session.exportAsPFB`, it also bounds the submit and
             the polling that wait on the job, measured from just before
-            the submit; the download that follows then carries it as a
-            per-request deadline of its own, so such a call can run
-            longer than this value end to end. The connect-time validation
+            the submit, with the last sleep clamped so the final poll
+            is sent at the budget; that poll and the download that
+            follows each carry this value as a per-request deadline of
+            their own, so such a call can still run past it end to
+            end. The connect-time validation
             request below keeps its own short deadline, so a mistyped
             hostname fails in seconds.
         validate: Whether to verify the connection before returning a
