@@ -28,7 +28,13 @@ from picsure._services._hpds_paths import (
     query_submit_path,
 )
 from picsure._transport.client import PicSureClient, json_object
-from picsure._transport.errors import TransportError, TransportServerError
+from picsure._transport.errors import (
+    TransportConnectionError,
+    TransportError,
+    TransportRateLimitError,
+    TransportServerError,
+    TransportTLSError,
+)
 from picsure.errors import (
     PicSureConnectionError,
     PicSureQueryError,
@@ -112,8 +118,14 @@ def run_query(
 
     Raises:
         PicSureValidationError: If the query type is invalid.
-        PicSureConnectionError: If the server is unreachable.
-        PicSureQueryError: If the server response cannot be parsed.
+        PicSureConnectionError: If the server is unreachable, or a
+            ``participant`` or ``timestamp`` query is still unfinished
+            when the client's request timeout passes (see
+            :func:`run_async_query_to_file`).
+        PicSureQueryError: If the server response cannot be parsed, or a
+            ``participant`` or ``timestamp`` query is answered with a
+            404, a query id that is not a UUID, a poll without a status
+            field, or a terminal ``ERROR`` status.
     """
     resolved_type = _resolve_query_type(query_type)
     body = build_query_body(query, resolved_type)
@@ -218,16 +230,23 @@ def run_async_query_to_file(
        after the submit and then after sleeps of 1s, 2s, 4s, 8s and
        10s from there on, until the server reports ``AVAILABLE``. Any
        status other than ``AVAILABLE`` and ``ERROR`` means the job is
-       still running.
+       still running. A poll that is throttled, answered with a 5xx or
+       lost to a network failure (a timeout, a refused connection, a
+       DNS miss) is sent again after the same sleep, a throttled one
+       after the ``Retry-After`` the server gave; a 401, 403, 404, a
+       validation error or a rejected certificate raises at once.
     3. ``POST {prefix}/query/{id}/result`` streams the bytes into
        ``target`` through :meth:`PicSureClient.post_raw_to_file`, which
        stages them at ``<target>.part`` and promotes the file only once
        the body is complete.
 
-    The whole call, submit and polls together, is bounded by
-    :attr:`PicSureClient.timeout`, measured from just before the submit
-    and read after each poll answers. The download that follows carries
-    the same value as its own per-request deadline.
+    The submit and the polls together, failed polls included, are
+    bounded by :attr:`PicSureClient.timeout`, measured from just before
+    the submit and read after each poll answers. The last sleep is
+    clamped to what is left of it, so the final poll is sent at the
+    budget rather than after it. That poll and the download that
+    follows each carry the same value as their own per-request
+    deadline, so the call as a whole can still run past it.
 
     Args:
         client: Authenticated HTTP client.
@@ -247,9 +266,13 @@ def run_async_query_to_file(
             poll carries no status field, or the server finishes the
             job with status ``ERROR``.
         PicSureConnectionError: If the budget passes with the job still
-            unfinished, or the server cannot be reached or rate limits
-            a request. A 5xx arrives as
-            :class:`~picsure.errors.PicSureServerError`.
+            unfinished; when the last poll failed rather than answered,
+            the message names that failure and it is chained as the
+            cause. Also if the submit or the download cannot reach the
+            server or is rate limited. A 5xx on either arrives as
+            :class:`~picsure.errors.PicSureServerError`, and a rejected
+            certificate on any step as
+            :class:`~picsure.errors.PicSureTLSError`.
         PicSureValidationError: If the server rejects a step with a 4xx
             other than 401, 403, 404 and 429.
         PicSureAuthError: If the server answers 401 or 403.
@@ -310,24 +333,86 @@ def _wait_until_available(
     status_path = query_status_path(backend, query_id)
     budget = client.timeout
     interval = _INITIAL_POLL_INTERVAL_SECONDS
+    failure: TransportError | None = None
     while True:
-        status = _poll_status(client, status_path, body, operation=operation)
-        if status == _STATUS_AVAILABLE:
-            return
-        if status == _STATUS_ERROR:
-            raise PicSureQueryError(
-                f"The server reported that {operation} failed (query {query_id} "
-                f"status=ERROR) and gave no further detail."
-            )
-        if time.monotonic() - started >= budget:
-            raise PicSureConnectionError(
-                f"The server had not finished {operation} within {budget:g} "
-                f"seconds (query {query_id} was still not available). That "
-                f"budget is the session's request timeout, set by "
-                f"picsure.connect(timeout=...)."
-            )
-        time.sleep(interval)
+        try:
+            status = _poll_status(client, status_path, body, operation=operation)
+        except TransportError as exc:
+            if not _is_transient(exc):
+                raise translate_transport_error(
+                    exc, operation=f"{operation} status check"
+                ) from exc
+            failure = exc
+        else:
+            failure = None
+            if status == _STATUS_AVAILABLE:
+                return
+            if status == _STATUS_ERROR:
+                raise PicSureQueryError(
+                    f"The server reported that {operation} failed (query "
+                    f"{query_id} status=ERROR) and gave no further detail."
+                )
+        remaining = budget - (time.monotonic() - started)
+        if remaining <= 0:
+            raise _budget_exceeded(operation, query_id, budget, failure)
+        time.sleep(min(_pause_after(failure, interval), remaining))
         interval = min(interval * 2, _MAX_POLL_INTERVAL_SECONDS)
+
+
+def _is_transient(exc: TransportError) -> bool:
+    """Whether a failed status poll is worth sending again.
+
+    A throttled poll, a 5xx and a network failure (a timeout, a refused
+    connection, a DNS miss) can all clear on their own. A rejected
+    certificate cannot, and neither can a refusal by status, a 404 or a
+    validation error, so those are not retried.
+    """
+    if isinstance(exc, TransportTLSError):
+        return False
+    return isinstance(
+        exc,
+        (TransportRateLimitError, TransportServerError, TransportConnectionError),
+    )
+
+
+def _pause_after(failure: TransportError | None, interval: float) -> float:
+    """How long to sleep before the next poll.
+
+    A throttled poll waits what the server asked for when it said; every
+    other case, a failed poll included, waits the current interval.
+    """
+    if isinstance(failure, TransportRateLimitError) and failure.retry_after is not None:
+        return float(failure.retry_after)
+    return interval
+
+
+def _budget_exceeded(
+    operation: str,
+    query_id: str,
+    budget: float,
+    failure: TransportError | None,
+) -> PicSureConnectionError:
+    """Build the error for a job still unfinished when the budget passes.
+
+    When the last poll failed rather than answered, the message names
+    that failure, so the user is not told the query merely took too
+    long, and the failure is chained as the cause.
+    """
+    lead = (
+        f"The server had not finished {operation} within {budget:g} seconds "
+        f"(query {query_id} was still not available)."
+    )
+    advice = (
+        "That budget is the session's request timeout, set by "
+        "picsure.connect(timeout=...)."
+    )
+    if failure is None:
+        return PicSureConnectionError(f"{lead} {advice}")
+    error = PicSureConnectionError(
+        f"{lead} The last status poll failed: {failure}. {advice}"
+    )
+    error.__cause__ = failure
+    return error
 
 
 def _poll_status(
@@ -337,13 +422,14 @@ def _poll_status(
     *,
     operation: str,
 ) -> str:
-    """Send one status poll and return the status it reports."""
-    try:
-        payload = client.post_json(status_path, body=body)
-    except TransportError as exc:
-        raise translate_transport_error(
-            exc, operation=f"{operation} status check"
-        ) from exc
+    """Send one status poll and return the status it reports.
+
+    Raises:
+        TransportError: Untranslated, so the caller can decide whether
+            the failure is worth polling through.
+        PicSureQueryError: If the answer carries no status field.
+    """
+    payload = client.post_json(status_path, body=body)
     return _extract_status(json_object(payload, path=status_path), operation=operation)
 
 

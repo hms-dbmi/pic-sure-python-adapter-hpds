@@ -1,4 +1,5 @@
 import json
+import ssl
 from pathlib import Path
 from unittest.mock import patch
 
@@ -21,13 +22,16 @@ from picsure._services.query_run import (
 )
 from picsure._transport.client import PicSureClient
 from picsure.errors import (
+    PicSureAuthenticationError,
     PicSureAuthError,
+    PicSureAuthorizationError,
     PicSureConnectionError,
     PicSureConsentDeniedError,
     PicSureConsentLookupError,
     PicSureError,
     PicSureQueryError,
     PicSureServerError,
+    PicSureTLSError,
     PicSureValidationError,
 )
 
@@ -90,32 +94,6 @@ def _mock_async_result(
 
 def _request_bodies(route: respx.Route) -> list[dict]:
     return [json.loads(call.request.content) for call in route.calls]
-
-
-class _FakeClock:
-    """A monotonic clock that advances only when the loop sleeps."""
-
-    def __init__(self) -> None:
-        self.now = 0.0
-        self.sleeps: list[float] = []
-
-    def monotonic(self) -> float:
-        return self.now
-
-    def sleep(self, seconds: float) -> None:
-        self.sleeps.append(seconds)
-        self.now += seconds
-
-
-@pytest.fixture
-def clock(monkeypatch) -> _FakeClock:
-    """Replace the loop's clock and sleep so waits are measured, not slept."""
-    import picsure._services.query_run as query_run
-
-    fake = _FakeClock()
-    monkeypatch.setattr(query_run.time, "monotonic", fake.monotonic)
-    monkeypatch.setattr(query_run.time, "sleep", fake.sleep)
-    return fake
 
 
 def _simple_body(result_type: str = "DATAFRAME") -> dict[str, object]:
@@ -204,8 +182,25 @@ class TestRunAsyncQueryToFile:
         assert "the query" in message
         assert QUERY_ID in message
         assert "5 seconds" in message
-        assert clock.sleeps == [1.0, 2.0, 4.0]
+        assert clock.sleeps == [1.0, 2.0, 2.0]
         assert not target.exists()
+
+    @respx.mock
+    def test_the_last_sleep_is_clamped_to_the_remaining_budget(self, tmp_path, clock):
+        _mock_async_result(b"x", statuses=("PENDING",))
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN, timeout=12.0)
+
+        with pytest.raises(PicSureConnectionError):
+            run_async_query_to_file(
+                client,
+                "auth",
+                _simple_body(),
+                tmp_path / "out.csv",
+                operation="the query",
+            )
+
+        assert clock.sleeps == [1.0, 2.0, 4.0, 5.0]
+        assert clock.now == 12.0
 
     @respx.mock
     def test_a_wait_past_ten_minutes_is_fine_inside_a_larger_timeout(
@@ -243,7 +238,7 @@ class TestRunAsyncQueryToFile:
                 operation="the query",
             )
 
-        assert clock.sleeps == [1.0]
+        assert clock.sleeps == [0.5]
 
     @respx.mock
     def test_an_error_status_raises_query_error_naming_the_query(self, tmp_path):
@@ -652,6 +647,207 @@ class TestEmptyCountBodyDiagnostic:
         assert (
             summary.describe() == "The request carried no filters and no select paths."
         )
+
+
+class _CertRejectingPollTransport(httpx.BaseTransport):
+    """Answers the submit, then fails every poll as an untrusted certificate does."""
+
+    def __init__(self) -> None:
+        self.poll_attempts = 0
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        if not request.url.path.endswith("/status"):
+            return httpx.Response(200, json={"picsureResultId": QUERY_ID})
+        self.poll_attempts += 1
+        try:
+            raise ssl.SSLCertVerificationError("certificate verify failed")
+        except ssl.SSLCertVerificationError as cause:
+            raise httpx.ConnectError(
+                "certificate verify failed", request=request
+            ) from cause
+
+
+class TestTransientPollFailures:
+    """A poll that fails for a passing reason is sent again inside the budget."""
+
+    @staticmethod
+    def _run(client: PicSureClient, target: Path) -> None:
+        run_async_query_to_file(
+            client, "auth", _simple_body(), target, operation="the query"
+        )
+
+    @respx.mock
+    def test_a_429_poll_waits_the_retry_after_it_carries(self, tmp_path):
+        _mock_async_result(b"x")
+        respx.post(STATUS_URL).mock(
+            side_effect=[
+                httpx.Response(429, headers={"Retry-After": "7"}),
+                _status("AVAILABLE"),
+            ]
+        )
+        target = tmp_path / "out.csv"
+
+        with patch(SLEEP) as sleep_mock:
+            self._run(_make_client(), target)
+
+        assert [call.args[0] for call in sleep_mock.call_args_list] == [7.0]
+        assert target.read_bytes() == b"x"
+
+    @respx.mock
+    def test_a_429_poll_without_retry_after_waits_the_current_interval(self, tmp_path):
+        _mock_async_result(b"x")
+        respx.post(STATUS_URL).mock(
+            side_effect=[
+                _status("PENDING"),
+                httpx.Response(429),
+                _status("AVAILABLE"),
+            ]
+        )
+
+        with patch(SLEEP) as sleep_mock:
+            self._run(_make_client(), tmp_path / "out.csv")
+
+        assert [call.args[0] for call in sleep_mock.call_args_list] == [1.0, 2.0]
+
+    @respx.mock
+    def test_a_502_poll_is_polled_again(self, tmp_path):
+        _mock_async_result(b"x")
+        respx.post(STATUS_URL).mock(
+            side_effect=[httpx.Response(502, text="bad gateway"), _status("AVAILABLE")]
+        )
+        target = tmp_path / "out.csv"
+
+        with patch(SLEEP) as sleep_mock:
+            self._run(_make_client(), target)
+
+        assert [call.args[0] for call in sleep_mock.call_args_list] == [1.0]
+        assert target.read_bytes() == b"x"
+
+    @respx.mock
+    def test_a_read_timeout_on_a_poll_is_polled_again(self, tmp_path):
+        _mock_async_result(b"x")
+        respx.post(STATUS_URL).mock(
+            side_effect=[httpx.ReadTimeout("timed out"), _status("AVAILABLE")]
+        )
+        target = tmp_path / "out.csv"
+
+        with patch(SLEEP) as sleep_mock:
+            self._run(_make_client(), target)
+
+        assert [call.args[0] for call in sleep_mock.call_args_list] == [1.0]
+        assert target.read_bytes() == b"x"
+
+    @respx.mock
+    def test_a_refused_connection_on_a_poll_is_polled_again(self, tmp_path):
+        """The client resends a refused connection once itself, so two refusals
+        are what it takes for the failure to reach the loop."""
+        _mock_async_result(b"x")
+        respx.post(STATUS_URL).mock(
+            side_effect=[
+                httpx.ConnectError("refused"),
+                httpx.ConnectError("refused"),
+                _status("AVAILABLE"),
+            ]
+        )
+        target = tmp_path / "out.csv"
+
+        with patch(SLEEP) as sleep_mock:
+            self._run(_make_client(), target)
+
+        assert [call.args[0] for call in sleep_mock.call_args_list] == [1.0]
+        assert target.read_bytes() == b"x"
+
+    @respx.mock
+    def test_repeated_502s_until_the_budget_passes_name_the_failure(
+        self, tmp_path, clock
+    ):
+        _mock_async_result(b"x")
+        respx.post(STATUS_URL).mock(
+            return_value=httpx.Response(502, text="bad gateway")
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN, timeout=5.0)
+
+        with pytest.raises(PicSureConnectionError) as info:
+            self._run(client, tmp_path / "out.csv")
+
+        message = str(info.value)
+        assert "the query" in message
+        assert QUERY_ID in message
+        assert "5 seconds" in message
+        assert "HTTP 502" in message
+        assert clock.sleeps == [1.0, 2.0, 2.0]
+
+    @respx.mock
+    def test_a_poll_that_answers_after_a_failure_clears_it_from_the_message(
+        self, tmp_path, clock
+    ):
+        _mock_async_result(b"x")
+        respx.post(STATUS_URL).mock(
+            side_effect=[httpx.Response(502, text="bad gateway")]
+            + [_status("PENDING")] * 20
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN, timeout=5.0)
+
+        with pytest.raises(PicSureConnectionError) as info:
+            self._run(client, tmp_path / "out.csv")
+
+        assert "502" not in str(info.value)
+
+    @respx.mock
+    @pytest.mark.parametrize(
+        ("status", "expected"),
+        [
+            (400, PicSureValidationError),
+            (401, PicSureAuthenticationError),
+            (403, PicSureAuthorizationError),
+            (404, PicSureQueryError),
+        ],
+    )
+    def test_a_refusal_on_a_poll_raises_at_once(self, status, expected, tmp_path):
+        _mock_async_result(b"x")
+        poll = respx.post(STATUS_URL).mock(
+            side_effect=[httpx.Response(status, text=""), _status("AVAILABLE")]
+        )
+
+        with patch(SLEEP) as sleep_mock, pytest.raises(expected):
+            self._run(_make_client(), tmp_path / "out.csv")
+
+        assert poll.call_count == 1
+        assert sleep_mock.call_count == 0
+
+    def test_a_rejected_certificate_on_a_poll_raises_at_once(self, tmp_path):
+        transport = _CertRejectingPollTransport()
+        client = _make_client()
+        client._http = httpx.Client(base_url=BASE_URL, transport=transport)
+
+        with patch(SLEEP) as sleep_mock, pytest.raises(PicSureTLSError):
+            self._run(client, tmp_path / "out.csv")
+
+        assert transport.poll_attempts == 1
+        assert sleep_mock.call_count == 0
+
+    @respx.mock
+    def test_a_502_on_the_submit_still_raises_at_once(self, tmp_path):
+        respx.post(SUBMIT_URL).mock(return_value=httpx.Response(502, text="bad"))
+
+        with patch(SLEEP) as sleep_mock, pytest.raises(PicSureServerError):
+            self._run(_make_client(), tmp_path / "out.csv")
+
+        assert sleep_mock.call_count == 0
+
+    @respx.mock
+    def test_a_502_on_the_download_still_raises_at_once(self, tmp_path):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        respx.post(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+        result = respx.post(RESULT_URL).mock(
+            return_value=httpx.Response(502, text="bad")
+        )
+
+        with patch(SLEEP) as sleep_mock, pytest.raises(PicSureServerError):
+            self._run(_make_client(), tmp_path / "out.csv")
+
+        assert result.call_count == 1
+        assert sleep_mock.call_count == 0
 
 
 class TestRunQueryParticipant:
@@ -2034,11 +2230,12 @@ class TestDataframeQueriesStreamToDisk:
 
     @respx.mock
     @pytest.mark.parametrize("failing_url", [SUBMIT_URL, STATUS_URL, RESULT_URL])
-    def test_a_transport_failure_is_still_translated(self, failing_url, monkeypatch):
+    def test_a_transport_failure_is_still_translated(self, failing_url, clock):
+        """A refused poll is retried until the budget passes, so the clock is faked."""
         _mock_async_result(b"patient_id\nP001\n")
         respx.post(failing_url).mock(side_effect=httpx.ConnectError("refused"))
 
-        with pytest.raises(PicSureConnectionError):
+        with pytest.raises(PicSureConnectionError, match="refused"):
             run_query(_make_client(), _simple_clause(), "participant", backend="auth")
 
     @respx.mock

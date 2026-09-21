@@ -41,9 +41,12 @@ def export_pfb(
 
     The submit and the polls together are bounded by the client's
     request timeout, measured from just before the submit and read
-    after each poll answers, so one poll that runs to the per-request
-    deadline completes before the budget is enforced. The download
-    carries the same value as its own per-request deadline.
+    after each poll answers. A poll that is throttled, answered with a
+    5xx or lost to a network failure is sent again inside that budget.
+    The last sleep is clamped to what is left of the budget, so the
+    final poll is sent at it rather than after it; that poll and the
+    download each carry the same value as their own per-request
+    deadline, so the call as a whole can still run past it.
 
     The output file is written atomically by
     :meth:`PicSureClient.post_raw_to_file`: bytes land at ``<path>.part``,
@@ -69,10 +72,11 @@ def export_pfb(
         PicSureAuthorizationError: If the server returns 403, including a
             consent denial, which arrives as
             :class:`~picsure.errors.PicSureConsentDeniedError`.
-        PicSureConnectionError: If the server is unreachable, rate
-            limits the request, leaves the submit and polling past the
-            client's request timeout with the result still unavailable,
-            or the local disk write fails. A 5xx after retries
+        PicSureConnectionError: If the server is unreachable or rate
+            limits the submit or the download, leaves the submit and
+            polling past the client's request timeout with the result
+            still unavailable (naming the last poll's failure when it
+            failed), or the local disk write fails. A 5xx after retries
             arrives as :class:`~picsure.errors.PicSureServerError` and a
             rejected certificate as
             :class:`~picsure.errors.PicSureTLSError`, both subclasses of

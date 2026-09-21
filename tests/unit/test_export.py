@@ -181,29 +181,11 @@ class TestExportPFBErrorStatus:
         assert not (tmp_path / "out.pfb.part").exists()
 
 
-class _FakeClock:
-    """A monotonic clock that advances only when the loop sleeps."""
-
-    def __init__(self) -> None:
-        self.now = 0.0
-
-    def monotonic(self) -> float:
-        return self.now
-
-    def sleep(self, seconds: float) -> None:
-        self.now += seconds
-
-
 class TestExportPFBTimeout:
     @respx.mock
-    def test_the_budget_is_the_client_timeout(self, tmp_path, monkeypatch):
-        import picsure._services.query_run as query_run
-
+    def test_the_budget_is_the_client_timeout(self, tmp_path, clock):
         respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
         respx.post(STATUS_URL).mock(return_value=_status("PENDING"))
-        clock = _FakeClock()
-        monkeypatch.setattr(query_run.time, "monotonic", clock.monotonic)
-        monkeypatch.setattr(query_run.time, "sleep", clock.sleep)
         client = PicSureClient(base_url=BASE_URL, token=TOKEN, timeout=20.0)
 
         with pytest.raises(PicSureConnectionError) as info:
