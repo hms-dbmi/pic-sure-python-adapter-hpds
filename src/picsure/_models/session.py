@@ -349,6 +349,13 @@ class Session:
             A :class:`CountResult`, a ``dict[str, CountResult]``, a
             DataFrame, or a ``list[str]`` depending on ``type``.
 
+        A ``"participant"`` or ``"timestamp"`` result is built by a job on
+        the server, so the call submits the query, waits until the server
+        reports the result ready and then downloads it, with the submit
+        and the wait together bounded by the ``timeout`` given to
+        :func:`picsure.connect`; passing that budget raises
+        :class:`~picsure.errors.PicSureConnectionError`.
+
         Example:
             >>> count = session.runQuery(my_query, type="count")
             >>> if count.value is not None:
@@ -388,14 +395,14 @@ class Session:
         async flow is exposed only on the authorized v3 endpoints, which
         the BDC API gateway rejects without a token.
 
-        The polling loop, and only the polling loop, carries a ten-minute
-        budget. The clock starts when the submit returns and is read
-        after each poll answers, so one poll that runs to the
+        The submit and the polling loop together are bounded by the
+        request timeout ``picsure.connect(timeout=...)`` sets, ten
+        minutes by default. The clock starts just before the submit and
+        is read after each poll answers, so one poll that runs to the
         per-request deadline completes before the budget is enforced.
-        The submit and the download are outside it, bounded by the
-        per-request deadline alone, which is what
-        ``picsure.connect(timeout=...)`` sets. The call as a whole can
-        therefore run longer than ten minutes.
+        The download that follows carries the same value as its own
+        per-request deadline, so the call as a whole can run longer
+        than the timeout.
 
         Args:
             query: A Query, Clause, or ClauseGroup.
@@ -414,9 +421,9 @@ class Session:
                 the server finishes the query with ``status=ERROR``, or if
                 it answers the submit with no query id or one that is not
                 a UUID, or a poll with no status field.
-            PicSureConnectionError: If polling passes its ten-minute
-                budget with the result still unavailable, if the server
-                cannot be reached or
+            PicSureConnectionError: If the submit and polling pass the
+                request timeout with the result still unavailable, if
+                the server cannot be reached or
                 rate limits the request, if it answers 5xx (as
                 :class:`~picsure.errors.PicSureServerError`), or if the
                 output file cannot be written.

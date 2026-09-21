@@ -22,14 +22,19 @@ typical session flows:
    the output concepts to return via `picsure.buildQuery(...)`.
 3. **Run.** `session.runQuery(query, type=...)` calls the query-run
    service, which splits the `Query` (or bare `Clause` / `ClauseGroup`)
-   into a phenotypic filter tree and the output `select` — the filter's own
-   variables folded together with any `includeConcepts` — serializes to the
-   query wire format, POSTs to `/picsure/hpds/auth/v3/query/sync` (or
-   `/picsure/hpds/open/v3/query/sync` on open sessions), and parses the response
-   into a `CountResult`, a `dict[str, CountResult]`, or a
-   `DataFrame`. The gateway selects the HPDS backend by path (`auth` vs
-   `open`), so no `resourceUUID` is sent in the body.
-4. **Export.** `session.exportAsPFB(...)` uses the async flow
+   into a phenotypic filter tree and the output `select`, the filter's own
+   variables folded together with any `includeConcepts`, and serializes to
+   the query wire format. A count, cross-count or variant result POSTs to
+   `/picsure/hpds/auth/v3/query/sync` (or `/picsure/hpds/open/v3/query/sync`
+   on open sessions) and parses the response in place. A participant or
+   timestamp result goes through the server's job flow instead
+   (`/picsure/hpds/{backend}/v3/query` → poll `/status` → stream `/result`
+   to a temporary file), because `/query/sync` refuses the DATAFRAME result
+   types with HTTP 400. Either way the answer is parsed into a
+   `CountResult`, a `dict[str, CountResult]`, or a `DataFrame`. The
+   gateway selects the HPDS backend by path (`auth` vs `open`), so no
+   `resourceUUID` is sent in the body.
+4. **Export.** `session.exportAsPFB(...)` uses the same job flow
    (`/picsure/hpds/auth/v3/query` → poll status → fetch result), streaming the
    bytes to disk; `session.exportCSV` / `exportTSV` write a DataFrame
    in memory to disk.
@@ -49,8 +54,10 @@ picsure._services.query_run.run_query
   │      └─ wraps in envelope { query: { ... } }  (no resourceUUID)
   │
   │  client.post_raw(query_prefix(backend, v3=...) + "/query/sync", body)
-  │  (participant / timestamp results use client.post_raw_to_file instead,
-  │   streaming the CSV to a temporary file that pandas reads from disk)
+  │  (participant / timestamp results take run_async_query_to_file instead:
+  │   client.post_json(".../query") submits, client.post_json(".../query/{id}/status")
+  │   is polled until AVAILABLE, then client.post_raw_to_file(".../query/{id}/result")
+  │   streams the CSV to a temporary file that pandas reads from disk)
   ▼
 picsure._transport.client.PicSureClient._request
   │  httpx.Client.request("POST", "/picsure/hpds/auth/v3/query/sync", ...)
@@ -113,11 +120,11 @@ src/picsure/
 | `search.py`      | `searchDictionary`, `fetch_facets`, `show_all_facets`, plus the smaller helpers that build dictionary request bodies, dedupe entries, and turn results into DataFrames. Dictionary searches page in bounded chunks of `_DEFAULT_PAGE_SIZE` (500). An unpaged call walks pages until the server says there are no more and never returns more than `_MAX_UNPAGED_ROWS` (100,000) rows: it raises when the server reports a larger match count and truncates the final page when the server reports none. `Session.searchDictionary` forwards `page` and `page_size`. `_SERVER_MAX_PAGE_SIZE` (Java `Integer.MAX_VALUE`) is only the validation ceiling on a caller-supplied `page_size`. It is never the size actually requested. |
 | `query_build.py` | `buildClause`, `buildClauseGroup`, and `buildQuery` — the public constructors for `Clause`, `ClauseGroup`, and `Query` with input validation (rejects mutually-exclusive arguments before they reach the wire). |
 | `query_edit.py`  | `removeSubQuery(query, target)` and `replaceClause(query, target, replacement)`. Pure local tree edits, no network calls. Matching is structural (frozen-dataclass equality). Removals that empty a `ClauseGroup` prune the parent; removing the whole tree raises `PicSureValidationError`, and so does a `target` that does not occur in the query, so an edit never silently returns an unchanged copy. |
-| `query_run.py`   | `run_query(client, query, type, *, backend)`. Serializes via `build_query_body`, posts to `/picsure/hpds/{backend}/v3/query/sync`, the v3 route both backends share, and parses each response shape. Participant and timestamp results are streamed to a temporary file with `post_raw_to_file` and parsed from disk, so peak memory is the DataFrame alone; a local disk failure there is raised as `PicSureConnectionError`. Also `_parse_count_string` for the obfuscated-count regexes. HPDS route helpers live in `_hpds_paths.py`. |
+| `query_run.py`   | `run_query(client, query, type, *, backend)`. Serializes via `build_query_body`, then posts a count, cross-count or variant query to `/picsure/hpds/{backend}/v3/query/sync`, the v3 route both backends share, and parses each response shape. Participant and timestamp results are refused by `/query/sync`, so they take `run_async_query_to_file(client, backend, body, target, *, operation)`, the job flow this module also lends to `export.py`: submit to `/picsure/hpds/{backend}/v3/query`, poll `/query/{id}/status` (the first poll straight after the submit, then after sleeps of 1s, 2s, 4s, 8s and 10s from there on) until `AVAILABLE`, then stream `/query/{id}/result` into a temporary file with `post_raw_to_file` and parse it from disk, so peak memory is the DataFrame alone. The submit and the polls together are bounded by `PicSureClient.timeout`, the value `connect(timeout=...)` sets, measured from just before the submit and read after each poll answers; passing it raises `PicSureConnectionError`, and a terminal `ERROR` status raises `PicSureQueryError`. A local disk failure while staging the file is raised as `PicSureConnectionError`. Also `_parse_count_string` for the obfuscated-count regexes. HPDS route helpers live in `_hpds_paths.py`. |
 | `query_load.py`  | `load_query(client, query_id, *, backend)`. Hits `/picsure/hpds/{backend}/v3/query/{id}/metadata`. The read itself does not touch HPDS, but only the `/v3` route is mapped on the current gateway. Reconstructs a `Query` (or the bare `Clause` / `ClauseGroup` it reduces to) so it can be re-run via `runQueryByID`. |
 | `query_save.py`  | `save_query_by_name(client, query, name, *, backend, overwrite)`. Submits the query via `POST /picsure/hpds/auth/v3/query`, then `POST`s a new record to `/picsure/operations/dataset/named` (or `PUT`-updates an existing one at `/picsure/operations/dataset/named/{id}` when `overwrite=True`). No trailing slash: Spring 6 answers one with a 404. Validates `name` against the backend `NamedDataset` pattern client-side. Refused on open-access (`open` backend) deployments. |
 | `_hpds_paths.py` | `query_prefix(backend, *, v3)`, `search_values_path(backend)`, the query-lifecycle builders (`query_submit_path`, `query_status_path`, `query_result_path`, `query_metadata_path`) and `named_dataset_item_path(id)`, the single place a route shape is built and the single place a value is percent-escaped into a path segment. `query_id_from_submit_response` and `canonical_server_id` check that an identifier the server chose is a UUID and return it in canonical form, unescaped, because the same id is also a request-body value and a public return value; the path builders escape it once on the way into a path, so a response cannot re-point an authenticated request at another route. `check_backend` refuses anything outside `BACKENDS` before `backend` is interpolated, and `Session` calls it rather than repeating the check, so both share one message and one error class. The `/picsure` context prefix is part of the path the client sends: the gateway routes `/hpds/**` verbatim without stripping it. The registry-era `{resourceId}` path segment is gone from both. |
-| `export.py`      | `export_pfb` is the async PFB flow (submit → poll with exponential backoff capped at 60s → stream result to a `.part` file → atomic rename). `_TOTAL_TIMEOUT_SECONDS` is read only inside `_poll_until_available`, so the ten-minute budget bounds the polling loop alone; the submit and the download carry the per-request deadline, and the call as a whole is not bounded at ten minutes. Plus `export_csv` and `export_tsv` for in-memory DataFrames, which translate a local write failure to `PicSureConnectionError` and a non-DataFrame argument to `PicSureValidationError` rather than leaking `OSError` / `AttributeError`. |
+| `export.py`      | `export_pfb` runs the PFB export through `query_run.run_async_query_to_file` (submit → poll with exponential backoff capped at 10s → stream result to a `.part` file → atomic rename), keeping only its own `DATAFRAME_PFB` body and the translation of a local write failure to `PicSureConnectionError` naming the destination. The submit and the polls together are bounded by `PicSureClient.timeout`; the download carries the same value as its per-request deadline, so the call as a whole can run longer than the timeout. Plus `export_csv` and `export_tsv` for in-memory DataFrames, which translate a local write failure to `PicSureConnectionError` and a non-DataFrame argument to `PicSureValidationError` rather than leaking `OSError` / `AttributeError`. |
 | `genomic_search.py` | `search_genomic_values(client, ...)` backing `Session.searchGenomicValues`. GETs `/picsure/hpds/{backend}/search/values` with the annotation key and a page/size, and returns a one-column DataFrame of values with the server's paging in `df.attrs`. A 200 with an empty body means the key is not a genomic annotation on this deployment; any other bodiless status names itself instead, since an expired gateway session redirects with no body and the annotation key is not what failed. |
 | `genomic_data.py`  | `genomicConsequences()` reads the bundled `_data/variant_consequences.json` into a DataFrame of `severity` / `consequence` rows. No network call. |
 | `consents.py`    | `fetch_consents(client)`. Reads `/psama/user/me/consents` and pulls the `\\_consents\\` study-consent list sent in `/picsure/dictionary/*` request bodies on authorized deployments. |
