@@ -422,6 +422,17 @@ class PicSureClient:
         self._host = self._http.base_url.host
         self._dev_config = dev_config
 
+    @property
+    def timeout(self) -> float:
+        """The per-request deadline in seconds for data operations.
+
+        A service that waits on a server-side job reads this as the
+        wall-clock budget for the whole wait, so the one ``timeout`` a
+        caller configures bounds both a single request and a polled
+        operation.
+        """
+        return self._timeout
+
     def get_json(
         self,
         path: str,

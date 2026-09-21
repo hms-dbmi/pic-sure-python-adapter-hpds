@@ -271,6 +271,20 @@ _FACETS_URL = f"{BASE_URL}{_FACETS_PATH}"
 _AUTH_QUERY_BASE = f"{BASE_URL}{query_prefix('auth', v3=True)}/query"
 
 _SAVED_QUERY_ID = "11111111-2222-3333-4444-555555555555"
+_JOB_ID = "6b2f4d1e-9c3a-4f5b-8d7e-1a2b3c4d5e6f"
+
+
+def _mock_auth_job(content: bytes) -> None:
+    """Mock the submit, status and result routes of one finished query."""
+    respx.post(_AUTH_QUERY_BASE).mock(
+        return_value=httpx.Response(200, json={"picsureResultId": _JOB_ID})
+    )
+    respx.post(f"{_AUTH_QUERY_BASE}/{_JOB_ID}/status").mock(
+        return_value=httpx.Response(200, json={"status": "AVAILABLE"})
+    )
+    respx.post(f"{_AUTH_QUERY_BASE}/{_JOB_ID}/result").mock(
+        return_value=httpx.Response(200, content=content)
+    )
 
 
 def _meta_url(query_id: str, backend: str = "auth") -> str:
@@ -511,9 +525,7 @@ class TestSessionRunQuery:
 
     @respx.mock
     def test_run_query_participant(self, participant_response):
-        respx.post(f"{_AUTH_QUERY_BASE}/sync").mock(
-            return_value=httpx.Response(200, content=participant_response)
-        )
+        _mock_auth_job(participant_response)
         from picsure._models.clause import Clause, PhenotypicFilterType
 
         session = _make_live_session()
@@ -531,16 +543,7 @@ class TestSessionExport:
     def test_export_pfb(self, tmp_path):
         # Session.exportAsPFB drives the async flow:
         # submit -> poll status -> stream result.
-        query_id = "6b2f4d1e-9c3a-4f5b-8d7e-1a2b3c4d5e6f"
-        respx.post(_AUTH_QUERY_BASE).mock(
-            return_value=httpx.Response(200, json={"picsureResultId": query_id})
-        )
-        respx.post(f"{_AUTH_QUERY_BASE}/{query_id}/status").mock(
-            return_value=httpx.Response(200, json={"status": "AVAILABLE"})
-        )
-        respx.post(f"{_AUTH_QUERY_BASE}/{query_id}/result").mock(
-            return_value=httpx.Response(200, content=b"pfb_data")
-        )
+        _mock_auth_job(b"pfb_data")
         from unittest.mock import patch
 
         from picsure._models.clause import Clause, PhenotypicFilterType
@@ -550,7 +553,7 @@ class TestSessionExport:
             keys=["\\sex\\"], type=PhenotypicFilterType.FILTER, categories=["Male"]
         )
         output = tmp_path / "test.pfb"
-        with patch("picsure._services.export.time.sleep"):
+        with patch("picsure._services.query_run.time.sleep"):
             session.exportAsPFB(clause, output)
 
         assert output.exists()
@@ -756,9 +759,7 @@ class TestSessionRunQueryByID:
         respx.get(_meta_url(_SAVED_QUERY_ID)).mock(
             return_value=httpx.Response(200, json=body)
         )
-        respx.post(f"{_AUTH_QUERY_BASE}/sync").mock(
-            return_value=httpx.Response(200, content=participant_response)
-        )
+        _mock_auth_job(participant_response)
 
         df = session.runQueryByID(_SAVED_QUERY_ID, type="participant")
 

@@ -1329,6 +1329,19 @@ class TestClientTimeouts:
         assert client._timeout == 12.5
         assert client._http.timeout.read == 12.5
 
+    def test_the_default_timeout_is_readable(self):
+        client = PicSureClient(base_url=BASE_URL, token="t")
+        assert client.timeout == DATA_TIMEOUT_SECONDS
+
+    def test_an_explicit_timeout_is_readable(self):
+        client = PicSureClient(base_url=BASE_URL, token="t", timeout=12.5)
+        assert client.timeout == 12.5
+
+    def test_the_timeout_is_read_only(self):
+        client = PicSureClient(base_url=BASE_URL, token="t")
+        with pytest.raises(AttributeError):
+            client.timeout = 1.0  # type: ignore[misc]
+
     @respx.mock
     def test_per_request_timeout_overrides_the_client_default(self):
         respx.get(f"{BASE_URL}/psama/user/me").mock(

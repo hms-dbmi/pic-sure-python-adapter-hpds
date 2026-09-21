@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 import pandas as pd
@@ -9,38 +8,14 @@ from picsure._models.clause import Clause
 from picsure._models.clause_group import ClauseGroup
 from picsure._models.count_result import CountResult
 from picsure._models.query import Query
-from picsure._services._errors import translate_transport_error
-from picsure._services._hpds_paths import (
-    query_id_from_submit_response,
-    query_result_path,
-    query_status_path,
-    query_submit_path,
-)
-from picsure._services.query_run import build_query_body
-from picsure._transport.client import PicSureClient, json_object
-from picsure._transport.errors import TransportError
+from picsure._services.query_run import build_query_body, run_async_query_to_file
+from picsure._transport.client import PicSureClient
 from picsure.errors import (
     PicSureConnectionError,
-    PicSureQueryError,
     PicSureValidationError,
 )
 
-# Terminal status values returned by PIC-SURE's ``PicSureStatus`` enum.
-# Only AVAILABLE (success) and ERROR (failure) are terminal; every other
-# status (QUEUED, PENDING, RUNNING, STARTED, PROCESSING, or any future HPDS
-# value surfaced via ``resourceStatus``) is treated as in-progress and we
-# keep polling, bounded by ``_TOTAL_TIMEOUT_SECONDS`` (10 minutes).
-_STATUS_AVAILABLE = "AVAILABLE"
-_STATUS_ERROR = "ERROR"
-
 _EXPORT_OPERATION = "the PFB export"
-
-# Polling parameters.  The sequence is 1s, 2s, 4s, 8s, 16s, 32s, 60s, 60s, ...
-# (doubling, capped at 60s per poll).  Cumulative elapsed time is bounded
-# by ``_TOTAL_TIMEOUT_SECONDS``.
-_INITIAL_POLL_INTERVAL_SECONDS = 1.0
-_MAX_POLL_INTERVAL_SECONDS = 60.0
-_TOTAL_TIMEOUT_SECONDS = 600.0
 
 
 def export_pfb(
@@ -52,24 +27,23 @@ def export_pfb(
 ) -> None:
     """Execute a query and stream the PFB result to disk.
 
-    Uses PIC-SURE's async flow on the authorized v3 routes, every one of
-    them built from ``backend`` by
-    :mod:`picsure._services._hpds_paths`, which checks that the query id
-    the server chose is a UUID and escapes it into a single path segment:
+    Runs the server's job flow through
+    :func:`picsure._services.query_run.run_async_query_to_file`, the
+    same loop a participant or timestamp query uses, on the authorized
+    v3 routes: ``POST /picsure/hpds/auth/v3/query`` submits the query,
+    ``POST .../query/{id}/status`` is polled straight away and then
+    after sleeps of 1s, 2s, 4s, 8s and 10s from there on until the
+    server reports ``AVAILABLE``, and ``POST .../query/{id}/result``
+    streams the Avro-binary PFB bytes straight to disk. Every route is
+    built by :mod:`picsure._services._hpds_paths`, which checks that
+    the query id the server chose is a UUID and escapes it into a
+    single path segment.
 
-    1. ``POST /picsure/hpds/auth/v3/query`` submits the query and returns
-       a query id.
-    2. ``POST /picsure/hpds/auth/v3/query/{id}/status`` is polled with
-       exponential backoff (1s, 2s, 4s, ..., capped at 60s per poll) until
-       the server reports ``AVAILABLE``.  Time spent in this loop is
-       bounded at 10 minutes, measured from the first poll and read only
-       after a poll answers, so one poll that runs to the per-request
-       deadline completes before the budget is enforced.  Steps 1 and 3
-       are outside that budget and carry the client's per-request
-       deadline alone, so the function as a whole is not bounded at 10
-       minutes.
-    3. ``POST /picsure/hpds/auth/v3/query/{id}/result`` streams the
-       Avro-binary PFB bytes straight to disk.
+    The submit and the polls together are bounded by the client's
+    request timeout, measured from just before the submit and read
+    after each poll answers, so one poll that runs to the per-request
+    deadline completes before the budget is enforced. The download
+    carries the same value as its own per-request deadline.
 
     The output file is written atomically by
     :meth:`PicSureClient.post_raw_to_file`: bytes land at ``<path>.part``,
@@ -81,7 +55,7 @@ def export_pfb(
         query: A Clause or ClauseGroup.
         path: File path to write the PFB data to.  Accepts ``str`` or
             :class:`pathlib.Path`.
-        backend: ``"auth"`` — PFB export is only supported on authorized
+        backend: ``"auth"``. PFB export is only supported on authorized
             sessions (the caller rejects ``"open"`` before reaching here).
 
     Raises:
@@ -96,122 +70,20 @@ def export_pfb(
             consent denial, which arrives as
             :class:`~picsure.errors.PicSureConsentDeniedError`.
         PicSureConnectionError: If the server is unreachable, rate
-            limits the request, leaves polling past its ten-minute
-            budget with the result still unavailable, or the local disk
-            write fails. A 5xx after retries
+            limits the request, leaves the submit and polling past the
+            client's request timeout with the result still unavailable,
+            or the local disk write fails. A 5xx after retries
             arrives as :class:`~picsure.errors.PicSureServerError` and a
             rejected certificate as
             :class:`~picsure.errors.PicSureTLSError`, both subclasses of
             it.
     """
     target = Path(path)
-
     body = build_query_body(query, "DATAFRAME_PFB")
-
-    # 1. Submit the query.
-    submit_response = _submit_query(client, backend, body)
-    query_id = query_id_from_submit_response(
-        submit_response, operation=_EXPORT_OPERATION
-    )
-
-    # 2. Poll until AVAILABLE (or timeout / error).
-    _poll_until_available(client, backend, query_id, body)
-
-    # 3. Stream the result to disk atomically.
-    _download_result(client, backend, query_id, body, target)
-
-
-def _submit_query(
-    client: PicSureClient,
-    backend: str,
-    body: dict[str, object],
-) -> dict[str, object]:
-    submit_path = query_submit_path(backend)
     try:
-        payload = client.post_json(submit_path, body=body)
-    except TransportError as exc:
-        raise translate_transport_error(exc, operation="the PFB export submit") from exc
-    return json_object(payload, path=submit_path)
-
-
-def _poll_until_available(
-    client: PicSureClient,
-    backend: str,
-    query_id: str,
-    body: dict[str, object],
-) -> None:
-    status_path = query_status_path(backend, query_id)
-
-    interval = _INITIAL_POLL_INTERVAL_SECONDS
-    start = time.monotonic()
-
-    while True:
-        try:
-            status_payload = client.post_json(status_path, body=body)
-        except TransportError as exc:
-            raise translate_transport_error(
-                exc, operation="the PFB export status check"
-            ) from exc
-
-        status = _extract_status(json_object(status_payload, path=status_path))
-
-        if status == _STATUS_AVAILABLE:
-            return
-        if status == _STATUS_ERROR:
-            raise PicSureQueryError(
-                f"PFB export failed on the server (query {query_id} status=ERROR)."
-            )
-        # Any other status is treated as in-progress; keep polling. The
-        # 10-minute total timeout below protects against an infinite loop.
-
-        elapsed = time.monotonic() - start
-        if elapsed >= _TOTAL_TIMEOUT_SECONDS:
-            raise PicSureConnectionError(
-                "PFB export did not complete within 10 minutes."
-            )
-
-        time.sleep(interval)
-        interval = min(interval * 2, _MAX_POLL_INTERVAL_SECONDS)
-
-
-def _extract_status(response: dict[str, object]) -> str:
-    """Pull the status string out of a ``QueryStatus`` response.
-
-    PIC-SURE's ``QueryStatus`` has both a top-level ``status`` (the
-    canonical ``PicSureStatus`` enum) and ``resourceStatus`` (the raw
-    string from HPDS).  They should agree in v3; prefer ``status``.
-    """
-    for field in ("status", "resourceStatus"):
-        value = response.get(field)
-        if isinstance(value, str) and value:
-            return value.upper()
-    raise PicSureQueryError(
-        "Server did not return a status field in the PFB poll response."
-    )
-
-
-def _download_result(
-    client: PicSureClient,
-    backend: str,
-    query_id: str,
-    body: dict[str, object],
-    target: Path,
-) -> None:
-    """Stream the finished PFB result into ``target``.
-
-    Delegates the staging file, the atomic promotion and the cleanup on
-    failure to :meth:`PicSureClient.post_raw_to_file`, and translates
-    what it raises into the public hierarchy: a transport failure by
-    status, a local write or rename failure to
-    :class:`PicSureConnectionError` naming the destination.
-    """
-    result_path = query_result_path(backend, query_id)
-    try:
-        client.post_raw_to_file(result_path, target, body=body)
-    except TransportError as exc:
-        raise translate_transport_error(
-            exc, operation="the PFB export download"
-        ) from exc
+        run_async_query_to_file(
+            client, backend, body, target, operation=_EXPORT_OPERATION
+        )
     except OSError as exc:
         raise PicSureConnectionError(f"Could not write PFB to {target}: {exc}") from exc
 
