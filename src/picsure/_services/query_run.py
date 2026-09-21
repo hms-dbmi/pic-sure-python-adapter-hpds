@@ -30,6 +30,7 @@ from picsure._services._hpds_paths import (
 from picsure._transport.client import PicSureClient, json_object
 from picsure._transport.errors import (
     TransportConnectionError,
+    TransportConsentLookupError,
     TransportError,
     TransportRateLimitError,
     TransportServerError,
@@ -233,8 +234,9 @@ def run_async_query_to_file(
        still running. A poll that is throttled, answered with a 5xx or
        lost to a network failure (a timeout, a refused connection, a
        DNS miss) is sent again after the same sleep, a throttled one
-       after the ``Retry-After`` the server gave; a 401, 403, 404, a
-       validation error or a rejected certificate raises at once.
+       after the ``Retry-After`` the server gave when that is longer;
+       a 401, 403, 404, a validation error or a rejected certificate
+       raises at once.
     3. ``POST {prefix}/query/{id}/result`` streams the bytes into
        ``target`` through :meth:`PicSureClient.post_raw_to_file`, which
        stages them at ``<target>.part`` and promotes the file only once
@@ -363,26 +365,38 @@ def _is_transient(exc: TransportError) -> bool:
     """Whether a failed status poll is worth sending again.
 
     A throttled poll, a 5xx and a network failure (a timeout, a refused
-    connection, a DNS miss) can all clear on their own. A rejected
-    certificate cannot, and neither can a refusal by status, a 404 or a
-    validation error, so those are not retried.
+    connection, a DNS miss) can all clear on their own. The structured
+    consent-lookup 502 is included on purpose: it is a sibling class of
+    the bare 5xx rather than a subclass, the job keeps running
+    server-side while the gateway cannot resolve the caller's consents,
+    and the failure is inside PIC-SURE rather than in the caller's
+    token. A rejected certificate cannot clear on its own, and neither
+    can a refusal by status, a 404 or a validation error, so those are
+    not retried.
     """
     if isinstance(exc, TransportTLSError):
         return False
     return isinstance(
         exc,
-        (TransportRateLimitError, TransportServerError, TransportConnectionError),
+        (
+            TransportRateLimitError,
+            TransportServerError,
+            TransportConsentLookupError,
+            TransportConnectionError,
+        ),
     )
 
 
 def _pause_after(failure: TransportError | None, interval: float) -> float:
     """How long to sleep before the next poll.
 
-    A throttled poll waits what the server asked for when it said; every
-    other case, a failed poll included, waits the current interval.
+    A throttled poll waits what the server asked for, floored at the
+    current interval so a ``Retry-After`` of zero cannot spin the loop
+    and a negative one cannot reach ``time.sleep``; every other case, a
+    failed poll included, waits the current interval.
     """
     if isinstance(failure, TransportRateLimitError) and failure.retry_after is not None:
-        return float(failure.retry_after)
+        return max(float(failure.retry_after), interval)
     return interval
 
 
@@ -400,7 +414,7 @@ def _budget_exceeded(
     """
     lead = (
         f"The server had not finished {operation} within {budget:g} seconds "
-        f"(query {query_id} was still not available)."
+        f"(query {query_id} never reported itself available)."
     )
     advice = (
         "That budget is the session's request timeout, set by "

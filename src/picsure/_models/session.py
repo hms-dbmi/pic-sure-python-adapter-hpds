@@ -371,12 +371,14 @@ class Session:
                 without a status field, or a terminal ``ERROR`` status,
                 which the server reports without further detail.
             PicSureConnectionError: If the server cannot be reached or
-                rate limits the request, if it answers 5xx (as
-                :class:`~picsure.errors.PicSureServerError`), or if a
-                ``"participant"`` or ``"timestamp"`` query is still
-                unfinished when the ``timeout`` passes; that message
-                names the query id, the budget and, when the last poll
-                failed rather than answered, the failure.
+                rate limits the request, or answers it with a 5xx (as
+                :class:`~picsure.errors.PicSureServerError`); for a
+                ``"participant"`` or ``"timestamp"`` query that applies
+                to the submit and the download, since a status poll
+                that fails those ways is sent again. Also if such a
+                query is still unfinished when the ``timeout`` passes;
+                that message names the query id, the budget and, when
+                the last poll failed rather than answered, the failure.
 
         Example:
             >>> count = session.runQuery(my_query, type="count")

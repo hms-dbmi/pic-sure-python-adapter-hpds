@@ -21,6 +21,7 @@ from picsure._services.query_run import (
     run_query,
 )
 from picsure._transport.client import PicSureClient
+from picsure._transport.errors import TransportConsentLookupError, TransportServerError
 from picsure.errors import (
     PicSureAuthenticationError,
     PicSureAuthError,
@@ -667,6 +668,16 @@ class _CertRejectingPollTransport(httpx.BaseTransport):
             ) from cause
 
 
+def _consent_lookup_failed() -> httpx.Response:
+    return httpx.Response(
+        502,
+        json={
+            "errorType": "consent_lookup_failed",
+            "message": "Unable to resolve caller consents",
+        },
+    )
+
+
 class TestTransientPollFailures:
     """A poll that fails for a passing reason is sent again inside the budget."""
 
@@ -708,6 +719,57 @@ class TestTransientPollFailures:
             self._run(_make_client(), tmp_path / "out.csv")
 
         assert [call.args[0] for call in sleep_mock.call_args_list] == [1.0, 2.0]
+
+    @respx.mock
+    @pytest.mark.parametrize("retry_after", ["0", "-1"])
+    def test_a_retry_after_below_the_interval_waits_the_interval(
+        self, retry_after, tmp_path
+    ):
+        _mock_async_result(b"x")
+        respx.post(STATUS_URL).mock(
+            side_effect=[
+                _status("PENDING"),
+                httpx.Response(429, headers={"Retry-After": retry_after}),
+                _status("AVAILABLE"),
+            ]
+        )
+        target = tmp_path / "out.csv"
+
+        with patch(SLEEP) as sleep_mock:
+            self._run(_make_client(), target)
+
+        assert [call.args[0] for call in sleep_mock.call_args_list] == [1.0, 2.0]
+        assert target.read_bytes() == b"x"
+
+    @respx.mock
+    def test_a_consent_lookup_502_poll_is_polled_again(self, tmp_path):
+        _mock_async_result(b"x")
+        respx.post(STATUS_URL).mock(
+            side_effect=[_consent_lookup_failed(), _status("AVAILABLE")]
+        )
+        target = tmp_path / "out.csv"
+
+        with patch(SLEEP) as sleep_mock:
+            self._run(_make_client(), target)
+
+        assert [call.args[0] for call in sleep_mock.call_args_list] == [1.0]
+        assert target.read_bytes() == b"x"
+
+    @respx.mock
+    def test_repeated_consent_lookup_502s_until_the_budget_passes_chain_the_cause(
+        self, tmp_path, clock
+    ):
+        _mock_async_result(b"x")
+        respx.post(STATUS_URL).mock(return_value=_consent_lookup_failed())
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN, timeout=5.0)
+
+        with pytest.raises(PicSureConnectionError) as info:
+            self._run(client, tmp_path / "out.csv")
+
+        assert isinstance(info.value.__cause__, TransportConsentLookupError)
+        assert "5 seconds" in str(info.value)
+        assert "consent_lookup_failed" in str(info.value)
+        assert clock.sleeps == [1.0, 2.0, 2.0]
 
     @respx.mock
     def test_a_502_poll_is_polled_again(self, tmp_path):
@@ -775,6 +837,7 @@ class TestTransientPollFailures:
         assert QUERY_ID in message
         assert "5 seconds" in message
         assert "HTTP 502" in message
+        assert isinstance(info.value.__cause__, TransportServerError)
         assert clock.sleeps == [1.0, 2.0, 2.0]
 
     @respx.mock
