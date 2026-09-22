@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import tempfile
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
@@ -18,12 +19,30 @@ from picsure._models.count_result import CountResult
 from picsure._models.genomic_filter import GenomicFilter
 from picsure._models.query import Query
 from picsure._models.query_type import QueryType
-from picsure._services._errors import translate_transport_error
-from picsure._services._hpds_paths import query_prefix
-from picsure._transport.client import PicSureClient
-from picsure._transport.errors import TransportError, TransportServerError
+from picsure._services._errors import (
+    bodiless_response_succeeded,
+    translate_transport_error,
+)
+from picsure._services._hpds_paths import (
+    query_id_from_submit_response,
+    query_prefix,
+    query_result_path,
+    query_status_path,
+    query_submit_path,
+)
+from picsure._transport.client import PicSureClient, json_object
+from picsure._transport.errors import (
+    TransportConnectionError,
+    TransportConsentLookupError,
+    TransportError,
+    TransportRateLimitError,
+    TransportServerError,
+    TransportTLSError,
+)
 from picsure.errors import (
+    EmptyBodyError,
     PicSureConnectionError,
+    PicSureError,
     PicSureQueryError,
     PicSureValidationError,
 )
@@ -55,6 +74,12 @@ _VARIANT_RESULT_TYPES = frozenset(
 )
 
 _DATAFRAME_RESULT_TYPES = frozenset({"DATAFRAME", "DATAFRAME_TIMESERIES"})
+
+_STATUS_AVAILABLE = "AVAILABLE"
+_STATUS_ERROR = "ERROR"
+
+_INITIAL_POLL_INTERVAL_SECONDS = 1.0
+_MAX_POLL_INTERVAL_SECONDS = 10.0
 
 _PREVIEW_BYTES = 200
 
@@ -99,16 +124,22 @@ def run_query(
 
     Raises:
         PicSureValidationError: If the query type is invalid.
-        PicSureConnectionError: If the server is unreachable.
-        PicSureQueryError: If the server response cannot be parsed.
+        PicSureConnectionError: If the server is unreachable, or a
+            ``participant`` or ``timestamp`` query is still unfinished
+            when the client's request timeout passes (see
+            :func:`run_async_query_to_file`).
+        PicSureQueryError: If the server response cannot be parsed, or a
+            ``participant`` or ``timestamp`` query is answered with a
+            404, a query id that is not a UUID, a poll without a status
+            field, or a terminal ``ERROR`` status.
     """
     resolved_type = _resolve_query_type(query_type)
     body = build_query_body(query, resolved_type)
-    path = query_prefix(backend, v3=True) + "/query/sync"
 
     if resolved_type in _DATAFRAME_RESULT_TYPES:
-        return _run_dataframe_query(client, path, body, resolved_type)
+        return _run_dataframe_query(client, backend, body)
 
+    path = query_prefix(backend, v3=True) + "/query/sync"
     try:
         raw = client.post_raw(path, body=body)
     except TransportError as exc:
@@ -144,41 +175,370 @@ def _raise_query_error(exc: TransportError, resolved_type: str) -> NoReturn:
 
 def _run_dataframe_query(
     client: PicSureClient,
-    path: str,
+    backend: str,
     body: dict[str, object],
-    resolved_type: str,
 ) -> pd.DataFrame:
-    """Stream a participant or timestamp result and parse it from disk.
+    """Run a participant or timestamp query and parse its CSV from disk.
 
     Only the CSV cohort result types (``DATAFRAME`` and
-    ``DATAFRAME_TIMESERIES``) come through here; a participant download
-    for a big cohort can run to hundreds of megabytes, while every other
-    result type, VCF excerpts included, is a short body parsed in place.
-    The buffered path holds the whole CSV in memory and then builds a
-    DataFrame from it, so peak usage is the raw bytes plus the frame.
-    For a large cohort that is enough to exhaust a notebook kernel,
-    which presents as a dead kernel with no error rather than as a
-    failure, and the ten-minute data deadline lets much larger results
-    through than the old thirty seconds did.  Streaming to a temporary
-    file drops the peak to the frame alone.
+    ``DATAFRAME_TIMESERIES``) come through here. The server serves them
+    from a job rather than from ``/query/sync``, which refuses them, so
+    the query goes through :func:`run_async_query_to_file`: submit,
+    poll until the server reports the result available, then stream
+    it to a temporary file. A participant download for a big cohort can
+    run to hundreds of megabytes, while every other result type, VCF
+    excerpts included, is a short body parsed in place. Holding the
+    whole CSV in memory and then building a DataFrame from it put peak
+    usage at the raw bytes plus the frame, enough to exhaust a notebook
+    kernel, which presents as a dead kernel with no error rather than
+    as a failure. Streaming to a temporary file drops the peak to the
+    frame alone.
 
-    Staging the result on disk introduces local failures the buffered
+    Staging the result on disk introduces local failures a buffered
     path never had: no temporary directory, a full disk, an unreadable
-    file.  Those are translated to :class:`PicSureConnectionError`, as
+    file. Those are translated to :class:`PicSureConnectionError`, as
     the export helpers do, so a caller catching ``PicSureError`` still
     sees them.
     """
     try:
         with _download_target() as target:
-            try:
-                client.post_raw_to_file(path, target, body=body)
-            except TransportError as exc:
-                _raise_query_error(exc, resolved_type)
+            run_async_query_to_file(
+                client, backend, body, target, operation=_QUERY_OPERATION
+            )
             return _parse_dataframe(target)
     except OSError as exc:
         raise PicSureConnectionError(
             f"Could not stage the query result on local disk: {exc}"
         ) from exc
+
+
+def run_async_query_to_file(
+    client: PicSureClient,
+    backend: str,
+    body: dict[str, object],
+    target: Path,
+    *,
+    operation: str,
+) -> None:
+    """Run a query through the server's job flow and download its result.
+
+    The server serves the file-sized result types (the CSV cohort types
+    and the PFB export) from a job rather than from one request: the
+    query is submitted, polled until the server reports it finished,
+    and then collected. Every route is built by
+    :mod:`picsure._services._hpds_paths` from ``backend`` and the id the
+    server chose, which is checked to be a UUID and escaped into one
+    path segment before it is interpolated.
+
+    1. ``POST {prefix}/query`` submits ``body`` and answers with the
+       query id.
+    2. ``POST {prefix}/query/{id}/status`` is polled, first straight
+       after the submit and then after sleeps of 1s, 2s, 4s, 8s and
+       10s from there on, until the server reports ``AVAILABLE``. Any
+       status other than ``AVAILABLE`` and ``ERROR`` means the job is
+       still running. A poll that is throttled, answered with a 5xx or
+       lost to a network failure (a timeout, a refused connection, a
+       DNS miss) is sent again after the same sleep, a throttled one
+       after the ``Retry-After`` the server gave when that is longer;
+       a 401, 403, 404, a validation error, a rejected certificate or
+       an answer carrying no body raises at once.
+    3. ``POST {prefix}/query/{id}/result`` streams the bytes into
+       ``target`` through :meth:`PicSureClient.post_raw_to_file`, which
+       stages them at ``<target>.part`` and promotes the file only once
+       the body is complete.
+
+    The submit and the polls together, failed polls included, are
+    bounded by :attr:`PicSureClient.timeout`, measured from just before
+    the submit and read after each poll answers. The last sleep is
+    clamped to what is left of it, so the final poll is sent at the
+    budget rather than after it. That poll and the download that
+    follows each carry the same value as their own per-request
+    deadline, so the call as a whole can still run past it.
+
+    Args:
+        client: Authenticated HTTP client.
+        backend: ``"auth"`` or ``"open"``.
+        body: The request body, resent unchanged on every step. It
+            carries the ``expectedResultType`` the server keys the job
+            on.
+        target: Where the result bytes are written. Its parent must
+            exist.
+        operation: Noun phrase naming what is being run, read as the
+            object of every error message, e.g. ``"the query"`` or
+            ``"the PFB export"``.
+
+    Raises:
+        PicSureQueryError: If any of the three routes answers 404, the
+            submit carries no query id or one that is not a UUID, a
+            poll carries no body or no status field, or the server
+            finishes the job with status ``ERROR``.
+        PicSureConnectionError: If the budget passes with the job still
+            unfinished; when the last poll failed rather than answered,
+            that failure decides the message and the class, so the
+            narrower :class:`~picsure.errors.PicSureServerError` or
+            :class:`~picsure.errors.PicSureConsentLookupError` is
+            raised, and it is chained as the cause. Also if the submit
+            or the download cannot reach the server, is rate limited or
+            answers 5xx, the last arriving as
+            :class:`~picsure.errors.PicSureServerError`. A rejected
+            certificate on any step arrives as
+            :class:`~picsure.errors.PicSureTLSError`.
+        PicSureValidationError: If the server rejects a step with a 4xx
+            other than 401, 403, 404 and 429.
+        PicSureAuthError: If the server answers 401 or 403.
+        OSError: If ``target`` cannot be written or promoted. The
+            partial file is removed first.
+    """
+    started = time.monotonic()
+    query_id = _submit_query(client, backend, body, operation=operation)
+    _wait_until_available(
+        client, backend, query_id, body, started=started, operation=operation
+    )
+    _download_result(client, backend, query_id, body, target, operation=operation)
+
+
+def _submit_query(
+    client: PicSureClient,
+    backend: str,
+    body: dict[str, object],
+    *,
+    operation: str,
+) -> str:
+    """Submit ``body`` and return the query id the server chose."""
+    submit_path = query_submit_path(backend)
+    try:
+        payload = client.post_json(submit_path, body=body)
+    except TransportError as exc:
+        raise translate_transport_error(exc, operation=f"{operation} submit") from exc
+    return query_id_from_submit_response(
+        json_object(payload, path=submit_path), operation=operation
+    )
+
+
+def _wait_until_available(
+    client: PicSureClient,
+    backend: str,
+    query_id: str,
+    body: dict[str, object],
+    *,
+    started: float,
+    operation: str,
+) -> None:
+    """Poll the status route until the job finishes or the budget passes.
+
+    Args:
+        client: Authenticated HTTP client.
+        backend: ``"auth"`` or ``"open"``.
+        query_id: The canonical query id.
+        body: The request body, resent on every poll.
+        started: The ``time.monotonic()`` reading the budget counts from.
+        operation: Noun phrase for the error messages.
+
+    Raises:
+        PicSureQueryError: If a poll carries no body or no status field,
+            or the server reports ``ERROR``.
+        PicSureConnectionError: If :attr:`PicSureClient.timeout` seconds
+            pass after ``started`` with the job still unfinished. When
+            the last poll failed rather than answered, the subclass
+            matching that failure is raised instead.
+    """
+    status_path = query_status_path(backend, query_id)
+    budget = client.timeout
+    interval = _INITIAL_POLL_INTERVAL_SECONDS
+    failure: TransportError | None = None
+    while True:
+        try:
+            status = _poll_status(client, status_path, body, operation=operation)
+        except EmptyBodyError as exc:
+            raise _bodiless_poll_error(exc, operation=operation) from exc
+        except TransportError as exc:
+            if not _is_transient(exc):
+                raise translate_transport_error(
+                    exc, operation=f"{operation} status check"
+                ) from exc
+            failure = exc
+        else:
+            failure = None
+            if status == _STATUS_AVAILABLE:
+                return
+            if status == _STATUS_ERROR:
+                raise PicSureQueryError(
+                    f"The server reported that {operation} failed (query "
+                    f"{query_id} status=ERROR) and gave no further detail."
+                )
+        remaining = budget - (time.monotonic() - started)
+        if remaining <= 0:
+            raise _budget_exceeded(operation, query_id, budget, failure)
+        time.sleep(min(_pause_after(failure, interval), remaining))
+        interval = min(interval * 2, _MAX_POLL_INTERVAL_SECONDS)
+
+
+def _is_transient(exc: TransportError) -> bool:
+    """Whether a failed status poll is worth sending again.
+
+    A throttled poll, a 5xx and a network failure (a timeout, a refused
+    connection, a DNS miss) can all clear on their own. The structured
+    consent-lookup 502 is included on purpose: it is a sibling class of
+    the bare 5xx rather than a subclass, the job keeps running
+    server-side while the gateway cannot resolve the caller's consents,
+    and the failure is inside PIC-SURE rather than in the caller's
+    token. A rejected certificate cannot clear on its own, and neither
+    can a refusal by status, a 404 or a validation error, so those are
+    not retried.
+    """
+    if isinstance(exc, TransportTLSError):
+        return False
+    return isinstance(
+        exc,
+        (
+            TransportRateLimitError,
+            TransportServerError,
+            TransportConsentLookupError,
+            TransportConnectionError,
+        ),
+    )
+
+
+def _pause_after(failure: TransportError | None, interval: float) -> float:
+    """How long to sleep before the next poll.
+
+    A throttled poll waits what the server asked for, floored at the
+    current interval so a ``Retry-After`` of zero cannot spin the loop
+    and a negative one cannot reach ``time.sleep``; every other case, a
+    failed poll included, waits the current interval.
+    """
+    if isinstance(failure, TransportRateLimitError) and failure.retry_after is not None:
+        return max(float(failure.retry_after), interval)
+    return interval
+
+
+def _budget_exceeded(
+    operation: str,
+    query_id: str,
+    budget: float,
+    failure: TransportError | None,
+) -> PicSureError:
+    """Build the error for a job still unfinished when the budget passes.
+
+    When the last poll failed rather than answered, that failure decides
+    both the message and the class, so a caller catching
+    :class:`~picsure.errors.PicSureServerError` or
+    :class:`~picsure.errors.PicSureConsentLookupError` still catches
+    what the same failure on a single request would have raised. Every
+    class a retried poll failure can produce is a
+    :class:`~picsure.errors.PicSureConnectionError` subclass, so a
+    caller catching the wider class is unaffected either way. The
+    operation, the query id and the budget are folded into the phrase
+    the message templates read as their object, and the transport
+    failure is chained as the cause.
+    """
+    waited = f"{operation} (query {query_id}) within its budget of {budget:g} seconds"
+    if failure is None:
+        return PicSureConnectionError(
+            f"The server had not finished {waited}, and never reported the "
+            f"result available. That budget is the session's request timeout, "
+            f"set by picsure.connect(timeout=...)."
+        )
+    error = translate_transport_error(failure, operation=waited)
+    error.__cause__ = failure
+    return error
+
+
+def _bodiless_poll_error(exc: EmptyBodyError, *, operation: str) -> PicSureQueryError:
+    """Explain a status poll that answered with no body at all.
+
+    A poll is only usable when it carries a ``QueryStatus``, so a
+    bodiless answer ends the wait rather than counting as one more
+    in-progress poll: a 2xx with no body is an answered but unreadable
+    poll, the same protocol break as a body carrying no status field,
+    and :func:`_extract_status` already raises for that. Any other
+    status below 400 reaches here too, a ``302`` to an SSO login on an
+    expired gateway session being the one a long wait invites, and it
+    is named as the session problem it is rather than as a decoding
+    failure. Either way the job may still be running server-side.
+
+    Args:
+        exc: The empty-body failure the transport raised.
+        operation: Noun phrase naming what was being run.
+
+    Returns:
+        The public error to raise.
+    """
+    lead = (
+        f"The server answered a status poll for {operation} with HTTP "
+        f"{exc.status_code} and an empty body"
+    )
+    tail = "The query may still be running on the server."
+    if bodiless_response_succeeded(exc):
+        return PicSureQueryError(
+            f"{lead}, where a query status was expected, so the wait could "
+            f"not go on. {tail}"
+        )
+    return PicSureQueryError(
+        f"{lead}, which usually means a redirect to a login page after the "
+        f"gateway session expired. Reconnect and run this again. {tail}"
+    )
+
+
+def _poll_status(
+    client: PicSureClient,
+    status_path: str,
+    body: dict[str, object],
+    *,
+    operation: str,
+) -> str:
+    """Send one status poll and return the status it reports.
+
+    Raises:
+        TransportError: Untranslated, so the caller can decide whether
+            the failure is worth polling through.
+        EmptyBodyError: If the answer carries no body, which the caller
+            turns into a message that fits the status it arrived with.
+        PicSureQueryError: If the answer carries no status field.
+    """
+    payload = client.post_json(status_path, body=body)
+    return _extract_status(json_object(payload, path=status_path), operation=operation)
+
+
+def _extract_status(response: dict[str, object], *, operation: str) -> str:
+    """Pull the status string out of a ``QueryStatus`` response.
+
+    PIC-SURE's ``QueryStatus`` has both a top-level ``status`` (the
+    canonical ``PicSureStatus`` enum) and ``resourceStatus`` (the raw
+    string from HPDS). They should agree in v3; prefer ``status``.
+
+    Raises:
+        PicSureQueryError: If neither field carries a non-empty string.
+    """
+    for field in ("status", "resourceStatus"):
+        value = response.get(field)
+        if isinstance(value, str) and value:
+            return value.upper()
+    raise PicSureQueryError(
+        f"Server did not return a status field in the poll response for {operation}."
+    )
+
+
+def _download_result(
+    client: PicSureClient,
+    backend: str,
+    query_id: str,
+    body: dict[str, object],
+    target: Path,
+    *,
+    operation: str,
+) -> None:
+    """Stream the finished result into ``target``.
+
+    A transport failure is translated by status; an ``OSError`` from the
+    staging file or the rename is left to the caller, which knows what
+    the file is for.
+    """
+    result_path = query_result_path(backend, query_id)
+    try:
+        client.post_raw_to_file(result_path, target, body=body)
+    except TransportError as exc:
+        raise translate_transport_error(exc, operation=f"{operation} download") from exc
 
 
 @contextmanager

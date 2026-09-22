@@ -209,39 +209,77 @@ def test_participant_query_body_not_logged():
     )
 
 
+_QUERY_ID = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+
+
+def _job_paths() -> tuple[str, str, str]:
+    """Return the submit, status and result paths of a participant query."""
+    from picsure._services._hpds_paths import (
+        query_result_path,
+        query_status_path,
+        query_submit_path,
+    )
+
+    return (
+        query_submit_path("auth"),
+        query_status_path("auth", _QUERY_ID),
+        query_result_path("auth", _QUERY_ID),
+    )
+
+
+def _mock_job(result: httpx.Response) -> None:
+    submit_path, status_path, result_path = _job_paths()
+    respx.post(f"{BASE_URL}{submit_path}").mock(
+        return_value=httpx.Response(200, json={"picsureResultId": _QUERY_ID})
+    )
+    respx.post(f"{BASE_URL}{status_path}").mock(
+        return_value=httpx.Response(200, json={"status": "AVAILABLE"})
+    )
+    respx.post(f"{BASE_URL}{result_path}").mock(return_value=result)
+
+
 class TestStreamedDownloadEvents:
     """A download that goes to disk must still be accounted for.
 
     Participant and timestamp queries stream to a temporary file rather
     than buffering the body, and the streaming helper does not go through
     ``_request``.  Without its own event, switching those queries to the
-    streaming path silently removed them from the dev-mode buffer.
+    streaming path silently removed them from the dev-mode buffer. The
+    submit and the status poll that precede the download are ordinary
+    buffered requests with events of their own.
     """
 
     @staticmethod
     def _run(query_type: str, content: bytes, cfg: DevConfig):
         from picsure._models.clause import Clause, PhenotypicFilterType
-        from picsure._services._hpds_paths import query_prefix
         from picsure._services.query_run import run_query
 
-        url = f"{BASE_URL}{query_prefix('auth', v3=True)}/query/sync"
-        respx.post(url).mock(return_value=httpx.Response(200, content=content))
+        _mock_job(httpx.Response(200, content=content))
         client = PicSureClient(base_url=BASE_URL, token=TOKEN, dev_config=cfg)
         clause = Clause(
             keys=["\\a\\b\\"], type=PhenotypicFilterType.FILTER, categories=["X"]
         )
         return run_query(client, clause, query_type, backend="auth")
 
+    @staticmethod
+    def _download_events(cfg: DevConfig) -> list:
+        _, _, result_path = _job_paths()
+        return [
+            e
+            for e in cfg.buffer.snapshot()
+            if e.kind == "http" and e.name == result_path
+        ]
+
     @respx.mock
     @pytest.mark.parametrize("query_type", ["participant", "timestamp"])
-    def test_a_streamed_query_emits_one_http_event(self, query_type):
+    def test_a_streamed_query_emits_one_http_event_per_step(self, query_type):
         cfg = DevConfig(enabled=True, max_events=10)
 
         self._run(query_type, b"patient_id,age\nP1,42\n", cfg)
 
         http_events = [e for e in cfg.buffer.snapshot() if e.kind == "http"]
-        assert len(http_events) == 1
-        assert http_events[0].status == 200
+        assert [e.name for e in http_events] == list(_job_paths())
+        assert [e.status for e in http_events] == [200, 200, 200]
 
     @respx.mock
     def test_the_event_reports_the_bytes_written_to_disk(self):
@@ -250,30 +288,32 @@ class TestStreamedDownloadEvents:
 
         self._run("participant", content, cfg)
 
-        http_events = [e for e in cfg.buffer.snapshot() if e.kind == "http"]
-        assert http_events[0].bytes_received == len(content)
+        download = self._download_events(cfg)
+        assert len(download) == 1
+        assert download[0].bytes_received == len(content)
 
     @respx.mock
     def test_a_streamed_participant_body_is_still_marked_redacted(self):
         """The buffered path marked these.
 
         Without the mark a participant-bearing body looks safe to log.
+        Every step resends the participant-bearing body, so every step's
+        event carries the mark.
         """
         cfg = DevConfig(enabled=True, max_events=10)
 
         self._run("participant", b"patient_id,age\nP1,42\n", cfg)
 
         http_events = [e for e in cfg.buffer.snapshot() if e.kind == "http"]
-        assert http_events[0].metadata.get("redacted") == "participant"
+        assert len(http_events) == 3
+        assert all(e.metadata.get("redacted") == "participant" for e in http_events)
 
     @respx.mock
     def test_a_failed_download_emits_an_error_event(self):
         from picsure._models.clause import Clause, PhenotypicFilterType
-        from picsure._services._hpds_paths import query_prefix
         from picsure._services.query_run import run_query
 
-        url = f"{BASE_URL}{query_prefix('auth', v3=True)}/query/sync"
-        respx.post(url).mock(return_value=httpx.Response(500, text="boom"))
+        _mock_job(httpx.Response(500, text="boom"))
         cfg = DevConfig(enabled=True, max_events=10)
         client = PicSureClient(base_url=BASE_URL, token=TOKEN, dev_config=cfg)
         clause = Clause(
@@ -285,6 +325,7 @@ class TestStreamedDownloadEvents:
 
         errors = [e for e in cfg.buffer.snapshot() if e.kind == "error"]
         assert errors and errors[0].error == "TransportServerError"
+        assert errors[0].name == _job_paths()[2]
 
     @respx.mock
     def test_nothing_is_emitted_when_dev_mode_is_off(self):

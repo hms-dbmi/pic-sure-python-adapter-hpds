@@ -27,6 +27,8 @@ SUBMIT_URL = f"{BASE_URL}{query_prefix('auth', v3=True)}/query"
 STATUS_URL = f"{BASE_URL}{query_prefix('auth', v3=True)}/query/{QUERY_ID}/status"
 RESULT_URL = f"{BASE_URL}{query_prefix('auth', v3=True)}/query/{QUERY_ID}/result"
 
+SLEEP = "picsure._services.query_run.time.sleep"
+
 
 def _make_client() -> PicSureClient:
     return PicSureClient(base_url=BASE_URL, token=TOKEN)
@@ -58,7 +60,7 @@ class TestExportPFBHappyPath:
         )
 
         output = tmp_path / "out.pfb"
-        with patch("picsure._services.export.time.sleep") as sleep_mock:
+        with patch(SLEEP) as sleep_mock:
             export_pfb(_make_client(), _simple_clause(), output, backend="auth")
 
         assert output.exists()
@@ -81,7 +83,7 @@ class TestExportPFBHappyPath:
         )
 
         output = tmp_path / "out.pfb"
-        with patch("picsure._services.export.time.sleep") as sleep_mock:
+        with patch(SLEEP) as sleep_mock:
             export_pfb(_make_client(), _simple_clause(), output, backend="auth")
 
         assert output.exists()
@@ -96,7 +98,7 @@ class TestExportPFBHappyPath:
         respx.post(STATUS_URL).mock(return_value=_status("AVAILABLE"))
         respx.post(RESULT_URL).mock(return_value=httpx.Response(200, content=b"pfb"))
 
-        with patch("picsure._services.export.time.sleep"):
+        with patch(SLEEP):
             export_pfb(
                 _make_client(),
                 _simple_clause(),
@@ -129,7 +131,7 @@ class TestExportPFBBackoff:
         )
         respx.post(RESULT_URL).mock(return_value=httpx.Response(200, content=b"x"))
 
-        with patch("picsure._services.export.time.sleep") as sleep_mock:
+        with patch(SLEEP) as sleep_mock:
             export_pfb(
                 _make_client(),
                 _simple_clause(),
@@ -138,23 +140,17 @@ class TestExportPFBBackoff:
             )
 
         intervals = [call.args[0] for call in sleep_mock.call_args_list]
-        assert intervals == [1.0, 2.0, 4.0, 8.0, 16.0, 32.0]
+        assert intervals == [1.0, 2.0, 4.0, 8.0, 10.0, 10.0]
 
     @respx.mock
-    def test_backoff_caps_at_60_seconds(self, tmp_path):
+    def test_backoff_caps_at_ten_seconds(self, tmp_path):
         respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
         respx.post(STATUS_URL).mock(
             side_effect=[_status("PENDING")] * 10 + [_status("AVAILABLE")]
         )
         respx.post(RESULT_URL).mock(return_value=httpx.Response(200, content=b"x"))
 
-        with (
-            patch("picsure._services.export.time.sleep") as sleep_mock,
-            patch(
-                "picsure._services.export.time.monotonic",
-                side_effect=list(range(100)),
-            ),
-        ):
+        with patch(SLEEP) as sleep_mock:
             export_pfb(
                 _make_client(),
                 _simple_clause(),
@@ -163,9 +159,9 @@ class TestExportPFBBackoff:
             )
 
         intervals = [call.args[0] for call in sleep_mock.call_args_list]
-        # After the 6th interval (32s), subsequent values must all be 60s.
-        assert intervals[:6] == [1.0, 2.0, 4.0, 8.0, 16.0, 32.0]
-        assert all(v == 60.0 for v in intervals[6:])
+        assert intervals[:4] == [1.0, 2.0, 4.0, 8.0]
+        assert len(intervals) == 10
+        assert all(v == 10.0 for v in intervals[4:])
 
 
 class TestExportPFBErrorStatus:
@@ -176,7 +172,7 @@ class TestExportPFBErrorStatus:
 
         output = tmp_path / "out.pfb"
         with (
-            patch("picsure._services.export.time.sleep"),
+            patch(SLEEP),
             pytest.raises(PicSureQueryError, match="status=ERROR"),
         ):
             export_pfb(_make_client(), _simple_clause(), output, backend="auth")
@@ -187,36 +183,19 @@ class TestExportPFBErrorStatus:
 
 class TestExportPFBTimeout:
     @respx.mock
-    def test_total_timeout_raises_after_10_minutes(self, tmp_path):
+    def test_the_budget_is_the_client_timeout(self, tmp_path, clock):
         respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
         respx.post(STATUS_URL).mock(return_value=_status("PENDING"))
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN, timeout=20.0)
 
-        # Patching export.time.monotonic mutates the real time module, so
-        # PicSureClient._request (dev-mode timing) also consumes values.
-        # Feed a generator that yields 0.0 until export's elapsed check,
-        # then 700.0 (>= 600) to trip the timeout.
-        def _monotonic_values():
-            # Submit's _request(start), export's start, status' _request(start)
-            yield from (0.0, 0.0, 0.0)
-            # Export's elapsed check and anything after.
-            while True:
-                yield 700.0
+        with pytest.raises(PicSureConnectionError) as info:
+            export_pfb(client, _simple_clause(), tmp_path / "out.pfb", backend="auth")
 
-        with (
-            patch("picsure._services.export.time.sleep"),
-            patch(
-                "picsure._services.export.time.monotonic",
-                side_effect=_monotonic_values(),
-            ),
-            pytest.raises(PicSureConnectionError, match="10 minutes"),
-        ):
-            export_pfb(
-                _make_client(),
-                _simple_clause(),
-                tmp_path / "out.pfb",
-                backend="auth",
-            )
-
+        message = str(info.value)
+        assert "the PFB export" in message
+        assert "20 seconds" in message
+        assert QUERY_ID in message
+        assert clock.now >= 20.0
         assert not (tmp_path / "out.pfb").exists()
         assert not (tmp_path / "out.pfb.part").exists()
 
@@ -267,7 +246,7 @@ class TestExportPFB4xx:
 
         output = tmp_path / "out.pfb"
         with (
-            patch("picsure._services.export.time.sleep"),
+            patch(SLEEP),
             pytest.raises(PicSureQueryError),
         ):
             export_pfb(_make_client(), _simple_clause(), output, backend="auth")
@@ -285,7 +264,7 @@ class TestExportPFB4xx:
 
         output = tmp_path / "out.pfb"
         with (
-            patch("picsure._services.export.time.sleep"),
+            patch(SLEEP),
             pytest.raises(PicSureValidationError),
         ):
             export_pfb(_make_client(), _simple_clause(), output, backend="auth")
@@ -370,7 +349,7 @@ class TestExportPFBAtomicWrite:
 
         # Simulate a disk failure during the final os.replace step.
         with (
-            patch("picsure._services.export.time.sleep"),
+            patch(SLEEP),
             patch(
                 "picsure._transport.client.os.replace",
                 side_effect=OSError("disk full"),
@@ -418,7 +397,7 @@ class TestExportPFBAtomicWrite:
             return FullDisk(open(path, mode, *args, **kwargs))
 
         with (
-            patch("picsure._services.export.time.sleep"),
+            patch(SLEEP),
             patch("picsure._transport.client.open", failing_open, create=True),
             pytest.raises(PicSureConnectionError, match="out.pfb"),
         ):
