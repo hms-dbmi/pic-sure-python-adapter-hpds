@@ -46,13 +46,16 @@ Returns a pandas DataFrame with repeated measurements over time.
 
 Participant and timestamp results are built by a job on the server: the
 adapter submits the query, polls until the server reports the result
-ready, then downloads it. The whole wait is bounded by the request
-timeout you pass to `connect(timeout=...)`, ten minutes by default, and
-a status check that is throttled, answered with a 5xx or lost to a
-network failure is tried again inside it. A query that is still running
-when the timeout passes raises `PicSureConnectionError` naming the query
-id and the budget; a query the server fails raises `PicSureQueryError`.
-Raise the timeout for a cohort that takes longer to assemble.
+ready, then downloads it. The submit and the wait together are bounded
+by the request timeout you pass to `connect(timeout=...)`, ten minutes
+by default, and a status check that is throttled, answered with a 5xx
+or lost to a network failure is tried again inside that budget. The
+download that follows sits outside it and carries the same value as its
+own deadline, so a call can run somewhat past the timeout end to end. A
+query that is still running when the budget passes raises
+`PicSureConnectionError` naming the query id and the budget; a query the
+server fails raises `PicSureQueryError`. Raise the timeout for a cohort
+that takes longer to assemble.
 
 ### Variant Result Types
 

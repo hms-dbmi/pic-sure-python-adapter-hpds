@@ -368,8 +368,9 @@ class Session:
             PicSureQueryError: If the response cannot be parsed, or a
                 ``"participant"`` or ``"timestamp"`` query is answered
                 with a 404, a query id that is not a UUID, a poll
-                without a status field, or a terminal ``ERROR`` status,
-                which the server reports without further detail.
+                carrying no body or no status field, or a terminal
+                ``ERROR`` status, which the server reports without
+                further detail.
             PicSureConnectionError: If the server cannot be reached or
                 rate limits the request, or answers it with a 5xx (as
                 :class:`~picsure.errors.PicSureServerError`); for a
@@ -377,8 +378,12 @@ class Session:
                 to the submit and the download, since a status poll
                 that fails those ways is sent again. Also if such a
                 query is still unfinished when the ``timeout`` passes;
-                that message names the query id, the budget and, when
-                the last poll failed rather than answered, the failure.
+                that message names the query id and the budget, and
+                when the last poll failed rather than answered, that
+                failure decides the message and the class, so the
+                narrower :class:`~picsure.errors.PicSureServerError` or
+                :class:`~picsure.errors.PicSureConsentLookupError` is
+                raised.
 
         Example:
             >>> count = session.runQuery(my_query, type="count")
@@ -446,14 +451,19 @@ class Session:
             PicSureQueryError: If any of the three routes answers 404, if
                 the server finishes the query with ``status=ERROR``, or if
                 it answers the submit with no query id or one that is not
-                a UUID, or a poll with no status field.
-            PicSureConnectionError: If the submit and polling pass the
-                request timeout with the result still unavailable
-                (naming the last poll's failure when it failed), if
-                the server cannot be reached or
-                rate limits the request, if it answers 5xx (as
-                :class:`~picsure.errors.PicSureServerError`), or if the
-                output file cannot be written.
+                a UUID, or a poll with no body or no status field.
+            PicSureConnectionError: If the server cannot be reached or
+                rate limits the request, or answers it with a 5xx (as
+                :class:`~picsure.errors.PicSureServerError`), which for
+                this call applies to the submit and the download, since
+                a status poll that fails those ways is sent again. Also
+                if the submit and polling pass the request timeout with
+                the result still unavailable, where the last poll's
+                failure, when it failed, decides both the message and
+                the class, so the narrower
+                :class:`~picsure.errors.PicSureServerError` or
+                :class:`~picsure.errors.PicSureConsentLookupError` is
+                raised. Also if the output file cannot be written.
         """
         if self._backend == "open":
             raise PicSureValidationError(

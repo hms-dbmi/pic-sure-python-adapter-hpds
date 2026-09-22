@@ -763,12 +763,15 @@ class TestTransientPollFailures:
         respx.post(STATUS_URL).mock(return_value=_consent_lookup_failed())
         client = PicSureClient(base_url=BASE_URL, token=TOKEN, timeout=5.0)
 
-        with pytest.raises(PicSureConnectionError) as info:
+        with pytest.raises(PicSureConsentLookupError) as info:
             self._run(client, tmp_path / "out.csv")
 
+        message = str(info.value)
         assert isinstance(info.value.__cause__, TransportConsentLookupError)
-        assert "5 seconds" in str(info.value)
-        assert "consent_lookup_failed" in str(info.value)
+        assert QUERY_ID in message
+        assert "5 seconds" in message
+        assert "consent permissions" in message
+        assert "Unable to resolve caller consents" in message
         assert clock.sleeps == [1.0, 2.0, 2.0]
 
     @respx.mock
@@ -829,7 +832,7 @@ class TestTransientPollFailures:
         )
         client = PicSureClient(base_url=BASE_URL, token=TOKEN, timeout=5.0)
 
-        with pytest.raises(PicSureConnectionError) as info:
+        with pytest.raises(PicSureServerError) as info:
             self._run(client, tmp_path / "out.csv")
 
         message = str(info.value)
@@ -888,6 +891,40 @@ class TestTransientPollFailures:
 
         assert transport.poll_attempts == 1
         assert sleep_mock.call_count == 0
+
+    @respx.mock
+    def test_a_bodiless_success_poll_raises_at_once(self, tmp_path):
+        """An answered poll that cannot be read is a protocol break, not a wait."""
+        _mock_async_result(b"x")
+        poll = respx.post(STATUS_URL).mock(
+            side_effect=[httpx.Response(200, content=b""), _status("AVAILABLE")]
+        )
+
+        with patch(SLEEP) as sleep_mock, pytest.raises(PicSureQueryError) as info:
+            self._run(_make_client(), tmp_path / "out.csv")
+
+        message = str(info.value)
+        assert "empty body" in message
+        assert "200" in message
+        assert "JSON" not in message
+        assert poll.call_count == 1
+        assert sleep_mock.call_count == 0
+
+    @respx.mock
+    def test_a_bodiless_redirect_poll_names_the_gateway_session(self, tmp_path):
+        _mock_async_result(b"x")
+        respx.post(STATUS_URL).mock(
+            return_value=httpx.Response(302, headers={"Location": "/sso/login"})
+        )
+
+        with patch(SLEEP), pytest.raises(PicSureQueryError) as info:
+            self._run(_make_client(), tmp_path / "out.csv")
+
+        message = str(info.value)
+        assert "302" in message
+        assert "gateway session" in message
+        assert "Reconnect" in message
+        assert "JSON" not in message
 
     @respx.mock
     def test_a_502_on_the_submit_still_raises_at_once(self, tmp_path):

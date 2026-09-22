@@ -67,20 +67,25 @@ def export_pfb(
         PicSureQueryError: If the server returns 404 for the submit,
             status, or result endpoint, answers the submit with no query
             id or with one that is not a UUID, answers a poll with no
-            status field, or fails the query (terminal status ``ERROR``).
+            body or no status field, or fails the query (terminal
+            status ``ERROR``).
         PicSureAuthenticationError: If the server returns 401.
         PicSureAuthorizationError: If the server returns 403, including a
             consent denial, which arrives as
             :class:`~picsure.errors.PicSureConsentDeniedError`.
-        PicSureConnectionError: If the server is unreachable or rate
-            limits the submit or the download, leaves the submit and
-            polling past the client's request timeout with the result
-            still unavailable (naming the last poll's failure when it
-            failed), or the local disk write fails. A 5xx after retries
-            arrives as :class:`~picsure.errors.PicSureServerError` and a
-            rejected certificate as
-            :class:`~picsure.errors.PicSureTLSError`, both subclasses of
-            it.
+        PicSureConnectionError: If the server cannot be reached or rate
+            limits the request, or answers it with a 5xx (as
+            :class:`~picsure.errors.PicSureServerError`), which here
+            applies to the submit and the download, since a status poll
+            that fails those ways is sent again. Also if the submit and
+            polling pass the client's request timeout with the result
+            still unavailable, where the last poll's failure, when it
+            failed, decides both the message and the class, so the
+            narrower :class:`~picsure.errors.PicSureServerError` or
+            :class:`~picsure.errors.PicSureConsentLookupError` is
+            raised. Also if the local disk write fails. A rejected
+            certificate arrives as
+            :class:`~picsure.errors.PicSureTLSError`, a subclass of it.
     """
     target = Path(path)
     body = build_query_body(query, "DATAFRAME_PFB")
