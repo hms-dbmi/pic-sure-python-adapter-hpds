@@ -1078,6 +1078,18 @@ in that case).</p>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">df</span><span class="o">.</span><span class="n">head</span><span class="p">()</span>
 </code></pre></div>
 <p>Returns a pandas DataFrame with repeated measurements over time.</p>
+<p>Participant and timestamp results are built by a job on the server: the
+adapter submits the query, polls until the server reports the result
+ready, then downloads it. The submit and the wait together are bounded
+by the request timeout you pass to <code>connect(timeout=...)</code>, ten minutes
+by default, and a status check that is throttled, answered with a 5xx
+or lost to a network failure is tried again inside that budget. The
+download that follows sits outside it and carries the same value as its
+own deadline, so a call can run somewhat past the timeout end to end. A
+query that is still running when the budget passes raises
+<code>PicSureConnectionError</code> naming the query id and the budget; a query the
+server fails raises <code>PicSureQueryError</code>. Raise the timeout for a cohort
+that takes longer to assemble.</p>
 <h3 id="variant-result-types">Variant Result Types<a class="headerlink" href="#variant-result-types" title="Permanent link">&para;</a></h3>
 <p>Queries with genomic filters also support four variant-specific result types:</p>
 <table>
@@ -1132,9 +1144,16 @@ to a file:</p>
 </code></pre></div>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>PFB export requires the optional <code>pypfb</code> dependency:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>pip<span class="w"> </span>install<span class="w"> </span>picsure<span class="o">[</span>pfb<span class="o">]</span>
-</code></pre></div></p>
+<p>Exporting needs no extra dependency. The server builds the PFB and
+the adapter streams its Avro bytes to disk. Opening the file
+afterwards is what needs a PFB reader, for example <code>fastavro</code>:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastavro</span><span class="w"> </span><span class="kn">import</span> <span class="n">reader</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;my_cohort.pfb&quot;</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">handle</span><span class="p">:</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>    <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">reader</span><span class="p">(</span><span class="n">handle</span><span class="p">)))</span>
+</code></pre></div>
+<code>pypfb</code> reads the same files if you prefer its PFB-aware API.</p>
 </div>
 <h2 id="saving-a-query-by-name">Saving a Query by Name<a class="headerlink" href="#saving-a-query-by-name" title="Permanent link">&para;</a></h2>
 <p>On authorized deployments, you can persist a query to your user
@@ -1162,7 +1181,8 @@ built query, pass <code>overwrite=True</code>:</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p><code>saveQueryByName</code> is not supported on open-access deployments —
-the <code>/dataset/named/</code> endpoint requires an authenticated principal.</p>
+the <code>/picsure/operations/dataset/named</code> endpoint requires an
+authenticated principal.</p>
 </div>
 <h2 id="simple-queries">Simple Queries<a class="headerlink" href="#simple-queries" title="Permanent link">&para;</a></h2>
 <p>You can pass a single clause directly to <code>runQuery</code> — you don't have
@@ -1177,8 +1197,9 @@ to wrap it in a group first:</p>
 <p>If something goes wrong, you'll get a clear error message:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># Invalid query type</span>
 <a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="n">session</span><span class="o">.</span><span class="n">runQuery</span><span class="p">(</span><span class="n">my_query</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;invalid&quot;</span><span class="p">)</span>
-<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="c1"># PicSureValidationError: &#39;invalid&#39; is not a valid query type.</span>
-<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="c1"># Valid types: count, participant, timestamp.</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="c1"># PicSureValidationError: &#39;invalid&#39; is not a valid query type. Pass a</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="c1"># QueryType member or one of: count, participant, timestamp, cross_count,</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="c1"># variant_count, variant_list, vcf_excerpt, aggregate_vcf_excerpt.</span>
 </code></pre></div>
 <p>Researchers don't need to write try/except blocks. The error messages
 tell you what happened and what to do about it.</p>

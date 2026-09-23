@@ -1331,30 +1331,72 @@ keys.</p>
 <a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a>    <span class="n">values</span><span class="o">=</span><span class="n">picsure</span><span class="o">.</span><span class="n">VariantFrequency</span><span class="o">.</span><span class="n">RARE</span><span class="p">,</span>
 <a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a><span class="p">)</span>
 </code></pre></div>
-<p><code>values</code> is required. Keys are validated against <code>GenomicFilterKey</code>; an
-unrecognized string key — or a variant-spec / SNP key (an rsID or
-<code>chr,pos,ref,alt</code>) — is rejected with an actionable error. <code>VariantFrequency</code>
-has three members: <code>RARE</code>, <code>COMMON</code>, and <code>NOVEL</code>.</p>
+<p><code>values</code> is required. Keys are validated against <code>GenomicFilterKey</code>. An
+unrecognized string key, or a variant-spec / SNP key (an rsID or
+<code>chr,pos,ref,alt</code>), is rejected with an error that names the valid keys.</p>
+<p><code>VariantFrequency</code> has five members: <code>RARE</code>, <code>COMMON</code>, <code>LOW_FREQUENCY</code>,
+<code>ULTRA_RARE</code>, and <code>NOVEL</code>. <code>NOVEL</code> is deprecated. It is absent from every
+annotation set observed on a PIC-SURE deployment, and is kept only so
+existing code keeps working. The members are a convenience, not an
+allowlist: <code>buildGenomicFilter</code> accepts any string for this key, and
+<code>session.searchGenomicValues("Variant_frequency_as_text")</code> is the
+authoritative vocabulary for a given deployment.</p>
 <h3 id="filtering-by-variant-severity">Filtering by variant severity<a class="headerlink" href="#filtering-by-variant-severity" title="Permanent link">&para;</a></h3>
-<p><code>Variant_severity</code> is a <strong>virtual</strong> key: the backend has no severity filter, so
-<code>buildGenomicFilter</code> expands a <code>VariantSeverity</code> bucket into the matching
-<code>Variant_consequence_calculated</code> values. Filter as if severity were a real key:</p>
+<p><code>Variant_severity</code> accepts <strong>two different vocabularies</strong>, and
+<code>buildGenomicFilter</code> routes them differently:</p>
+<table>
+<thead>
+<tr>
+<th>You pass</th>
+<th>Sent as</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>a <code>VariantSeverity</code> member (<code>VariantSeverity.HIGH</code> / <code>MEDIUM</code> / <code>LOW</code>) or its label (<code>"High Severity"</code> / <code>"Medium Severity"</code> / <code>"Low Severity"</code>)</td>
+<td>a <code>Variant_consequence_calculated</code> filter</td>
+<td>The buckets are this adapter's own grouping, so they are expanded into the consequences they cover.</td>
+</tr>
+<tr>
+<td>a backend impact value (<code>HIGH</code>, <code>MODERATE</code>, <code>LOW</code>, <code>MODIFIER</code>)</td>
+<td>a <code>Variant_severity</code> filter, unchanged</td>
+<td>The backend does carry a <code>Variant_severity</code> annotation (VEP's <code>IMPACT</code> field) and applies the key verbatim.</td>
+</tr>
+</tbody>
+</table>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">picsure</span>
 <a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="c1"># High-severity variants -&gt; a Variant_consequence_calculated filter</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="c1"># A VariantSeverity bucket is expanded into consequences.</span>
 <a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="n">severe</span> <span class="o">=</span> <span class="n">picsure</span><span class="o">.</span><span class="n">buildGenomicFilter</span><span class="p">(</span>
 <a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>    <span class="n">key</span><span class="o">=</span><span class="n">picsure</span><span class="o">.</span><span class="n">GenomicFilterKey</span><span class="o">.</span><span class="n">VARIANT_SEVERITY</span><span class="p">,</span>
 <a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>    <span class="n">values</span><span class="o">=</span><span class="n">picsure</span><span class="o">.</span><span class="n">VariantSeverity</span><span class="o">.</span><span class="n">HIGH</span><span class="p">,</span>
 <a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="p">)</span>
 <a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="c1"># severe.key == &quot;Variant_consequence_calculated&quot;</span>
 <a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>
-<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="c1"># Multiple severities are unioned</span>
+<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="c1"># Multiple buckets are unioned.</span>
 <a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="n">severe_or_moderate</span> <span class="o">=</span> <span class="n">picsure</span><span class="o">.</span><span class="n">buildGenomicFilter</span><span class="p">(</span>
 <a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a>    <span class="n">key</span><span class="o">=</span><span class="n">picsure</span><span class="o">.</span><span class="n">GenomicFilterKey</span><span class="o">.</span><span class="n">VARIANT_SEVERITY</span><span class="p">,</span>
 <a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a>    <span class="n">values</span><span class="o">=</span><span class="p">[</span><span class="n">picsure</span><span class="o">.</span><span class="n">VariantSeverity</span><span class="o">.</span><span class="n">HIGH</span><span class="p">,</span> <span class="n">picsure</span><span class="o">.</span><span class="n">VariantSeverity</span><span class="o">.</span><span class="n">MEDIUM</span><span class="p">],</span>
 <a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="p">)</span>
+<a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a>
+<a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a><span class="c1"># A backend impact value stays on the Variant_severity key.</span>
+<a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a><span class="n">modifier</span> <span class="o">=</span> <span class="n">picsure</span><span class="o">.</span><span class="n">buildGenomicFilter</span><span class="p">(</span>
+<a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a>    <span class="n">key</span><span class="o">=</span><span class="n">picsure</span><span class="o">.</span><span class="n">GenomicFilterKey</span><span class="o">.</span><span class="n">VARIANT_SEVERITY</span><span class="p">,</span>
+<a id="__codelineno-7-19" name="__codelineno-7-19" href="#__codelineno-7-19"></a>    <span class="n">values</span><span class="o">=</span><span class="s2">&quot;MODIFIER&quot;</span><span class="p">,</span>
+<a id="__codelineno-7-20" name="__codelineno-7-20" href="#__codelineno-7-20"></a><span class="p">)</span>
+<a id="__codelineno-7-21" name="__codelineno-7-21" href="#__codelineno-7-21"></a><span class="c1"># modifier.key == &quot;Variant_severity&quot;</span>
 </code></pre></div>
-<p><code>VariantSeverity</code> has three members: <code>HIGH</code>, <code>MEDIUM</code>, and <code>LOW</code>.</p>
+<p><code>VariantSeverity</code> has three members: <code>HIGH</code>, <code>MEDIUM</code>, and <code>LOW</code>. On
+observed data the two routes select the same patients, but only the impact
+values reach <code>MODIFIER</code>, which no bucket covers. The four impact values are
+<code>HIGH</code>, <code>MODERATE</code>, <code>LOW</code>, and <code>MODIFIER</code>;
+<code>session.searchGenomicValues("Variant_severity")</code> reports which of them a
+given deployment actually holds.</p>
+<p>Values are matched exactly, apart from surrounding whitespace. A near miss is
+rejected with the accepted spelling in the message: <code>"High"</code> is neither the
+impact value <code>HIGH</code> nor the label <code>"High Severity"</code>, and <code>MEDIUM</code> is not an
+impact value, <code>MODERATE</code> is.</p>
 <h3 id="genomic-only-query">Genomic-only query<a class="headerlink" href="#genomic-only-query" title="Permanent link">&para;</a></h3>
 <p>Pass a list of <code>GenomicFilter</code> objects to <code>buildQuery(genomicFilters=...)</code>. A
 <code>phenotypicFilter</code> is not required:</p>
@@ -1365,7 +1407,7 @@ has three members: <code>RARE</code>, <code>COMMON</code>, and <code>NOVEL</code
 </code></pre></div>
 <h3 id="combined-phenotypic-and-genomic-query">Combined phenotypic and genomic query<a class="headerlink" href="#combined-phenotypic-and-genomic-query" title="Permanent link">&para;</a></h3>
 <p>Phenotypic and genomic filters are AND-combined:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">picsure</span><span class="w"> </span><span class="kn">import</span> <span class="n">buildClause</span><span class="p">,</span> <span class="n">buildClauseGroup</span><span class="p">,</span> <span class="n">buildQuery</span><span class="p">,</span> <span class="n">PhenotypicFilterType</span><span class="p">,</span> <span class="n">GroupOperator</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">picsure</span><span class="w"> </span><span class="kn">import</span> <span class="n">buildClause</span><span class="p">,</span> <span class="n">buildClauseGroup</span><span class="p">,</span> <span class="n">buildGenomicFilter</span><span class="p">,</span> <span class="n">buildQuery</span><span class="p">,</span> <span class="n">PhenotypicFilterType</span><span class="p">,</span> <span class="n">GroupOperator</span><span class="p">,</span> <span class="n">VariantFrequency</span>
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
 <a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="n">sex_filter</span> <span class="o">=</span> <span class="n">buildClause</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">phs1</span><span class="se">\\</span><span class="s2">sex</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">PhenotypicFilterType</span><span class="o">.</span><span class="n">FILTER</span><span class="p">,</span> <span class="n">categories</span><span class="o">=</span><span class="s2">&quot;Female&quot;</span><span class="p">)</span>
 <a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="n">age_filter</span> <span class="o">=</span> <span class="n">buildClause</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">phs1</span><span class="se">\\</span><span class="s2">age</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">PhenotypicFilterType</span><span class="o">.</span><span class="n">FILTER</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mi">18</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">45</span><span class="p">)</span>
@@ -1398,8 +1440,13 @@ preserved.</p>
 </code></pre></div>
 <p><code>removeSubQuery</code> drops any <code>ClauseGroup</code> left empty by a removal, so
 you don't end up with orphan operators. It raises
-<code>PicSureValidationError</code> if the removal would empty the whole tree —
+<code>PicSureValidationError</code> if the removal would empty the whole tree;
 build a fresh query instead in that case.</p>
+<p>Both functions raise <code>PicSureValidationError</code> when <code>target</code> does not
+occur in the query, rather than returning an unchanged copy. Matching is
+structural, so a clause built with the same concept path but different
+categories, min or max is a different clause. Build the target from the
+same values, or pick it out of the query's own clauses.</p>
 <h2 id="validation">Validation<a class="headerlink" href="#validation" title="Permanent link">&para;</a></h2>
 <p>The library validates clause configurations and provides actionable
 error messages:</p>

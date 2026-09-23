@@ -888,9 +888,10 @@ data — all from a Jupyter notebook.</p>
 <h2 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pip<span class="w"> </span>install<span class="w"> </span>picsure
 </code></pre></div>
-<p>For PFB export support:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>pip<span class="w"> </span>install<span class="w"> </span>picsure<span class="o">[</span>pfb<span class="o">]</span>
-</code></pre></div>
+<p>That is everything the library needs, PFB export included:
+<code>exportAsPFB</code> streams the server's Avro bytes straight to a file and
+builds nothing locally. Reading the exported file back is a separate
+job, and a PFB reader such as <code>fastavro</code> or <code>pypfb</code> is what does it.</p>
 <h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="getting-started/">Getting Started</a> — connect and run your first query</li>

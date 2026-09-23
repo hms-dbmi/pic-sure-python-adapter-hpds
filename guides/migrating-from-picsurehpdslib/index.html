@@ -527,6 +527,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#resource-ids-are-gone" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resource IDs are gone
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#return-type-changes" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -928,6 +939,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#resource-ids-are-gone" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resource IDs are gone
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#return-type-changes" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1117,7 +1139,7 @@ will not work.</p>
 </tr>
 <tr>
 <td><code>adapter.useResource(uuid)</code></td>
-<td><code>session.setResourceID(uuid)</code></td>
+<td><em>(not needed — see <a href="#resource-ids-are-gone">Resource IDs are gone</a>)</em></td>
 </tr>
 <tr>
 <td><code>resource.dictionary().find("sex")</code></td>
@@ -1157,6 +1179,25 @@ will not work.</p>
 </tr>
 </tbody>
 </table>
+<h3 id="resource-ids-are-gone">Resource IDs are gone<a class="headerlink" href="#resource-ids-are-gone" title="Permanent link">&para;</a></h3>
+<p>There is no equivalent of <code>adapter.useResource(uuid)</code>, and nothing to
+pass a resource UUID to. If you are porting a notebook, delete the
+<code>useResource</code> line — do not look for a replacement.</p>
+<p>The old library discovered a list of resources from the API and made you
+pick one by UUID before you could query anything. PIC-SURE v3 routes by
+URL path instead: <code>picsure.connect(platform=...)</code> resolves the platform
+to the <code>/picsure/hpds/auth</code> or <code>/picsure/hpds/open</code> route, and that
+choice alone decides
+which HPDS answers. The registry endpoint the UUIDs came from no longer
+exists.</p>
+<p><code>connect()</code> briefly accepted a <code>resource_uuid</code> argument that was stored
+and ignored; it has been removed, along with <code>Session.getResourceID()</code>,
+<code>setResourceID()</code>, and <code>setResourceIDByName()</code>. <code>resource_uuid</code> was the
+third positional parameter, so</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">picsure</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">platform</span><span class="p">,</span> <span class="n">token</span><span class="p">,</span> <span class="n">resource_uuid</span><span class="p">)</span>  <span class="c1"># raises TypeError</span>
+</code></pre></div>
+<p>now fails loudly rather than quietly binding the UUID to something else.
+Drop the third argument.</p>
 <h3 id="return-type-changes">Return-type changes<a class="headerlink" href="#return-type-changes" title="Permanent link">&para;</a></h3>
 <p><strong>Note:</strong> <code>runQuery(..., type="count")</code> now returns a <code>CountResult</code>, not an
 <code>int</code>. Use <code>result.value</code> for the numeric count (which may be <code>None</code> on
@@ -1165,72 +1206,77 @@ that case).</p>
 <h2 id="side-by-side-examples">Side-by-Side Examples<a class="headerlink" href="#side-by-side-examples" title="Permanent link">&para;</a></h2>
 <h3 id="connecting">Connecting<a class="headerlink" href="#connecting" title="Permanent link">&para;</a></h3>
 <p><strong>Old:</strong></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">PicSureClient</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">PicSureHpdsLib</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">conn</span> <span class="o">=</span> <span class="n">PicSureClient</span><span class="o">.</span><span class="n">Client</span><span class="p">(</span><span class="n">url</span><span class="o">=</span><span class="s2">&quot;https://picsure.biodatacatalyst.nhlbi.nih.gov/picsure/&quot;</span><span class="p">,</span> <span class="n">token</span><span class="o">=</span><span class="n">my_token</span><span class="p">)</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">adapter</span> <span class="o">=</span> <span class="n">PicSureHpdsLib</span><span class="o">.</span><span class="n">Adapter</span><span class="p">(</span><span class="n">conn</span><span class="p">)</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="n">resource</span> <span class="o">=</span> <span class="n">adapter</span><span class="o">.</span><span class="n">useResource</span><span class="p">(</span><span class="n">resource_uuid</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">PicSureClient</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">PicSureHpdsLib</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">conn</span> <span class="o">=</span> <span class="n">PicSureClient</span><span class="o">.</span><span class="n">Client</span><span class="p">(</span><span class="n">url</span><span class="o">=</span><span class="s2">&quot;https://picsure.biodatacatalyst.nhlbi.nih.gov/picsure/&quot;</span><span class="p">,</span> <span class="n">token</span><span class="o">=</span><span class="n">my_token</span><span class="p">)</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">adapter</span> <span class="o">=</span> <span class="n">PicSureHpdsLib</span><span class="o">.</span><span class="n">Adapter</span><span class="p">(</span><span class="n">conn</span><span class="p">)</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="n">resource</span> <span class="o">=</span> <span class="n">adapter</span><span class="o">.</span><span class="n">useResource</span><span class="p">(</span><span class="n">resource_uuid</span><span class="p">)</span>  <span class="c1"># no longer has an equivalent</span>
 </code></pre></div>
 <p><strong>New:</strong></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">picsure</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">session</span> <span class="o">=</span> <span class="n">picsure</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">platform</span><span class="o">=</span><span class="n">picsure</span><span class="o">.</span><span class="n">Platform</span><span class="o">.</span><span class="n">BDC_AUTHORIZED</span><span class="p">,</span> <span class="n">token</span><span class="o">=</span><span class="n">my_token</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">picsure</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">session</span> <span class="o">=</span> <span class="n">picsure</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">platform</span><span class="o">=</span><span class="n">picsure</span><span class="o">.</span><span class="n">Platform</span><span class="o">.</span><span class="n">BDC_AUTHORIZED</span><span class="p">,</span> <span class="n">token</span><span class="o">=</span><span class="n">my_token</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="searching-the-dictionary">Searching the Dictionary<a class="headerlink" href="#searching-the-dictionary" title="Permanent link">&para;</a></h3>
 <p><strong>Old:</strong></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">dictionary</span> <span class="o">=</span> <span class="n">resource</span><span class="o">.</span><span class="n">dictionary</span><span class="p">()</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">results</span> <span class="o">=</span> <span class="n">dictionary</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;blood pressure&quot;</span><span class="p">)</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">results</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">dictionary</span> <span class="o">=</span> <span class="n">resource</span><span class="o">.</span><span class="n">dictionary</span><span class="p">()</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">results</span> <span class="o">=</span> <span class="n">dictionary</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;blood pressure&quot;</span><span class="p">)</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">results</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
 </code></pre></div>
 <p><strong>New:</strong></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">df</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">searchDictionary</span><span class="p">(</span><span class="s2">&quot;blood pressure&quot;</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">df</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">searchDictionary</span><span class="p">(</span><span class="s2">&quot;blood pressure&quot;</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="building-a-query">Building a Query<a class="headerlink" href="#building-a-query" title="Permanent link">&para;</a></h3>
 <p><strong>Old:</strong></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">query</span> <span class="o">=</span> <span class="n">resource</span><span class="o">.</span><span class="n">query</span><span class="p">()</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">query</span><span class="o">.</span><span class="n">filter</span><span class="p">()</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">phs1</span><span class="se">\\</span><span class="s2">sex</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;Male&quot;</span><span class="p">])</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="n">query</span><span class="o">.</span><span class="n">filter</span><span class="p">()</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">phs1</span><span class="se">\\</span><span class="s2">age</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mi">40</span><span class="p">)</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="n">query</span><span class="o">.</span><span class="n">require</span><span class="p">()</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">phs1</span><span class="se">\\</span><span class="s2">bmi</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">query</span> <span class="o">=</span> <span class="n">resource</span><span class="o">.</span><span class="n">query</span><span class="p">()</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">query</span><span class="o">.</span><span class="n">filter</span><span class="p">()</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">phs1</span><span class="se">\\</span><span class="s2">sex</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;Male&quot;</span><span class="p">])</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="n">query</span><span class="o">.</span><span class="n">filter</span><span class="p">()</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">phs1</span><span class="se">\\</span><span class="s2">age</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mi">40</span><span class="p">)</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="n">query</span><span class="o">.</span><span class="n">require</span><span class="p">()</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">phs1</span><span class="se">\\</span><span class="s2">bmi</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
 <p><strong>New:</strong></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">picsure</span><span class="w"> </span><span class="kn">import</span> <span class="n">buildClause</span><span class="p">,</span> <span class="n">buildClauseGroup</span><span class="p">,</span> <span class="n">PhenotypicFilterType</span><span class="p">,</span> <span class="n">GroupOperator</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="n">sex</span> <span class="o">=</span> <span class="n">buildClause</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">phs1</span><span class="se">\\</span><span class="s2">sex</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">PhenotypicFilterType</span><span class="o">.</span><span class="n">FILTER</span><span class="p">,</span> <span class="n">categories</span><span class="o">=</span><span class="s2">&quot;Male&quot;</span><span class="p">)</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="n">age</span> <span class="o">=</span> <span class="n">buildClause</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">phs1</span><span class="se">\\</span><span class="s2">age</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">PhenotypicFilterType</span><span class="o">.</span><span class="n">FILTER</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mi">40</span><span class="p">)</span>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="n">bmi</span> <span class="o">=</span> <span class="n">buildClause</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">phs1</span><span class="se">\\</span><span class="s2">bmi</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">PhenotypicFilterType</span><span class="o">.</span><span class="n">REQUIRE</span><span class="p">)</span>
-<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>
-<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="n">query</span> <span class="o">=</span> <span class="n">buildClauseGroup</span><span class="p">([</span><span class="n">sex</span><span class="p">,</span> <span class="n">age</span><span class="p">,</span> <span class="n">bmi</span><span class="p">],</span> <span class="n">operator</span><span class="o">=</span><span class="n">GroupOperator</span><span class="o">.</span><span class="n">AND</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">picsure</span><span class="w"> </span><span class="kn">import</span> <span class="n">buildClause</span><span class="p">,</span> <span class="n">buildClauseGroup</span><span class="p">,</span> <span class="n">PhenotypicFilterType</span><span class="p">,</span> <span class="n">GroupOperator</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="n">sex</span> <span class="o">=</span> <span class="n">buildClause</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">phs1</span><span class="se">\\</span><span class="s2">sex</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">PhenotypicFilterType</span><span class="o">.</span><span class="n">FILTER</span><span class="p">,</span> <span class="n">categories</span><span class="o">=</span><span class="s2">&quot;Male&quot;</span><span class="p">)</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="n">age</span> <span class="o">=</span> <span class="n">buildClause</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">phs1</span><span class="se">\\</span><span class="s2">age</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">PhenotypicFilterType</span><span class="o">.</span><span class="n">FILTER</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mi">40</span><span class="p">)</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="n">bmi</span> <span class="o">=</span> <span class="n">buildClause</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">phs1</span><span class="se">\\</span><span class="s2">bmi</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">PhenotypicFilterType</span><span class="o">.</span><span class="n">REQUIRE</span><span class="p">)</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="n">query</span> <span class="o">=</span> <span class="n">buildClauseGroup</span><span class="p">([</span><span class="n">sex</span><span class="p">,</span> <span class="n">age</span><span class="p">,</span> <span class="n">bmi</span><span class="p">],</span> <span class="n">operator</span><span class="o">=</span><span class="n">GroupOperator</span><span class="o">.</span><span class="n">AND</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="running-a-query">Running a Query<a class="headerlink" href="#running-a-query" title="Permanent link">&para;</a></h3>
 <p><strong>Old:</strong></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">count</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">getCount</span><span class="p">()</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">df</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">getResultsDataFrame</span><span class="p">()</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">count</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">getCount</span><span class="p">()</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="n">df</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">getResultsDataFrame</span><span class="p">()</span>
 </code></pre></div>
 <p><strong>New:</strong></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">count_result</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">runQuery</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;count&quot;</span><span class="p">)</span>
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="k">if</span> <span class="n">count_result</span><span class="o">.</span><span class="n">value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">count_result</span><span class="o">.</span><span class="n">value</span><span class="si">}</span><span class="s2"> participants match&quot;</span><span class="p">)</span>
-<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;fewer than </span><span class="si">{</span><span class="n">count_result</span><span class="o">.</span><span class="n">cap</span><span class="si">}</span><span class="s2"> participants match (suppressed)&quot;</span><span class="p">)</span>
-<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="n">df</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">runQuery</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;participant&quot;</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">count_result</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">runQuery</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;count&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="k">if</span> <span class="n">count_result</span><span class="o">.</span><span class="n">value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">count_result</span><span class="o">.</span><span class="n">value</span><span class="si">}</span><span class="s2"> participants match&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;fewer than </span><span class="si">{</span><span class="n">count_result</span><span class="o">.</span><span class="n">cap</span><span class="si">}</span><span class="s2"> participants match (suppressed)&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="n">df</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">runQuery</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;participant&quot;</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="exporting">Exporting<a class="headerlink" href="#exporting" title="Permanent link">&para;</a></h3>
 <p><strong>Old:</strong></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">df</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="s2">&quot;output.csv&quot;</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">df</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="s2">&quot;output.csv&quot;</span><span class="p">)</span>
 </code></pre></div>
 <p><strong>New:</strong></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">session</span><span class="o">.</span><span class="n">exportCSV</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="s2">&quot;output.csv&quot;</span><span class="p">)</span>
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="c1"># or</span>
-<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="n">session</span><span class="o">.</span><span class="n">exportTSV</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="s2">&quot;output.tsv&quot;</span><span class="p">)</span>
-<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="c1"># or</span>
-<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="n">session</span><span class="o">.</span><span class="n">exportAsPFB</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="s2">&quot;output.pfb&quot;</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">session</span><span class="o">.</span><span class="n">exportCSV</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="s2">&quot;output.csv&quot;</span><span class="p">)</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="c1"># or</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="n">session</span><span class="o">.</span><span class="n">exportTSV</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="s2">&quot;output.tsv&quot;</span><span class="p">)</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="c1"># or</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="n">session</span><span class="o">.</span><span class="n">exportAsPFB</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="s2">&quot;output.pfb&quot;</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="what-changed">What Changed<a class="headerlink" href="#what-changed" title="Permanent link">&para;</a></h2>
 <h3 id="removed">Removed<a class="headerlink" href="#removed" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong>Consents handling</strong> — now managed by the backend as part of advanced
-  filtering. No adapter-side consent logic needed.</li>
+<li><strong>Manual consent filter clauses</strong> — you no longer build a
+  <code>\\_consents\\</code> clause yourself. <code>connect()</code> reads the account's
+  consent list from <code>/psama/user/me/consents</code> and the session sends it in
+  <code>/picsure/dictionary/*</code> request bodies for you, so dictionary results
+  are scoped to the studies you are entitled to. Read it back with
+  <code>session.consents</code>. This is adapter-side work — it is done for you, not
+  gone.</li>
 <li><strong>BypassAdapter</strong> — direct HPDS connections are no longer supported.
   All connections go through PIC-SURE.</li>
 <li><strong>Two-package install</strong> — the client and adapter are merged into one

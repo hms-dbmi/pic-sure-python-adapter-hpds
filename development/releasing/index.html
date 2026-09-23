@@ -741,6 +741,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Publishing to PyPI">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#when-a-release-run-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When a release run fails
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -849,6 +866,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Publishing to PyPI">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#when-a-release-run-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When a release run fails
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -915,8 +949,18 @@ to PyPI, the docs site, and post-release housekeeping.</p>
 <a href="https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/blob/main/src/picsure/__init__.py"><code>src/picsure/__init__.py</code></a>. Anything
 prefixed with <code>_</code> (the <code>_models/</code>, <code>_services/</code>, <code>_transport/</code>, and
 <code>_dev/</code> subpackages) can change without a major bump.</p>
-<p>The current version lives in
-<a href="https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/blob/main/pyproject.toml"><code>pyproject.toml</code></a> under <code>[project].version</code>.</p>
+<p>There is no version field to read or edit. <code>pyproject.toml</code> declares
+<code>dynamic = ["version"]</code> with <code>[tool.hatch.version] source = "vcs"</code>, so
+<code>hatch-vcs</code> derives the version from the git tag at build time. The
+tag is the version. Between tags it derives a dev version from the
+commit distance (see Post-release).</p>
+<p>Every workflow checks out with <code>fetch-depth: 0</code> because a shallow
+clone does not fail the build, it mislabels it. With no tag in reach,
+<code>hatch-vcs</code> warns and falls back to <code>0.1.devN+g&lt;sha&gt;</code>, and <code>uv build</code>
+succeeds with a <code>picsure-0.1.dev1+g&lt;sha&gt;</code> wheel that a publish job
+would upload. Any checkout that builds the package needs full history
+and tags: <code>fetch-depth: 0</code> in CI, and <code>git fetch --tags --unshallow</code>
+on a local clone that was made shallow.</p>
 <h2 id="pre-release-checklist">Pre-release checklist<a class="headerlink" href="#pre-release-checklist" title="Permanent link">&para;</a></h2>
 <ol>
 <li><strong>Confirm CI is green on <code>main</code>.</strong> Both the <code>CI</code> and <code>Docs</code>
@@ -927,7 +971,9 @@ prefixed with <code>_</code> (the <code>_models/</code>, <code>_services/</code>
    already in use: <code>### Added</code>, <code>### Changed</code>, <code>### Removed</code>, <code>###
    Fixed</code>. Keep entries user-focused; internal refactors don't need
    a line unless they shift behaviour.</li>
-<li><strong>Bump <code>version</code> in <code>pyproject.toml</code></strong> to <code>X.Y.Z</code>.</li>
+<li><strong>Do not add a <code>version</code> to <code>pyproject.toml</code>.</strong> It declares the
+   version <code>dynamic</code>; a static field alongside that fails the build.
+   The tag you push in the next section sets the version.</li>
 <li><strong>Build the docs locally and skim.</strong>
    <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>uv<span class="w"> </span>run<span class="w"> </span>mkdocs<span class="w"> </span>build<span class="w"> </span>--strict
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>uv<span class="w"> </span>run<span class="w"> </span>mkdocs<span class="w"> </span>serve<span class="w">   </span><span class="c1"># optional, for live preview</span>
@@ -935,58 +981,129 @@ prefixed with <code>_</code> (the <code>_models/</code>, <code>_services/</code>
    Strict mode catches broken cross-references that the CI docs job
    would also catch — running it locally is faster than waiting on
    the PR.</li>
-<li><strong>Open a "release X.Y.Z" PR.</strong> The CHANGELOG bump and version bump
-   land on <code>main</code> via PR like any other change. Merge once CI is
-   green.</li>
+<li><strong>Open a "release X.Y.Z" PR.</strong> The CHANGELOG update lands on
+   <code>main</code> via PR like any other change. Merge once CI is green.</li>
 </ol>
 <h2 id="cutting-the-release">Cutting the release<a class="headerlink" href="#cutting-the-release" title="Permanent link">&para;</a></h2>
-<p>Existing tags follow <code>vX.Y</code> (e.g. <code>v1.0</code>, <code>v1.2</code>). Going forward,
-the SemVer convention is to use the full <code>vX.Y.Z</code>. (Confirm with
-maintainers whether the abbreviated <code>vX.Y</code> form should be preserved
-for continuity, or whether new tags should standardize on
-<code>vX.Y.Z</code>.)</p>
+<p>The tag format is enforced, not a convention. <code>release.yml</code>'s
+"Classify tag" step accepts exactly two shapes and fails the workflow
+on anything else:</p>
+<table>
+<thead>
+<tr>
+<th>Tag</th>
+<th>Classified</th>
+<th>Publishes to</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>vX.Y.Z</code> (e.g. <code>v2.0.0</code>)</td>
+<td>final release</td>
+<td>PyPI</td>
+</tr>
+<tr>
+<td><code>vX.Y.Z{a,b,rc}[N]</code> (e.g. <code>v2.0.0rc1</code>)</td>
+<td>pre-release</td>
+<td>TestPyPI</td>
+</tr>
+<tr>
+<td>anything else (e.g. <code>v1.0</code>)</td>
+<td>error</td>
+<td>nothing, the run fails</td>
+</tr>
+</tbody>
+</table>
+<p>The two-component tags still in the repo (<code>v1.0</code>, <code>v1.2</code>) predate
+this workflow and would be rejected today. Use the full <code>vX.Y.Z</code>.
+The pre-release number is optional to the pattern (<code>v2.0.0rc</code> passes,
+and one such tag exists), but always give one: PEP 440 reads a bare
+<code>rc</code> as <code>rc0</code>, and the next candidate needs a name that sorts after
+it.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># from a clean main, on the merge commit you want to ship</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>git<span class="w"> </span>checkout<span class="w"> </span>main
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>git<span class="w"> </span>pull
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>git<span class="w"> </span>tag<span class="w"> </span>-a<span class="w"> </span>vX.Y.Z<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;Release X.Y.Z&quot;</span>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>vX.Y.Z
 </code></pre></div>
-<p>There is <strong>no tag-triggered workflow in the repo today</strong>: neither
-<code>ci.yml</code> nor <code>docs.yml</code> includes a <code>push: tags:</code> filter. Tagging is
-a marker for humans; publishing happens separately. Confirm with
-maintainers whether a tag should trigger anything.</p>
+<p>Pushing the tag is the release. <code>release.yml</code> triggers on
+<code>push: tags: ["v*"]</code> and does the whole run itself. <code>lint</code> and <code>test</code>
+(Python 3.10/3.11/3.12) run in parallel. <code>build</code> waits for both, then
+classifies the tag, runs <code>uv build</code>, and validates the metadata with
+<code>uvx twine check</code>. One of the two publish jobs runs last. A failing
+lint or test job stops the release before anything is uploaded. The
+tag check sits inside <code>build</code>, so a malformed tag such as <code>v1.3</code> still
+costs a full lint run and test matrix before the workflow fails.</p>
 <h2 id="publishing-to-pypi">Publishing to PyPI<a class="headerlink" href="#publishing-to-pypi" title="Permanent link">&para;</a></h2>
-<p>No automated publish job is wired up — the package is published
-manually. Confirm with maintainers whether this is intended to stay
-manual or whether the team plans to add a <code>publish.yml</code> workflow.</p>
-<p>Manual path with <code>uv</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># from a clean checkout at the tagged commit</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>uv<span class="w"> </span>build<span class="w">                                  </span><span class="c1"># writes dist/picsure-X.Y.Z-*.whl and .tar.gz</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>uv<span class="w"> </span>publish<span class="w">                                </span><span class="c1"># uploads to PyPI; requires PYPI_TOKEN</span>
+<p>Publishing is automated and there is <strong>no API token to manage</strong>. The
+<code>publish-pypi</code> and <code>publish-testpypi</code> jobs in <code>release.yml</code> use
+<code>pypa/gh-action-pypi-publish</code> with <code>permissions: id-token: write</code>,
+which is <a href="https://docs.pypi.org/trusted-publishers/">Trusted
+Publishing</a>. PyPI trusts
+a short-lived OIDC token minted for that workflow in that repository.
+Do not create a <code>PYPI_TOKEN</code> or set <code>UV_PUBLISH_TOKEN</code>; a long-lived
+token is the thing this setup exists to avoid.</p>
+<p>Each publish job is pinned to a GitHub
+<a href="https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/settings/environments">environment</a>,
+<code>PyPi</code> for final releases and <code>TestPyPi</code> for pre-releases. The
+environment is where the trusted-publisher binding and any required
+reviewers live.
+A first release from a new repository or environment needs the
+publisher registered on PyPI first, or the job fails at upload with a
+permissions error.</p>
+<p>The TestPyPI dry run is not a separate manual step: tag a pre-release
+and it routes there automatically.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>git<span class="w"> </span>tag<span class="w"> </span>-a<span class="w"> </span>vX.Y.Zrc1<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;Release candidate X.Y.Zrc1&quot;</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>vX.Y.Zrc1<span class="w">        </span><span class="c1"># -&gt; TestPyPI, via release.yml</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>pip<span class="w"> </span>install<span class="w"> </span>--index-url<span class="w"> </span>https://test.pypi.org/simple/<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span>--extra-index-url<span class="w"> </span>https://pypi.org/simple/<span class="w"> </span><span class="nv">picsure</span><span class="o">==</span>X.Y.Zrc1
 </code></pre></div>
-<p><code>uv publish</code> reads the <code>UV_PUBLISH_TOKEN</code> environment variable (or
-<code>--token</code>) for the API token. Use a project-scoped PyPI token, not a
-personal one — see <a href="https://pypi.org/manage/account/token/">https://pypi.org/manage/account/token/</a>.</p>
-<p>A dry run against TestPyPI before the real publish is cheap
-insurance:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>uv<span class="w"> </span>publish<span class="w"> </span>--publish-url<span class="w"> </span>https://test.pypi.org/legacy/<span class="w"> </span>--token<span class="w"> </span>&lt;test-token&gt;
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>pip<span class="w"> </span>install<span class="w"> </span>--index-url<span class="w"> </span>https://test.pypi.org/simple/<span class="w"> </span><span class="nv">picsure</span><span class="o">==</span>X.Y.Z
+<p>TestPyPI hosts the candidate and nothing it depends on: no <code>pandas</code>,
+no <code>httpx</code>, and a <code>fastavro</code> too old to satisfy the pin. The extra
+index lets pip take those from PyPI while the candidate itself still
+comes from TestPyPI, the only index that has it.</p>
+<h3 id="when-a-release-run-fails">When a release run fails<a class="headerlink" href="#when-a-release-run-fails" title="Permanent link">&para;</a></h3>
+<p>There is no manual publish path. <code>release.yml</code> has no
+<code>workflow_dispatch</code> trigger, and the publish jobs authenticate only
+with the OIDC token GitHub mints for a tag-triggered run, so nothing
+run by hand can upload. Recover inside that model:</p>
+<p><strong>Transient failure</strong> (runner outage, flaky test, PyPI timeout). Open
+the run in the Actions tab and re-run the failed jobs. The re-run
+keeps the same tag and reuses the <code>dist</code> artifact already built in
+that run.</p>
+<p><strong>Wrong tag, or the workflow file itself needs a change.</strong> The run
+executes the <code>release.yml</code> at the tagged commit, so land the fix on
+<code>main</code>, then move the tag to the new commit and push it again.
+Nothing was uploaded, so the version is still free.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>git<span class="w"> </span>tag<span class="w"> </span>-d<span class="w"> </span>vX.Y.Z
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>:refs/tags/vX.Y.Z
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>git<span class="w"> </span>tag<span class="w"> </span>-a<span class="w"> </span>vX.Y.Z<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;Release X.Y.Z&quot;</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>vX.Y.Z
 </code></pre></div>
+<p><strong>Publish succeeded and a later step failed.</strong> That version is spent.
+PyPI never accepts a file name twice, even after a delete. Fix forward
+and cut the next patch version.</p>
 <h2 id="publishing-the-docs">Publishing the docs<a class="headerlink" href="#publishing-the-docs" title="Permanent link">&para;</a></h2>
-<p><code>docs.yml</code> handles the docs site automatically. On every push to
-<code>main</code>, it builds with <code>uv run mkdocs build --strict</code> and deploys
-the <code>site/</code> output to the <code>gh-pages</code> branch via
-<code>peaceiris/actions-gh-pages</code>. The site URL follows GitHub Pages'
-default for the repo (<code>mkdocs.yml</code> does not set a <code>site_url</code>;
-confirm the published location with maintainers if it isn't visible
-under the repo's Pages settings).</p>
-<p>Two practical notes:</p>
+<p><code>docs.yml</code> builds the site with <code>uv run mkdocs build --strict</code> on
+every pull request and every branch push, and <strong>deploys</strong> only from a
+published release or a push to the repository's default branch. The
+guard compares against <code>github.event.repository.default_branch</code>
+rather than a hard-coded name, so it cannot go stale if the default
+branch is renamed. It also means the deploy follows whatever
+GitHub says the default branch is, not whichever branch the team
+treats as mainline.</p>
+<p>Three practical notes:</p>
 <ul>
-<li>A docs-only release does not need a version bump. Pushing to
-  <code>main</code> republishes.</li>
-<li>Because <code>docs.yml</code> runs <code>mkdocs build --strict</code>, a broken link in
-  a new doc fails CI on the PR that introduces it. Fix relative
-  paths before merging; don't expect to fix them after.</li>
+<li>A docs-only change needs no version bump: a push to the default
+  branch republishes.</li>
+<li>Because <code>docs.yml</code> runs <code>mkdocs build --strict</code>, a broken link
+  fails the check on the PR that introduces it. Fix relative paths
+  before merging; don't expect to fix them after.</li>
+<li>The deploy writes the <code>gh-pages</code> branch via
+  <code>peaceiris/actions-gh-pages</code>, but GitHub Pages is <strong>not currently
+  enabled for this repository</strong> (<code>has_pages</code> is false), so nothing is
+  served from it yet. <code>mkdocs.yml</code> sets no <code>site_url</code>. Enabling Pages
+  and pointing it at <code>gh-pages</code> is a repository-settings change.</li>
 </ul>
 <h2 id="post-release">Post-release<a class="headerlink" href="#post-release" title="Permanent link">&para;</a></h2>
 <ol>
@@ -994,11 +1111,10 @@ under the repo's Pages settings).</p>
    <code>## [Unreleased]</code> block above the just-released version, with
    empty <code>### Added</code> / <code>### Changed</code> / <code>### Removed</code> / <code>### Fixed</code>
    subsections — easier than adding them ad-hoc later.</li>
-<li><strong>Optionally bump to a <code>-dev</code> version</strong> in <code>pyproject.toml</code> (e.g.
-   <code>X.Y.(Z+1)-dev0</code>). This is bookkeeping; the next release will
-   overwrite it. Confirm with maintainers whether the project uses
-   this convention — current tags suggest a plain bump-on-release
-   workflow without explicit <code>-dev</code> markers.</li>
+<li><strong>Nothing to bump.</strong> <code>hatch-vcs</code> already derives a dev version
+   from the distance past the tag: N commits after <code>vX.Y.Z</code> build as
+   <code>X.Y.(Z+1).devN+g&lt;sha&gt;</code>, the next patch version, without anyone
+   editing a file.</li>
 <li><strong>Verify the install.</strong> <code>pip install picsure==X.Y.Z</code> from a fresh
    virtualenv and run the quickstart. Any import-time regression
    (missing dependency, wrong wheel platform, py.typed-related

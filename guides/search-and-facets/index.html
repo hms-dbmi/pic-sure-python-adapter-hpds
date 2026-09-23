@@ -443,6 +443,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#paging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Paging
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#exclude-values" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -906,6 +917,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#paging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Paging
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#exclude-values" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1055,17 +1077,83 @@ DataFrame.</p>
 <p>Pass an empty string (or no argument) to return all variables:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">all_vars</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">searchDictionary</span><span class="p">()</span>
 </code></pre></div>
-<h3 id="exclude-values">Exclude Values<a class="headerlink" href="#exclude-values" title="Permanent link">&para;</a></h3>
-<p>For faster searches on large dictionaries, set <code>include_values=False</code>
-to omit the <code>values</code> column:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">results</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">searchDictionary</span><span class="p">(</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="n">include_values</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<p>The server sends the dictionary a page at a time, so this walks the
+pages and returns the whole result set as one DataFrame. It is not a
+single request: the walk issues one HTTP call per 500 rows by default.</p>
+<p>A production dictionary is large enough that the call above can fail.
+An unpaged search refuses to collect more than 100,000 rows and raises
+<code>PicSureValidationError</code> when the match count is above it, naming the
+count and telling you to page. Narrowing with a term or a facet is the
+other way out.</p>
+<h3 id="paging">Paging<a class="headerlink" href="#paging" title="Permanent link">&para;</a></h3>
+<p>Pass <code>page</code> to fetch exactly one page and stop. Pages are <strong>zero-based</strong>:
+<code>page=0</code> is the first one. <code>page_size</code> sets the rows per HTTP request
+and defaults to 500.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">first</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">searchDictionary</span><span class="p">(</span><span class="s2">&quot;blood pressure&quot;</span><span class="p">,</span> <span class="n">page</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">page_size</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">second</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">searchDictionary</span><span class="p">(</span><span class="s2">&quot;blood pressure&quot;</span><span class="p">,</span> <span class="n">page</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">page_size</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
 </code></pre></div>
+<p>Every returned DataFrame carries the paging state in
+<a href="https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.attrs.html"><code>df.attrs</code></a>:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>total_elements</code></td>
+<td>The server's total match count, or <code>None</code> when the response omitted it.</td>
+</tr>
+<tr>
+<td><code>has_more</code></td>
+<td>Whether pages remain beyond what was returned.</td>
+</tr>
+<tr>
+<td><code>page</code></td>
+<td>The page you asked for, or <code>None</code> when every page was collected.</td>
+</tr>
+<tr>
+<td><code>page_size</code></td>
+<td>Rows requested per HTTP call.</td>
+</tr>
+<tr>
+<td><code>pages_fetched</code></td>
+<td>How many HTTP calls the result took.</td>
+</tr>
+</tbody>
+</table>
+<p><code>has_more</code> is what to loop on, since the last page is usually a short
+one rather than an empty one:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">page</span> <span class="o">=</span> <span class="mi">0</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">chunk</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">searchDictionary</span><span class="p">(</span><span class="s2">&quot;blood pressure&quot;</span><span class="p">,</span> <span class="n">page</span><span class="o">=</span><span class="n">page</span><span class="p">,</span> <span class="n">page_size</span><span class="o">=</span><span class="mi">1000</span><span class="p">)</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">process</span><span class="p">(</span><span class="n">chunk</span><span class="p">)</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">chunk</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;has_more&quot;</span><span class="p">]:</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>        <span class="k">break</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="n">page</span> <span class="o">+=</span> <span class="mi">1</span>
+</code></pre></div>
+<p>On an unpaged call <code>page</code> comes back <code>None</code> and <code>has_more</code> is <code>True</code>
+only in one case: the server reported no match count and the final page
+carried the walk past the 100,000-row ceiling, so the surplus rows were
+dropped.</p>
+<h3 id="exclude-values">Exclude Values<a class="headerlink" href="#exclude-values" title="Permanent link">&para;</a></h3>
+<p>Set <code>include_values=False</code> to leave the <code>values</code> column out of the
+returned DataFrame:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">results</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">searchDictionary</span><span class="p">(</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="n">include_values</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+</code></pre></div>
+<p>The flag never reaches the wire. It is read once, after the full payload
+has been downloaded and parsed, to pick which columns the DataFrame
+carries, so the request bytes, the round trips and the wall time are the
+same either way. To make a search on a large dictionary cheaper, narrow
+it with <code>term</code> or <code>facets</code>, or read it a page at a time with <code>page</code>.</p>
 <h2 id="facet-filtering">Facet Filtering<a class="headerlink" href="#facet-filtering" title="Permanent link">&para;</a></h2>
 <p>Facets let you narrow search results by category — for example,
 filtering to variables from a specific study.</p>
 <h3 id="view-available-facets">View Available Facets<a class="headerlink" href="#view-available-facets" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># See all facet categories and their options</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">session</span><span class="o">.</span><span class="n">showAllFacets</span><span class="p">()</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># See all facet categories and their options</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">session</span><span class="o">.</span><span class="n">showAllFacets</span><span class="p">()</span>
 </code></pre></div>
 <p>This returns a DataFrame with six columns:</p>
 <table>
@@ -1103,63 +1191,76 @@ filtering to variables from a specific study.</p>
 </tbody>
 </table>
 <h3 id="build-a-facet-filter">Build a Facet Filter<a class="headerlink" href="#build-a-facet-filter" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Create a FacetSet with available categories</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">facets</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">facets</span><span class="p">()</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># See current (empty) selections</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="n">facets</span><span class="o">.</span><span class="n">view</span><span class="p">()</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="c1"># {&#39;dataset_id&#39;: [], &#39;data_type&#39;: [], ...}</span>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="c1"># Add a study filter</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="n">facets</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;dataset_id&quot;</span><span class="p">,</span> <span class="s2">&quot;phs000007&quot;</span><span class="p">)</span>
-<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>
-<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="c1"># Add multiple values at once</span>
-<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="n">facets</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;data_type&quot;</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;categorical&quot;</span><span class="p">,</span> <span class="s2">&quot;continuous&quot;</span><span class="p">])</span>
-<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>
-<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="c1"># Use in search</span>
-<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="n">filtered</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">searchDictionary</span><span class="p">(</span><span class="s2">&quot;blood pressure&quot;</span><span class="p">,</span> <span class="n">facets</span><span class="o">=</span><span class="n">facets</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Create a FacetSet with available categories</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">facets</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">facets</span><span class="p">()</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="c1"># See current (empty) selections</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="n">facets</span><span class="o">.</span><span class="n">view</span><span class="p">()</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="c1"># {&#39;dataset_id&#39;: [], &#39;data_type&#39;: [], ...}</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="c1"># Add a study filter</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="n">facets</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;dataset_id&quot;</span><span class="p">,</span> <span class="s2">&quot;phs000007&quot;</span><span class="p">)</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="c1"># Add multiple values at once</span>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="n">facets</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;data_type&quot;</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;categorical&quot;</span><span class="p">,</span> <span class="s2">&quot;continuous&quot;</span><span class="p">])</span>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="c1"># Use in search</span>
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a><span class="n">filtered</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">searchDictionary</span><span class="p">(</span><span class="s2">&quot;blood pressure&quot;</span><span class="p">,</span> <span class="n">facets</span><span class="o">=</span><span class="n">facets</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="clear-facet-selections">Clear Facet Selections<a class="headerlink" href="#clear-facet-selections" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Clear one category</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">facets</span><span class="o">.</span><span class="n">clear</span><span class="p">(</span><span class="s2">&quot;dataset_id&quot;</span><span class="p">)</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="c1"># Clear all selections</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="n">facets</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Clear one category</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">facets</span><span class="o">.</span><span class="n">clear</span><span class="p">(</span><span class="s2">&quot;dataset_id&quot;</span><span class="p">)</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># Clear all selections</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="n">facets</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
 </code></pre></div>
 <h3 id="invalid-facets">Invalid Facets<a class="headerlink" href="#invalid-facets" title="Permanent link">&para;</a></h3>
 <p>If you pass an invalid category name, you'll get a clear error message
 listing the valid options:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">facets</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;invalid_category&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="c1"># PicSureValidationError: &#39;invalid_category&#39; is not a valid facet</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="c1"># category. Valid categories: data_type, dataset_id.</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">facets</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;invalid_category&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="c1"># PicSureValidationError: &#39;invalid_category&#39; is not a valid facet</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="c1"># category. Valid categories: data_type, dataset_id.</span>
 </code></pre></div>
 <h2 id="genomic-value-discovery">Genomic Value Discovery<a class="headerlink" href="#genomic-value-discovery" title="Permanent link">&para;</a></h2>
-<p>On genomic-capable platforms (BDC_AUTHORIZED, NHANES_AUTHORIZED), you can look
-up valid values for any genomic key before building a filter.</p>
+<p>On genomic-capable platforms (the authorized ones, such as BDC_AUTHORIZED
+and NHANES_AUTHORIZED), you can look up valid values for any genomic key
+before building a filter.</p>
 <h3 id="search-genomic-values">Search genomic values<a class="headerlink" href="#search-genomic-values" title="Permanent link">&para;</a></h3>
-<p><code>session.searchGenomicValues</code> queries the server and returns a DataFrame of
-matching values. Results are paginated; metadata (total, page, size) is on
-<code>df.attrs</code>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Find genes matching &quot;BRCA&quot;</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">df</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">searchGenomicValues</span><span class="p">(</span><span class="s2">&quot;Gene_with_variant&quot;</span><span class="p">,</span> <span class="n">query</span><span class="o">=</span><span class="s2">&quot;BRCA&quot;</span><span class="p">)</span>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="nb">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="c1"># List all values for a key (no query term)</span>
-<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="n">all_consequences</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">searchGenomicValues</span><span class="p">(</span><span class="s2">&quot;Variant_consequence_calculated&quot;</span><span class="p">)</span>
-<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>
-<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="c1"># Page through large result sets</span>
-<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="n">page2</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">searchGenomicValues</span><span class="p">(</span><span class="s2">&quot;Gene_with_variant&quot;</span><span class="p">,</span> <span class="n">query</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">page</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
-<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="nb">print</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">attrs</span><span class="p">)</span>  <span class="c1"># {&#39;total&#39;: ..., &#39;page&#39;: 2, &#39;size&#39;: 100}</span>
+<p><code>session.searchGenomicValues</code> queries the server and returns a
+single-column <code>value</code> DataFrame of matching values. Results are
+paginated, and every call puts four keys on <code>df.attrs</code>: <code>total</code> and
+<code>page</code> as the server reported them, <code>size</code> as you asked for it, and
+<code>genomic_concept_path</code>, the key you looked up.</p>
+<p>This route's paging is <strong>one-based</strong>, so the first page is <code>page=1</code>, and
+its page-size argument is called <code>size</code>. <code>searchDictionary</code> above is
+zero-based with <code>page_size</code>. The two are served by different backends.
+Both <code>page</code> and <code>size</code> must be integers of 1 or greater; anything else is
+refused before a request is sent.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># Find genes matching &quot;BRCA&quot;</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="n">df</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">searchGenomicValues</span><span class="p">(</span><span class="s2">&quot;Gene_with_variant&quot;</span><span class="p">,</span> <span class="n">query</span><span class="o">=</span><span class="s2">&quot;BRCA&quot;</span><span class="p">)</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="nb">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="c1"># List all values for a key (no query term)</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="n">all_consequences</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">searchGenomicValues</span><span class="p">(</span><span class="s2">&quot;Variant_consequence_calculated&quot;</span><span class="p">)</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="c1"># Page through large result sets</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="n">page2</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">searchGenomicValues</span><span class="p">(</span><span class="s2">&quot;Gene_with_variant&quot;</span><span class="p">,</span> <span class="n">query</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">page</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="nb">print</span><span class="p">(</span><span class="n">page2</span><span class="o">.</span><span class="n">attrs</span><span class="p">)</span>
+<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="c1"># {&#39;total&#39;: ..., &#39;page&#39;: 2, &#39;size&#39;: 100,</span>
+<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="c1">#  &#39;genomic_concept_path&#39;: &#39;Gene_with_variant&#39;}</span>
 </code></pre></div>
+<p>A key that is not a genomic annotation on the deployment comes back as an
+empty body, which raises <code>PicSureQueryError</code> rather than an empty
+DataFrame.</p>
 <h3 id="variant-consequences-offline">Variant consequences (offline)<a class="headerlink" href="#variant-consequences-offline" title="Permanent link">&para;</a></h3>
 <p><code>picsure.genomicConsequences()</code> returns the full list of consequence terms with
 severity rankings without a network call. It works on any platform, including
 open-access ones.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">picsure</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="n">consequences</span> <span class="o">=</span> <span class="n">picsure</span><span class="o">.</span><span class="n">genomicConsequences</span><span class="p">()</span>
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># DataFrame with columns: severity, consequence</span>
-<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="nb">print</span><span class="p">(</span><span class="n">consequences</span><span class="o">.</span><span class="n">head</span><span class="p">())</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">picsure</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="n">consequences</span> <span class="o">=</span> <span class="n">picsure</span><span class="o">.</span><span class="n">genomicConsequences</span><span class="p">()</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="c1"># DataFrame with columns: severity, consequence</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="nb">print</span><span class="p">(</span><span class="n">consequences</span><span class="o">.</span><span class="n">head</span><span class="p">())</span>
 </code></pre></div>
 
 

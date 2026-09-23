@@ -719,6 +719,28 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#the-token-fixture-is-opaque" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The token fixture is opaque
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skipped-tests-are-reported-in-the-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Skipped tests are reported in the summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#gotchas" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -900,6 +922,28 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#the-token-fixture-is-opaque" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The token fixture is opaque
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skipped-tests-are-reported-in-the-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Skipped tests are reported in the summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#gotchas" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -993,22 +1037,22 @@ how to run the suite locally, and how to reproduce a CI failure.</p>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── conftest.py                # shared fixtures (load JSON/CSV files in tests/fixtures/)
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>├── fixtures/                  # canned server responses
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>│   ├── profile.json
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│   ├── resources.json
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│   ├── dictionary_search.json
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>│   ├── facets_response.json
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>│   └── query_participant.csv
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>├── unit/                      # one test_&lt;module&gt;.py per src/picsure/ module
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>│   ├── test_client.py         # _transport/client.py
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>│   ├── test_connect.py        # _services/connect.py
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>│   ├── test_query_run.py      # _services/query_run.py
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>│   ├── test_search.py         # _services/search.py
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>│   ├── ...                    # one per module — keep the mapping 1:1
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>│   └── dev/                   # tests for the _dev/ instrumentation
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>└── integration/               # live tests; opt-in via env vars
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>    ├── conftest.py            # gates collection on PICSURE_INTEGRATION=1
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>    ├── test_connect_live.py
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>    ├── test_search_live.py
-<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>    ├── test_query_live.py
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│   ├── dictionary_search.json
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│   ├── facets_response.json
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>│   └── query_participant.csv
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>├── unit/                      # one test_&lt;module&gt;.py per src/picsure/ module
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>│   ├── test_client.py         # _transport/client.py
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>│   ├── test_connect.py        # _services/connect.py
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>│   ├── test_query_run.py      # _services/query_run.py
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>│   ├── test_search.py         # _services/search.py
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>│   ├── ...                    # one per module — keep the mapping 1:1
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>│   └── dev/                   # tests for the _dev/ instrumentation
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>└── integration/               # live tests; opt-in via env vars
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>    ├── conftest.py            # gates collection on PICSURE_INTEGRATION=1
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>    ├── test_connect_live.py
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>    ├── test_search_live.py
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>    ├── test_query_live.py
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>    ├── test_query_genomic_live.py
 <a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>    └── test_export_live.py
 </code></pre></div>
 <p>Two rules keep the unit suite navigable:</p>
@@ -1028,21 +1072,24 @@ throughout <code>tests/unit/</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">httpx</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">respx</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">picsure._services.query_run</span><span class="w"> </span><span class="kn">import</span> <span class="n">run_query</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="n">BASE_URL</span> <span class="o">=</span> <span class="s2">&quot;https://test.example.com&quot;</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="n">QUERY_URL</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">BASE_URL</span><span class="si">}</span><span class="s2">/picsure/v3/query/sync&quot;</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="k">class</span><span class="w"> </span><span class="nc">TestRunQueryCount</span><span class="p">:</span>
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    <span class="nd">@respx</span><span class="o">.</span><span class="n">mock</span>
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">test_returns_count_result</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>        <span class="n">respx</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="n">QUERY_URL</span><span class="p">)</span><span class="o">.</span><span class="n">mock</span><span class="p">(</span>
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>            <span class="n">return_value</span><span class="o">=</span><span class="n">httpx</span><span class="o">.</span><span class="n">Response</span><span class="p">(</span><span class="mi">200</span><span class="p">,</span> <span class="n">content</span><span class="o">=</span><span class="sa">b</span><span class="s2">&quot;1234&quot;</span><span class="p">)</span>
-<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>        <span class="p">)</span>
-<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>        <span class="n">client</span> <span class="o">=</span> <span class="n">_make_client</span><span class="p">()</span>
-<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>        <span class="n">result</span> <span class="o">=</span> <span class="n">run_query</span><span class="p">(</span><span class="n">client</span><span class="p">,</span> <span class="n">RESOURCE_UUID</span><span class="p">,</span> <span class="n">_simple_clause</span><span class="p">(),</span> <span class="s2">&quot;count&quot;</span><span class="p">)</span>
-<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>        <span class="k">assert</span> <span class="n">result</span><span class="o">.</span><span class="n">value</span> <span class="o">==</span> <span class="mi">1234</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">picsure._services._hpds_paths</span><span class="w"> </span><span class="kn">import</span> <span class="n">query_prefix</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="kn">from</span><span class="w"> </span><span class="nn">picsure._services.query_run</span><span class="w"> </span><span class="kn">import</span> <span class="n">run_query</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="n">BASE_URL</span> <span class="o">=</span> <span class="s2">&quot;https://test.example.com&quot;</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="c1"># Compose the route rather than hand-writing it: query_prefix supplies the</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="c1"># /picsure context prefix, so a literal would silently stop matching.</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="n">QUERY_URL</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">BASE_URL</span><span class="si">}{</span><span class="n">query_prefix</span><span class="p">(</span><span class="s1">&#39;auth&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">v3</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="si">}</span><span class="s2">/query/sync&quot;</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="k">class</span><span class="w"> </span><span class="nc">TestRunQueryCount</span><span class="p">:</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>    <span class="nd">@respx</span><span class="o">.</span><span class="n">mock</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">test_returns_count_result</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>        <span class="n">respx</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="n">QUERY_URL</span><span class="p">)</span><span class="o">.</span><span class="n">mock</span><span class="p">(</span>
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>            <span class="n">return_value</span><span class="o">=</span><span class="n">httpx</span><span class="o">.</span><span class="n">Response</span><span class="p">(</span><span class="mi">200</span><span class="p">,</span> <span class="n">content</span><span class="o">=</span><span class="sa">b</span><span class="s2">&quot;1234&quot;</span><span class="p">)</span>
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>        <span class="p">)</span>
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>        <span class="n">client</span> <span class="o">=</span> <span class="n">_make_client</span><span class="p">()</span>
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>        <span class="n">result</span> <span class="o">=</span> <span class="n">run_query</span><span class="p">(</span><span class="n">client</span><span class="p">,</span> <span class="n">_simple_clause</span><span class="p">(),</span> <span class="s2">&quot;count&quot;</span><span class="p">,</span> <span class="n">backend</span><span class="o">=</span><span class="s2">&quot;auth&quot;</span><span class="p">)</span>
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>        <span class="k">assert</span> <span class="n">result</span><span class="o">.</span><span class="n">value</span> <span class="o">==</span> <span class="mi">1234</span>
 </code></pre></div>
 <p>Two idioms to copy:</p>
 <ul>
@@ -1093,7 +1140,7 @@ unless <code>PICSURE_INTEGRATION=1</code> is set, so the default run is safe.</p
 </tr>
 <tr>
 <td><code>PICSURE_TEST_PLATFORM</code></td>
-<td>A <code>Platform</code> enum name (e.g. <code>BDC_AUTHORIZED</code>, <code>BDC_OPEN</code>, <code>NHANES_OPEN</code>) or a full URL. Defaults to <code>DEMO</code>.</td>
+<td>A <code>Platform</code> enum name (e.g. <code>BDC_AUTHORIZED</code>, <code>BDC_OPEN</code>, <code>NHANES_OPEN</code>) or a full <code>https://</code> URL (plaintext <code>http://</code> is refused, since the token travels in the Authorization header). There is no default. Unset, unrecognized, or naming an authorized platform with no <code>PICSURE_TEST_TOKEN</code>, the whole live suite skips at collection with one message naming what to set — it does not fail.</td>
 </tr>
 <tr>
 <td><code>PICSURE_TEST_CONCEPT_PATH</code></td>
@@ -1102,6 +1149,14 @@ unless <code>PICSURE_INTEGRATION=1</code> is set, so the default run is safe.</p
 <tr>
 <td><code>PICSURE_TEST_SEARCH_TERM</code></td>
 <td>Search term for <code>test_search_live.py</code>. Defaults to <code>"age"</code>.</td>
+</tr>
+<tr>
+<td><code>PICSURE_TEST_GENE</code></td>
+<td>Gene symbol for <code>test_query_genomic_live.py</code>. Required — all four genomic tests skip without it. <code>CHD8</code> is verified on <code>BDC_PREDEV_AUTHORIZED</code>; genomic tests need an <code>*_AUTHORIZED</code> platform.</td>
+</tr>
+<tr>
+<td><code>PICSURE_SSL_VERIFY</code></td>
+<td>Set to <code>false</code> only when targeting a local stack with a self-signed certificate. Leave unset against a real deployment.</td>
 </tr>
 </tbody>
 </table>
@@ -1130,6 +1185,10 @@ win on conflict).</p>
 <td><code>runQuery</code> for <code>count</code>, <code>participant</code>, <code>timestamp</code>, <code>cross_count</code>. Some types skip on open-access.</td>
 </tr>
 <tr>
+<td><code>test_query_genomic_live.py</code></td>
+<td><code>buildGenomicFilter</code> as a query constraint, <code>variant_count</code>, <code>variant_list</code>, <code>searchGenomicValues</code>. Requires <code>PICSURE_TEST_GENE</code> and an <code>*_AUTHORIZED</code> platform.</td>
+</tr>
+<tr>
 <td><code>test_export_live.py</code></td>
 <td><code>exportAsPFB</code>, <code>exportCSV</code>, <code>exportTSV</code> (the last two require an authorized platform — they need a participant-query DataFrame).</td>
 </tr>
@@ -1139,8 +1198,48 @@ win on conflict).</p>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nv">PICSURE_TEST_TOKEN</span><span class="o">=</span><span class="s2">&quot;your-token&quot;</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nv">PICSURE_TEST_PLATFORM</span><span class="o">=</span><span class="s2">&quot;BDC_AUTHORIZED&quot;</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="nv">PICSURE_TEST_CONCEPT_PATH</span><span class="o">=</span><span class="s1">&#39;\phs000007\some\path\&#39;</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>tests/integration/<span class="w"> </span>-v
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="nv">PICSURE_TEST_GENE</span><span class="o">=</span>CHD8<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>tests/integration/<span class="w"> </span>-v
 </code></pre></div>
+<p>Copy <code>.env.example</code> to <code>.env</code> instead of assembling that command by hand —
+it carries a working value and a comment for every variable above.</p>
+<h3 id="the-token-fixture-is-opaque">The token fixture is opaque<a class="headerlink" href="#the-token-fixture-is-opaque" title="Permanent link">&para;</a></h3>
+<p><code>test_token</code> does not return a <code>str</code>. It returns the library's own
+<code>SecretToken</code>, whose <code>__repr__</code>, <code>__str__</code> and <code>__format__</code> all render a
+fixed placeholder, and <code>picsure.connect()</code> accepts it as is:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">session</span> <span class="o">=</span> <span class="n">picsure</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">platform</span><span class="o">=</span><span class="n">test_platform</span><span class="p">,</span> <span class="n">token</span><span class="o">=</span><span class="n">test_token</span><span class="p">)</span>
+</code></pre></div>
+<p>This exists because pytest's default <code>--tb=long</code> prints the arguments of
+every frame in a traceback, the failing test's frame included. A fixture
+returning the token as a plain <code>str</code> therefore printed token material on
+any failure in any test that took it.</p>
+<p>Two rules follow:</p>
+<ul>
+<li><strong>Do not unwrap it unless a raw string is unavoidable.</strong> If a test must,
+  call <code>test_token.reveal()</code> inline in the call that consumes it. Binding
+  the result to a local (<code>raw = test_token.reveal()</code>) puts the raw string
+  back into a frame that <code>--showlocals</code> will dump.</li>
+<li><strong>Do not interpolate <code>test_token</code> into a message.</strong> It renders as the
+  placeholder, so the message says nothing useful; assert on what the
+  library did instead.</li>
+</ul>
+<p>As a backstop, <code>conftest.py</code> scrubs any run of token characters out of
+integration-test failure output and captured stdout/stderr/log sections,
+which covers the frames the wrapper cannot reach, such as a library
+function holding the unwrapped token as a local. The scrubber works
+on captured output, so it cannot protect a run with <code>-s</code>, where output
+bypasses capture and goes straight to the terminal.</p>
+<h3 id="skipped-tests-are-reported-in-the-summary">Skipped tests are reported in the summary<a class="headerlink" href="#skipped-tests-are-reported-in-the-summary" title="Permanent link">&para;</a></h3>
+<p>A live test that skips still counts as a pass at a glance, which is how the
+genomic file once contributed no coverage for a whole release without
+anyone noticing. The integration <code>conftest.py</code> prints an
+<code>integration tests skipped</code> section at the end of the run, listing each
+skipped test with its reason and naming any <code>PICSURE_TEST_*</code> variable that
+is unset along with the coverage it silences.</p>
+<p>The run still exits 0 — a skip is often legitimate (an open-access target
+has no token, predev does not serve the variant result types), so failing
+the run would punish a correct partial configuration. Visibility is the
+lever: check that section before believing a green integration run.</p>
 <h3 id="gotchas">Gotchas<a class="headerlink" href="#gotchas" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Counts on open-access platforms are obfuscated.</strong> Expect noisy
@@ -1182,22 +1281,22 @@ hit a live deployment.</p>
 </ul>
 <h2 id="debugging-a-ci-failure-locally">Debugging a CI failure locally<a class="headerlink" href="#debugging-a-ci-failure-locally" title="Permanent link">&para;</a></h2>
 <p>Reproduce the exact commands CI runs:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># CI does --frozen; you&#39;ll need a current lock locally</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>uv<span class="w"> </span>sync<span class="w"> </span>--frozen
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># lint job</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>uv<span class="w"> </span>run<span class="w"> </span>ruff<span class="w"> </span>check<span class="w"> </span>src/<span class="w"> </span>tests/
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>uv<span class="w"> </span>run<span class="w"> </span>ruff<span class="w"> </span>format<span class="w"> </span>--check<span class="w"> </span>src/<span class="w"> </span>tests/
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>uv<span class="w"> </span>run<span class="w"> </span>mypy<span class="w"> </span>src/
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="c1"># test job, pin the Python version that failed in the matrix</span>
-<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>uv<span class="w"> </span>python<span class="w"> </span>install<span class="w"> </span><span class="m">3</span>.10
-<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>uv<span class="w"> </span>sync<span class="w"> </span>--frozen<span class="w"> </span>--python<span class="w"> </span><span class="m">3</span>.10
-<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>tests/unit/<span class="w"> </span>-v<span class="w"> </span>--cov<span class="o">=</span>picsure<span class="w"> </span>--cov-fail-under<span class="o">=</span><span class="m">80</span>
-<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>
-<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="c1"># docs job</span>
-<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a>uv<span class="w"> </span>sync<span class="w"> </span>--frozen<span class="w"> </span>--group<span class="w"> </span>docs
-<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>uv<span class="w"> </span>run<span class="w"> </span>mkdocs<span class="w"> </span>build<span class="w"> </span>--strict
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># CI does --frozen; you&#39;ll need a current lock locally</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>uv<span class="w"> </span>sync<span class="w"> </span>--frozen
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="c1"># lint job</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>uv<span class="w"> </span>run<span class="w"> </span>ruff<span class="w"> </span>check<span class="w"> </span>src/<span class="w"> </span>tests/
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>uv<span class="w"> </span>run<span class="w"> </span>ruff<span class="w"> </span>format<span class="w"> </span>--check<span class="w"> </span>src/<span class="w"> </span>tests/
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>uv<span class="w"> </span>run<span class="w"> </span>mypy<span class="w"> </span>src/
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="c1"># test job, pin the Python version that failed in the matrix</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>uv<span class="w"> </span>python<span class="w"> </span>install<span class="w"> </span><span class="m">3</span>.10
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>uv<span class="w"> </span>sync<span class="w"> </span>--frozen<span class="w"> </span>--python<span class="w"> </span><span class="m">3</span>.10
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>tests/unit/<span class="w"> </span>-v<span class="w"> </span>--cov<span class="o">=</span>picsure<span class="w"> </span>--cov-fail-under<span class="o">=</span><span class="m">80</span>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="c1"># docs job</span>
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>uv<span class="w"> </span>sync<span class="w"> </span>--frozen<span class="w"> </span>--group<span class="w"> </span>docs
+<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a>uv<span class="w"> </span>run<span class="w"> </span>mkdocs<span class="w"> </span>build<span class="w"> </span>--strict
 </code></pre></div>
 <p>If a test passes on your machine but fails in CI:</p>
 <ul>

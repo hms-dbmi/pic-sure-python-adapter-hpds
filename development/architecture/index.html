@@ -762,10 +762,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#session-and-resource-resolution" class="md-nav__link">
+  <a href="#what-a-session-carries" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Session and Resource resolution
+        What a Session carries
       
     </span>
   </a>
@@ -987,10 +987,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#session-and-resource-resolution" class="md-nav__link">
+  <a href="#what-a-session-carries" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Session and Resource resolution
+        What a Session carries
       
     </span>
   </a>
@@ -1028,9 +1028,9 @@ typical session flows:</p>
 <ol>
 <li><strong>Connect.</strong> <code>picsure.connect(platform, token)</code> resolves a
    :class:<code>Platform</code> (or custom URL) to connection details, builds an
-   authenticated <code>PicSureClient</code>, fetches the user profile, the
-   resource list, optional consents, and the dictionary size — then
-   returns a :class:<code>Session</code>.</li>
+   authenticated <code>PicSureClient</code>, reads the display email and expiry
+   from the token, and fetches the consent list on consent-gated
+   deployments — then returns a :class:<code>Session</code>.</li>
 <li><strong>Search / build.</strong> <code>session.searchDictionary(...)</code> and
    <code>session.facets(...)</code> go through the search service; users build
    filters with the standalone helpers <code>picsure.buildClause(...)</code> and
@@ -1038,13 +1038,20 @@ typical session flows:</p>
    the output concepts to return via <code>picsure.buildQuery(...)</code>.</li>
 <li><strong>Run.</strong> <code>session.runQuery(query, type=...)</code> calls the query-run
    service, which splits the <code>Query</code> (or bare <code>Clause</code> / <code>ClauseGroup</code>)
-   into a phenotypic filter tree and the output <code>select</code> — the filter's own
-   variables folded together with any <code>includeConcepts</code> — serializes to v3
-   wire format, POSTs to <code>/picsure/v3/query/sync</code>, and parses the response
-   into a <code>CountResult</code>, a <code>dict[str, CountResult]</code>, or a
-   <code>DataFrame</code>.</li>
-<li><strong>Export.</strong> <code>session.exportAsPFB(...)</code> uses the async flow
-   (<code>/picsure/v3/query</code> → poll status → fetch result), streaming the
+   into a phenotypic filter tree and the output <code>select</code>, the filter's own
+   variables folded together with any <code>includeConcepts</code>, and serializes to
+   the query wire format. A count, cross-count or variant result POSTs to
+   <code>/picsure/hpds/auth/v3/query/sync</code> (or <code>/picsure/hpds/open/v3/query/sync</code>
+   on open sessions) and parses the response in place. A participant or
+   timestamp result goes through the server's job flow instead
+   (<code>/picsure/hpds/{backend}/v3/query</code> → poll <code>/status</code> → stream <code>/result</code>
+   to a temporary file), because <code>/query/sync</code> refuses the DATAFRAME result
+   types with HTTP 400. Either way the answer is parsed into a
+   <code>CountResult</code>, a <code>dict[str, CountResult]</code>, or a <code>DataFrame</code>. The
+   gateway selects the HPDS backend by path (<code>auth</code> vs <code>open</code>), so no
+   <code>resourceUUID</code> is sent in the body.</li>
+<li><strong>Export.</strong> <code>session.exportAsPFB(...)</code> uses the same job flow
+   (<code>/picsure/hpds/auth/v3/query</code> → poll status → fetch result), streaming the
    bytes to disk; <code>session.exportCSV</code> / <code>exportTSV</code> write a DataFrame
    in memory to disk.</li>
 </ol>
@@ -1056,26 +1063,35 @@ typical session flows:</p>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>  │  (decorated with @timed for dev-mode events)
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>  ▼
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>picsure._services.query_run.run_query
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>  │  build_query_body(query, resource_uuid, query_type)
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>  │  build_query_body(query, query_type)
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>  │      ├─ Clause.to_query_json()  /  ClauseGroup.to_query_json()
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>  │      └─ wraps in v3 envelope { query: { ... }, resourceUUID }
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>  │      └─ wraps in envelope { query: { ... } }  (no resourceUUID)
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>  │
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>  │  client.post_json(_PICSURE_QUERY_SYNC_PATH, body)
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>  ▼
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>picsure._transport.client.PicSureClient._request
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>  │  httpx.Client.request(&quot;POST&quot;, &quot;/picsure/v3/query/sync&quot;, ...)
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>  │  4xx → _raise_for_status → TransportAuthenticationError /
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>  │        TransportValidationError / TransportNotFoundError /
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>  │        TransportRateLimitError
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>  │  5xx + connection errors → retried once, then TransportServerError /
-<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>  │        TransportConnectionError
-<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>  ▼
-<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>picsure._services.query_run.run_query (response handling)
-<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>  │  parse &quot;COUNT&quot; / &quot;CROSS_COUNT&quot; / &quot;DATAFRAME&quot; / &quot;DATAFRAME_TIMESERIES&quot;
-<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>  │  TransportError → PicSureAuthError / PicSureQueryError /
-<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>  │                   PicSureConnectionError / PicSureValidationError
-<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>  ▼
-<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>result returned to caller (CountResult | dict | DataFrame)
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>  │  client.post_raw(query_prefix(backend, v3=...) + &quot;/query/sync&quot;, body)
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>  │  (participant / timestamp results take run_async_query_to_file instead:
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>  │   client.post_json(&quot;.../query&quot;) submits, client.post_json(&quot;.../query/{id}/status&quot;)
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>  │   is polled until AVAILABLE, then client.post_raw_to_file(&quot;.../query/{id}/result&quot;)
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>  │   streams the CSV to a temporary file that pandas reads from disk)
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>  ▼
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>picsure._transport.client.PicSureClient._request
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>  │  httpx.Client.request(&quot;POST&quot;, &quot;/picsure/hpds/auth/v3/query/sync&quot;, ...)
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>  │  4xx → _status_error → TransportAuthenticationError /
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>  │        TransportConsentDeniedError / TransportValidationError /
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>  │        TransportNotFoundError / TransportRateLimitError
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>  │  5xx → TransportServerError, never retried on a POST (only a GET is
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>  │        re-sent, since a POST the server already saw may have run)
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>  │  connection errors → retried once when the request provably never
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>  │        reached the server, otherwise on a GET only, then
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>  │        TransportConnectionError
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>  ▼
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>picsure._services.query_run.run_query (response handling)
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>  │  parse &quot;COUNT&quot; / &quot;CROSS_COUNT&quot; / &quot;DATAFRAME&quot; / &quot;DATAFRAME_TIMESERIES&quot; /
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>  │        &quot;VARIANT_COUNT_FOR_QUERY&quot; / &quot;VARIANT_LIST_FOR_QUERY&quot; /
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>  │        &quot;VCF_EXCERPT&quot; / &quot;AGGREGATE_VCF_EXCERPT&quot;
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>  │  TransportError → PicSureAuthError / PicSureQueryError /
+<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>  │                   PicSureConnectionError / PicSureValidationError
+<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>  ▼
+<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>result returned to caller (CountResult | dict | DataFrame | list[str])
 </code></pre></div>
 <p>Every other entrypoint follows the same shape: a <code>Session</code> method
 delegates to a <code>_services/*</code> function, which uses the transport
@@ -1102,27 +1118,23 @@ client and translates <code>TransportError</code> subclasses to the public
 <tbody>
 <tr>
 <td><code>session.py</code></td>
-<td><code>Session</code> class. Holds the HTTP client, resource list, consents, dictionary size, and the dev-mode config. Public methods (<code>searchDictionary</code>, <code>runQuery</code>, <code>runQueryByID</code>, <code>loadQueryByID</code>, <code>saveQueryByName</code>, <code>exportAsPFB</code>, <code>exportCSV</code>, <code>exportTSV</code>, <code>setResourceID</code>, <code>setResourceIDByName</code>, <code>getResourceID</code>, <code>facets</code>, <code>showAllFacets</code>, …) delegate to <code>_services/*</code>.</td>
-</tr>
-<tr>
-<td><code>resource.py</code></td>
-<td><code>Resource</code> dataclass (<code>uuid</code>, <code>name</code>, <code>description</code>) with a <code>from_dict</code> constructor for <code>/picsure/info/resources</code> payloads.</td>
+<td><code>Session</code> class. Holds the HTTP client, the consent list, the HPDS backend selection, and the dev-mode config. Public methods (<code>searchDictionary</code>, <code>runQuery</code>, <code>runQueryByID</code>, <code>loadQueryByID</code>, <code>saveQueryByName</code>, <code>exportAsPFB</code>, <code>exportCSV</code>, <code>exportTSV</code>, <code>facets</code>, <code>showAllFacets</code>, …) delegate to <code>_services/*</code>.</td>
 </tr>
 <tr>
 <td><code>clause.py</code></td>
-<td><code>Clause</code> dataclass + <code>PhenotypicFilterType</code> enum (<code>FILTER</code>, <code>ANYRECORD</code>, <code>REQUIRE</code>). Each <code>Clause.to_query_json()</code> emits the v3 <code>PhenotypicClause</code> shape.</td>
+<td><code>Clause</code> dataclass + <code>PhenotypicFilterType</code> enum (<code>FILTER</code>, <code>ANYRECORD</code>, <code>REQUIRE</code>). Each <code>Clause.to_query_json()</code> emits the v3 <code>PhenotypicClause</code> shape. Frozen with tuple fields (<code>keys</code>, <code>categories</code>), so a clause is hashable and usable as a dict key; the constructor accepts any iterable of strings and stores a tuple.</td>
 </tr>
 <tr>
 <td><code>clause_group.py</code></td>
-<td><code>ClauseGroup</code> dataclass + <code>GroupOperator</code> enum (<code>AND</code>, <code>OR</code>). Recursively serializes to a v3 <code>PhenotypicSubquery</code>.</td>
+<td><code>ClauseGroup</code> dataclass + <code>GroupOperator</code> enum (<code>AND</code>, <code>OR</code>). Recursively serializes to a v3 <code>PhenotypicSubquery</code>. Frozen with a <code>tuple</code> of children, so a group is hashable, nested groups included.</td>
 </tr>
 <tr>
 <td><code>query.py</code></td>
-<td><code>Query</code> dataclass: a <code>phenotypicFilter</code> (<code>Clause | ClauseGroup | None</code>) plus <code>includeConcepts</code> (output concept paths). <code>runQuery</code> also accepts a bare <code>Clause</code> / <code>ClauseGroup</code> (filter; its variables are returned as output columns). <code>concept_paths()</code> on each collects the filter's variables to fold into <code>select</code>.</td>
+<td><code>Query</code> dataclass: a <code>phenotypicFilter</code> (<code>Clause | ClauseGroup | None</code>), <code>includeConcepts</code> (output concept paths), and <code>genomicFilters</code> (a <code>tuple[GenomicFilter, ...]</code>, applied conjunctively alongside the phenotypic filter). <code>runQuery</code> also accepts a bare <code>Clause</code> / <code>ClauseGroup</code> (filter; its variables are returned as output columns). <code>concept_paths()</code> on each collects the filter's variables to fold into <code>select</code>.</td>
 </tr>
 <tr>
 <td><code>query_type.py</code></td>
-<td><code>QueryType</code> enum (<code>COUNT</code>, <code>PARTICIPANT</code>, <code>TIMESTAMP</code>, <code>CROSS_COUNT</code>). Public API also accepts equivalent lowercase strings.</td>
+<td><code>QueryType</code> enum (<code>COUNT</code>, <code>PARTICIPANT</code>, <code>TIMESTAMP</code>, <code>CROSS_COUNT</code>, <code>VARIANT_COUNT</code>, <code>VARIANT_LIST</code>, <code>VCF_EXCERPT</code>, <code>AGGREGATE_VCF_EXCERPT</code>). Public API also accepts equivalent lowercase strings.</td>
 </tr>
 <tr>
 <td><code>count_result.py</code></td>
@@ -1135,6 +1147,10 @@ client and translates <code>TransportError</code> subclasses to the public
 <tr>
 <td><code>facet.py</code></td>
 <td><code>Facet</code>, <code>FacetCategory</code>, and the public <code>FacetSet</code>. Iterative <code>from_dict</code> build so deep hierarchical facets don't blow Python's recursion limit.</td>
+</tr>
+<tr>
+<td><code>genomic_filter.py</code></td>
+<td><code>GenomicFilter</code> dataclass plus the <code>GenomicFilterKey</code>, <code>VariantFrequency</code>, and <code>VariantSeverity</code> enums (all public). <code>VariantSeverity</code> buckets expand into <code>Variant_consequence_calculated</code> values; the backend's own <code>Variant_severity</code> impact values (<code>HIGH</code>, <code>MODERATE</code>, <code>LOW</code>, <code>MODIFIER</code>) pass through on that key unchanged.</td>
 </tr>
 </tbody>
 </table>
@@ -1149,11 +1165,11 @@ client and translates <code>TransportError</code> subclasses to the public
 <tbody>
 <tr>
 <td><code>connect.py</code></td>
-<td><code>connect(platform, token, …)</code>. Resolves the platform, fetches resources and (on authorized deployments) consents, and constructs the <code>Session</code>. Reads the display email and expiry straight from the JWT — no <code>/psama/user/me</code> round trip. Also handles the dev-mode toggle and the success/expiration banner.</td>
+<td><code>connect(platform, token, …)</code>. Resolves the platform, fetches consents on consent-gated deployments, and constructs the <code>Session</code> with its HPDS <code>backend</code> (<code>auth</code>/<code>open</code>). There is no resource-registry round trip — the gateway routes by path. Reads the token expiry from the JWT's <code>exp</code> claim, and with <code>validate=True</code> (the default) sends one <code>GET /psama/user/me</code> to prove the server accepts the token — the email that request returns wins over the JWT's own claim, because it names the account requests will actually run as. Also handles the dev-mode toggle and the success/expiration banner.</td>
 </tr>
 <tr>
 <td><code>search.py</code></td>
-<td><code>searchDictionary</code>, <code>fetch_facets</code>, <code>show_all_facets</code>, plus the smaller helpers that build dictionary-api request bodies, dedupe entries, and turn results into DataFrames. Dictionary searches use a single max-int page (<code>_MAX_PAGE_SIZE</code>) so one request returns every concept.</td>
+<td><code>searchDictionary</code>, <code>fetch_facets</code>, <code>show_all_facets</code>, plus the smaller helpers that build dictionary request bodies, dedupe entries, and turn results into DataFrames. Dictionary searches page in bounded chunks of <code>_DEFAULT_PAGE_SIZE</code> (500). An unpaged call walks pages until the server says there are no more and never returns more than <code>_MAX_UNPAGED_ROWS</code> (100,000) rows: it raises when the server reports a larger match count and truncates the final page when the server reports none. <code>Session.searchDictionary</code> forwards <code>page</code> and <code>page_size</code>. <code>_SERVER_MAX_PAGE_SIZE</code> (Java <code>Integer.MAX_VALUE</code>) is only the validation ceiling on a caller-supplied <code>page_size</code>. It is never the size actually requested.</td>
 </tr>
 <tr>
 <td><code>query_build.py</code></td>
@@ -1161,27 +1177,39 @@ client and translates <code>TransportError</code> subclasses to the public
 </tr>
 <tr>
 <td><code>query_edit.py</code></td>
-<td><code>removeSubQuery(query, target)</code> and <code>replaceClause(query, target, replacement)</code>. Pure local tree edits — no network calls. Matching is structural (frozen-dataclass equality). Removals that empty a <code>ClauseGroup</code> prune the parent; removing the whole tree raises <code>PicSureValidationError</code>.</td>
+<td><code>removeSubQuery(query, target)</code> and <code>replaceClause(query, target, replacement)</code>. Pure local tree edits, no network calls. Matching is structural (frozen-dataclass equality). Removals that empty a <code>ClauseGroup</code> prune the parent; removing the whole tree raises <code>PicSureValidationError</code>, and so does a <code>target</code> that does not occur in the query, so an edit never silently returns an unchanged copy.</td>
 </tr>
 <tr>
 <td><code>query_run.py</code></td>
-<td><code>run_query(client, resource_uuid, query, type)</code>. Serializes via <code>build_query_body</code>, posts to the v3 sync endpoint (or the legacy path on open-only deployments), and parses each response shape. Also <code>parse_count_string</code> for the obfuscated-count regexes.</td>
+<td><code>run_query(client, query, type, *, backend)</code>. Serializes via <code>build_query_body</code>, then posts a count, cross-count or variant query to <code>/picsure/hpds/{backend}/v3/query/sync</code>, the v3 route both backends share, and parses each response shape. Participant and timestamp results are refused by <code>/query/sync</code>, so they take <code>run_async_query_to_file(client, backend, body, target, *, operation)</code>, the job flow this module also lends to <code>export.py</code>: submit to <code>/picsure/hpds/{backend}/v3/query</code>, poll <code>/query/{id}/status</code> (the first poll straight after the submit, then after sleeps of 1s, 2s, 4s, 8s and 10s from there on) until <code>AVAILABLE</code>, then stream <code>/query/{id}/result</code> into a temporary file with <code>post_raw_to_file</code> and parse it from disk, so peak memory is the DataFrame alone. A poll that is throttled, answered with a 5xx or lost to a network failure is sent again after the same sleep (a 429 waits its <code>Retry-After</code> when that is longer); a 401, 403, 404, a validation error or a rejected certificate on a poll raises at once, as does any failure on the submit or the download. The submit and the polls together, failed polls included, are bounded by <code>PicSureClient.timeout</code>, the value <code>connect(timeout=...)</code> sets, measured from just before the submit and read after each poll answers, with the last sleep clamped so the final poll is sent at the budget rather than after it; passing it raises <code>PicSureConnectionError</code>, naming the last poll's failure when it failed, and a terminal <code>ERROR</code> status raises <code>PicSureQueryError</code>. A local disk failure while staging the file is raised as <code>PicSureConnectionError</code>. Also <code>_parse_count_string</code> for the obfuscated-count regexes. HPDS route helpers live in <code>_hpds_paths.py</code>.</td>
 </tr>
 <tr>
 <td><code>query_load.py</code></td>
-<td><code>load_query(client, query_id)</code>. Hits the saved-query endpoint and reconstructs a <code>Clause</code> / <code>ClauseGroup</code> from the response so it can be re-run via <code>runQueryByID</code>.</td>
+<td><code>load_query(client, query_id, *, backend)</code>. Hits <code>/picsure/hpds/{backend}/v3/query/{id}/metadata</code>. The read itself does not touch HPDS, but only the <code>/v3</code> route is mapped on the current gateway. Reconstructs a <code>Query</code> (or the bare <code>Clause</code> / <code>ClauseGroup</code> it reduces to) so it can be re-run via <code>runQueryByID</code>.</td>
 </tr>
 <tr>
 <td><code>query_save.py</code></td>
-<td><code>save_query_by_name(client, resource_uuid, query, name, *, use_legacy_query_path, overwrite)</code>. Submits the query via <code>POST /picsure/v3/query</code>, then <code>POST</code>s a new record to <code>/dataset/named/</code> (or <code>PUT</code>-updates an existing one when <code>overwrite=True</code>). Validates <code>name</code> against the backend <code>NamedDataset</code> pattern client-side. Refused on open-access deployments.</td>
+<td><code>save_query_by_name(client, query, name, *, backend, overwrite)</code>. Submits the query via <code>POST /picsure/hpds/auth/v3/query</code>, then <code>POST</code>s a new record to <code>/picsure/operations/dataset/named</code> (or <code>PUT</code>-updates an existing one at <code>/picsure/operations/dataset/named/{id}</code> when <code>overwrite=True</code>). No trailing slash: Spring 6 answers one with a 404. Validates <code>name</code> against the backend <code>NamedDataset</code> pattern client-side. Refused on open-access (<code>open</code> backend) deployments.</td>
+</tr>
+<tr>
+<td><code>_hpds_paths.py</code></td>
+<td><code>query_prefix(backend, *, v3)</code>, <code>search_values_path(backend)</code>, the query-lifecycle builders (<code>query_submit_path</code>, <code>query_status_path</code>, <code>query_result_path</code>, <code>query_metadata_path</code>) and <code>named_dataset_item_path(id)</code>, the single place a route shape is built and the single place a value is percent-escaped into a path segment. <code>query_id_from_submit_response</code> and <code>canonical_server_id</code> check that an identifier the server chose is a UUID and return it in canonical form, unescaped, because the same id is also a request-body value and a public return value; the path builders escape it once on the way into a path, so a response cannot re-point an authenticated request at another route. <code>check_backend</code> refuses anything outside <code>BACKENDS</code> before <code>backend</code> is interpolated, and <code>Session</code> calls it rather than repeating the check, so both share one message and one error class. The <code>/picsure</code> context prefix is part of the path the client sends: the gateway routes <code>/hpds/**</code> verbatim without stripping it. The registry-era <code>{resourceId}</code> path segment is gone from both.</td>
 </tr>
 <tr>
 <td><code>export.py</code></td>
-<td><code>export_pfb</code> — the async PFB flow (submit → poll with exponential backoff capped at 60s, 10-minute total deadline → stream result to a <code>.part</code> file → atomic rename). Plus <code>export_csv</code> and <code>export_tsv</code> for in-memory DataFrames.</td>
+<td><code>export_pfb</code> runs the PFB export through <code>query_run.run_async_query_to_file</code> (submit → poll with exponential backoff capped at 10s → stream result to a <code>.part</code> file → atomic rename), keeping only its own <code>DATAFRAME_PFB</code> body and the translation of a local write failure to <code>PicSureConnectionError</code> naming the destination. The submit and the polls together are bounded by <code>PicSureClient.timeout</code>, with transient poll failures retried inside it; the final poll and the download each carry the same value as their own per-request deadline, so the call as a whole can still run past it. Plus <code>export_csv</code> and <code>export_tsv</code> for in-memory DataFrames, which translate a local write failure to <code>PicSureConnectionError</code> and a non-DataFrame argument to <code>PicSureValidationError</code> rather than leaking <code>OSError</code> / <code>AttributeError</code>.</td>
+</tr>
+<tr>
+<td><code>genomic_search.py</code></td>
+<td><code>search_genomic_values(client, ...)</code> backing <code>Session.searchGenomicValues</code>. GETs <code>/picsure/hpds/{backend}/search/values</code> with the annotation key and a page/size, and returns a one-column DataFrame of values with the server's paging in <code>df.attrs</code>. A 200 with an empty body means the key is not a genomic annotation on this deployment; any other bodiless status names itself instead, since an expired gateway session redirects with no body and the annotation key is not what failed.</td>
+</tr>
+<tr>
+<td><code>genomic_data.py</code></td>
+<td><code>genomicConsequences()</code> reads the bundled <code>_data/variant_consequences.json</code> into a DataFrame of <code>severity</code> / <code>consequence</code> rows. No network call.</td>
 </tr>
 <tr>
 <td><code>consents.py</code></td>
-<td><code>fetch_consents(client)</code>. Reads <code>/psama/user/me/queryTemplate/</code>, parses the doubly-encoded JSON, and pulls the <code>\\_consents\\</code> study-consent list used by dictionary-api requests on authorized deployments.</td>
+<td><code>fetch_consents(client)</code>. Reads <code>/psama/user/me/consents</code> and pulls the <code>\\_consents\\</code> study-consent list sent in <code>/picsure/dictionary/*</code> request bodies on authorized deployments.</td>
 </tr>
 </tbody>
 </table>
@@ -1196,15 +1224,15 @@ client and translates <code>TransportError</code> subclasses to the public
 <tbody>
 <tr>
 <td><code>client.py</code></td>
-<td><code>PicSureClient</code>. Wraps <code>httpx.Client</code> with Bearer-token auth, the <code>request-source: Authorized|Open</code> gateway header, a 30s timeout, one retry on connection errors and 5xx for GETs (POSTs are not retried on 5xx because they are non-idempotent), and a streaming variant <code>post_raw_stream</code> for binary payloads, plus <code>put_json</code> for the <code>saveQueryByName</code> overwrite path. <code>_raise_for_status</code> translates 4xx into the <code>Transport*Error</code> set.</td>
+<td><code>PicSureClient</code>. Wraps <code>httpx.Client</code> with Bearer-token auth, the <code>request-source: Authorized|Open</code> gateway header, a ten-minute default request timeout (<code>DATA_TIMEOUT_SECONDS</code>, overridable via <code>connect(timeout=...)</code>) alongside the short <code>VALIDATION_TIMEOUT_SECONDS</code> the connect-time credential check uses, one retry on connection errors and 5xx for GETs (POSTs are not retried on 5xx because they are non-idempotent), and a streaming variant <code>post_raw_stream</code> for binary payloads, <code>post_raw_to_file</code> to stream a response into a <code>.part</code> staging file promoted by <code>os.replace</code>, plus <code>put_json</code> for the <code>saveQueryByName</code> overwrite path. <code>_status_error</code> maps any 4xx or 5xx into the <code>Transport*Error</code> set; <code>_raise_for_status</code> is the buffered path's thin wrapper that raises what it returns.</td>
 </tr>
 <tr>
 <td><code>errors.py</code></td>
-<td>Internal <code>TransportError</code> hierarchy: <code>TransportAuthenticationError</code> (401/403), <code>TransportValidationError</code> (400/422/other 4xx), <code>TransportNotFoundError</code> (404), <code>TransportRateLimitError</code> (429, parses <code>Retry-After</code>), <code>TransportServerError</code> (5xx), <code>TransportConnectionError</code> (DNS / timeout / refused).</td>
+<td>Internal <code>TransportError</code> hierarchy: <code>TransportAuthenticationError</code> (401/403), <code>TransportValidationError</code> (400/422/other 4xx), <code>TransportNotFoundError</code> (404), <code>TransportRateLimitError</code> (429, parses <code>Retry-After</code>), <code>TransportServerError</code> (5xx), <code>TransportConnectionError</code> (DNS / timeout / refused), <code>TransportTLSError</code> (a certificate this machine will not trust, raised before the request is sent), and the structured pair <code>TransportConsentDeniedError</code> / <code>TransportConsentLookupError</code>, built from a response body carrying <code>errorType: consent_denied</code> or <code>consent_lookup_failed</code>. Also the credential redaction every class here applies to a response body before storing it or quoting it into a message, so a token the server echoed cannot reach a traceback through the cause chain.</td>
 </tr>
 <tr>
 <td><code>platforms.py</code></td>
-<td><code>Platform</code> enum (<code>BDC_AUTHORIZED</code>, <code>BDC_OPEN</code>, <code>BDC_DEV_*</code>, <code>BDC_PREDEV_*</code>, <code>NHANES_AUTHORIZED</code>, <code>NHANES_OPEN</code>) and <code>resolve_platform()</code>. A <code>Platform</code> member carries URL, default resource UUID, whether dictionary calls need consents, and whether the platform requires a token; <code>resolve_platform</code> also accepts a raw <code>http(s)://</code> URL for unlisted deployments.</td>
+<td><code>Platform</code> enum (<code>BDC_AUTHORIZED</code>, <code>BDC_OPEN</code>, <code>BDC_DEV_*</code>, <code>BDC_PREDEV_*</code>, <code>NHANES_AUTHORIZED</code>, <code>NHANES_OPEN</code>) and <code>resolve_platform()</code>. A <code>Platform</code> member carries URL, display label, whether dictionary calls need consents, whether the platform requires a token, and whether it serves genomic data; <code>resolve_platform</code> also accepts a raw <code>http(s)://</code> URL for unlisted deployments.</td>
 </tr>
 </tbody>
 </table>
@@ -1212,16 +1240,38 @@ client and translates <code>TransportError</code> subclasses to the public
 <p>The public, user-facing error hierarchy. Everything user code might
 want to catch is here:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>PicSureError
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>├── PicSureAuthError         # bad/expired token, missing permissions
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>├── PicSureConnectionError   # cannot reach the server
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>├── PicSureQueryError        # server rejected the query
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>└── PicSureValidationError   # invalid input to a picsure function
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>├── PicSureAuthError                    # the server answered and refused you
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>│   ├── PicSureAuthenticationError      # 401: the token itself is the problem
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>│   └── PicSureAuthorizationError       # 403: this account may not do it
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>│       └── PicSureConsentDeniedError   # 403 consent_denied: approvals do not cover it
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>├── PicSureConnectionError              # no usable response came back
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>│   ├── PicSureTLSError                 # the certificate was not trusted
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>│   └── PicSureServerError              # 5xx: the request arrived and failed
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>│       └── PicSureConsentLookupError   # 502 consent_lookup_failed
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>├── PicSureQueryError                   # server rejected the query
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>│   └── EmptyBodyError                  # any status under 400, zero-length body
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>└── PicSureValidationError              # invalid input to a picsure function
 </code></pre></div>
-<p><code>PicSureError</code> is the catch-all. Services translate
-<code>TransportError</code> subclasses into these per-call (the mapping is not
-1:1 — context matters; e.g. a 404 from <code>runQuery</code> becomes
-<code>PicSureQueryError</code>, while a 404 from a dictionary lookup becomes
-<code>PicSureValidationError</code>).</p>
+<p>Every status below 400 reaches <code>EmptyBodyError</code>, not only a 200: the
+client translates 4xx and 5xx and does not follow redirects, so a <code>302</code>
+to an SSO login on an expired gateway session arrives as a bodiless
+response too. <code>EmptyBodyError.status_code</code> is what tells the two apart,
+and <code>_services/_errors.bodiless_response_succeeded</code> is where both
+consumers ask.</p>
+<p><code>EmptyBodyError</code> is the one class here that <code>__init__.py.__all__</code> does
+not export. It is raised by <code>_transport/client.py::_decode_json</code> and
+caught by <code>_services/query_save.py</code> and <code>_services/genomic_search.py</code>,
+so it is internal control flow that a caller sees only as the
+<code>PicSureQueryError</code> it inherits from. Whether it becomes supported
+public surface is an open question; until it is answered, catch
+<code>PicSureQueryError</code>.</p>
+<p><code>PicSureError</code> is the catch-all, and the nesting is the contract: a
+caller who wants every refusal catches <code>PicSureAuthError</code>, and one who
+only cares about a denied consent catches <code>PicSureConsentDeniedError</code>.
+Services do not each invent a mapping. They route every transport
+failure through <code>_services/_errors.translate_transport_error</code>, so one
+status produces one public type and one message everywhere. The table
+under "Error model" below is that function.</p>
 <h3 id="_dev-dev-mode-internals"><code>_dev/</code> — dev-mode internals<a class="headerlink" href="#_dev-dev-mode-internals" title="Permanent link">&para;</a></h3>
 <p>Off by default. Enable per-process with the <code>PICSURE_DEV_MODE</code>
 environment variable (<code>1</code>/<code>true</code>/<code>yes</code>) or per-call with the
@@ -1236,7 +1286,7 @@ environment variable (<code>1</code>/<code>true</code>/<code>yes</code>) or per-
 <tbody>
 <tr>
 <td><code>config.py</code></td>
-<td><code>DevConfig</code> — reads <code>PICSURE_DEV_MODE</code> and <code>PICSURE_DEV_MAX_EVENTS</code>, attaches a stderr handler to the <code>picsure</code> logger when on, and owns the <code>EventBuffer</code>.</td>
+<td><code>DevConfig</code>. Reads <code>PICSURE_DEV_MODE</code> and <code>PICSURE_DEV_MAX_EVENTS</code>, and owns the <code>EventBuffer</code>. It attaches no log handler: <code>_services/connect.py::_install_default_handler</code> is what puts the stderr handler on the <code>picsure</code> logger, and only when <code>connect()</code> finds dev mode on.</td>
 </tr>
 <tr>
 <td><code>buffer.py</code></td>
@@ -1252,7 +1302,7 @@ environment variable (<code>1</code>/<code>true</code>/<code>yes</code>) or per-
 </tr>
 <tr>
 <td><code>redaction.py</code></td>
-<td>Strips secrets before logging or buffering (PSAMA <code>token</code>, dataframe-shaped result bodies, etc.).</td>
+<td><code>body_is_sensitive</code> classifies a request body as participant-bearing (<code>DATAFRAME</code>, <code>DATAFRAME_TIMESERIES</code>, <code>DATAFRAME_PFB</code>, <code>VCF_EXCERPT</code>) so the <code>http</code> event for that call carries a <code>redacted: "participant"</code> label. Attaching the label is its whole effect: no request or response body is ever serialized into an event, so nothing here scrubs a secret out of anything.</td>
 </tr>
 <tr>
 <td><code>reporting.py</code></td>
@@ -1285,44 +1335,72 @@ something public. Reviewers should flag any PR that grows that list
 without a corresponding CHANGELOG entry.</p>
 <h2 id="error-model">Error model<a class="headerlink" href="#error-model" title="Permanent link">&para;</a></h2>
 <p>A call site's error contract is whatever subclass of <code>PicSureError</code>
-it documents in its docstring (typically all four). The transport
-layer never raises <code>PicSureError</code> directly — it raises the internal
-<code>TransportError</code> subclasses, and each service translates those into
-the user-facing type that makes sense in context.</p>
-<p>The mapping for <code>_transport/errors.py</code>:</p>
+it documents in its docstring. An HTTP answer the adapter did not want
+becomes an internal <code>TransportError</code> first, and
+<code>_services/_errors.translate_transport_error</code> turns that into the
+public type. Two paths skip the transport hierarchy and raise a
+<code>PicSureError</code> from inside <code>_transport/</code> directly: <code>_decode_json</code> and
+<code>json_object</code> raise <code>PicSureQueryError</code> (or its <code>EmptyBodyError</code>
+subclass) for a body that is empty, not JSON, or not the shape the
+route promised, and the CA-bundle resolution raises
+<code>PicSureValidationError</code> for a <code>verify</code> path that does not exist and
+<code>PicSureTLSError</code> for one OpenSSL cannot load. Everything else reaches
+the user through the translator.</p>
+<p>The mapping, which is one function and therefore the same for every
+service:</p>
 <table>
 <thead>
 <tr>
 <th>HTTP status / event</th>
 <th>Transport exception</th>
-<th>Typical translation</th>
+<th>Public exception</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>401, 403</td>
+<td>403 with <code>errorType: consent_denied</code></td>
+<td><code>TransportConsentDeniedError</code></td>
+<td><code>PicSureConsentDeniedError</code></td>
+</tr>
+<tr>
+<td>502 with <code>errorType: consent_lookup_failed</code></td>
+<td><code>TransportConsentLookupError</code></td>
+<td><code>PicSureConsentLookupError</code></td>
+</tr>
+<tr>
+<td>401</td>
 <td><code>TransportAuthenticationError</code></td>
-<td><code>PicSureAuthError</code></td>
+<td><code>PicSureAuthenticationError</code></td>
+</tr>
+<tr>
+<td>403</td>
+<td><code>TransportAuthenticationError</code></td>
+<td><code>PicSureAuthorizationError</code></td>
 </tr>
 <tr>
 <td>400, 422, other 4xx</td>
 <td><code>TransportValidationError</code></td>
-<td><code>PicSureQueryError</code> or <code>PicSureValidationError</code> depending on whose input was wrong</td>
+<td><code>PicSureValidationError</code></td>
 </tr>
 <tr>
 <td>404</td>
 <td><code>TransportNotFoundError</code></td>
-<td>usually <code>PicSureQueryError</code> (resource/path missing)</td>
+<td><code>PicSureQueryError</code></td>
 </tr>
 <tr>
 <td>429</td>
 <td><code>TransportRateLimitError</code></td>
-<td><code>PicSureConnectionError</code> with a <code>retry_after</code> note</td>
+<td><code>PicSureConnectionError</code> carrying the <code>Retry-After</code> value</td>
+</tr>
+<tr>
+<td>rejected certificate</td>
+<td><code>TransportTLSError</code></td>
+<td><code>PicSureTLSError</code></td>
 </tr>
 <tr>
 <td>5xx (after one retry)</td>
 <td><code>TransportServerError</code></td>
-<td><code>PicSureConnectionError</code></td>
+<td><code>PicSureServerError</code></td>
 </tr>
 <tr>
 <td>DNS / timeout / refused</td>
@@ -1331,33 +1409,43 @@ the user-facing type that makes sense in context.</p>
 </tr>
 </tbody>
 </table>
-<p><code>_transport/client.py::_raise_for_status</code> is the single 4xx mapper
-shared by <code>_request</code> and <code>post_raw_stream</code>, so both code paths agree.</p>
-<h2 id="session-and-resource-resolution">Session and Resource resolution<a class="headerlink" href="#session-and-resource-resolution" title="Permanent link">&para;</a></h2>
+<p>The status is the whole input, so a 404 reads the same from <code>runQuery</code>
+and from a dictionary lookup. A service that wants different wording
+for a case of its own catches that transport class before the
+translator sees it, as <code>genomic_search.py</code> does for the 404 and the
+empty body, rather than mapping the status a second way.</p>
+<p><code>_transport/client.py::_status_error</code> is the single status mapper,
+shared by <code>_request</code> and <code>post_raw_stream</code>, so both code paths agree
+on the class, the message and the <code>Retry-After</code> value a status
+produces. <code>_raise_for_status</code> raises what it returns, for the
+buffered path's 4xx block. <code>_request</code> still handles 5xx itself,
+because only it re-sends a 5xx on a GET.</p>
+<h2 id="what-a-session-carries">What a Session carries<a class="headerlink" href="#what-a-session-carries" title="Permanent link">&para;</a></h2>
 <p><code>Session</code> is the user-facing handle, but the data it carries is
 small:</p>
 <ul>
 <li><code>_client</code> — the authenticated <code>PicSureClient</code> (the only thing that
   knows the base URL and token).</li>
 <li><code>_user_email</code>, <code>_token_expiration</code> — surfaced in the connect
-  banner; <code>_user_email == "anonymous"</code> on open-access deployments.</li>
-<li><code>_resources</code> — <code>list[Resource]</code> from <code>/picsure/info/resources</code>.</li>
-<li><code>_resource_uuid</code> — the currently active resource. Defaulted from
-  the <code>Platform</code> member at connect time, or required to be set
-  manually for custom URLs.</li>
-<li><code>_consents</code> — <code>list[str]</code> of study-consent identifiers. Empty on
-  open-access; required in dictionary-api request bodies on
-  authorized deployments.</li>
+  banner and readable as the <code>Session.user_email</code> /
+  <code>Session.token_expiration</code> properties; <code>"anonymous"</code> and <code>"N/A"</code>
+  respectively on open-access deployments. Neither exposes the token.</li>
+<li><code>_consents</code> — <code>list[str]</code> of study-consent identifiers, readable as
+  the <code>Session.consents</code> property. Empty on open-access; required in
+  <code>/picsure/dictionary/*</code> request bodies on authorized deployments.</li>
 <li><code>_dev_config</code> — opt-in <code>DevConfig</code> (off by default).</li>
-<li><code>_use_legacy_query_path</code> — set during connect when the platform is
-  open-only and must use <code>/picsure/query/sync</code> (BDC's API gateway
-  rejects open traffic on the v3 endpoint with HTTP 401).</li>
+<li><code>_backend</code> — <code>"auth"</code> or <code>"open"</code>, set during connect. Selects the
+  HPDS backend by URL path (<code>/picsure/hpds/auth</code> vs
+  <code>/picsure/hpds/open</code>). Both
+  backends use the v3 query routes; the path, not the token and not a
+  resource UUID, decides which HPDS answers.</li>
 </ul>
-<p>Resources are resolved by UUID by default. Two name-based helpers
-exist for ergonomics: <code>setResourceIDByName(name)</code> looks up by the
-backend's <code>name</code> field on <code>Resource</code>. Platform labels like
-<code>BDC Authorized</code> and <code>BDC Open</code> are display-only (printed on connect,
-returned by <code>Platform.label</code>); <code>resolve_platform</code> accepts <strong>only</strong> a
+<p>There is no resource-ID surface. The registry endpoint that used to
+populate one was removed with the v3 rewrite, and routing is now
+entirely path-based — see the changelog entry for the removal of
+<code>connect(resource_uuid=…)</code> and the <code>Session</code> resource methods.</p>
+<p>Platform labels like <code>BDC Authorized</code> and <code>BDC Open</code> are display-only
+(printed on connect, returned by <code>Platform.label</code>); <code>resolve_platform</code> accepts <strong>only</strong> a
 <code>Platform</code> enum member or a full <code>http(s)</code> URL. Passing a label string
 raises <code>PicSureValidationError</code> whose message lists the valid
 <code>Platform.&lt;NAME&gt;</code> access forms — so connect examples must use enum
