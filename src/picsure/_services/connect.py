@@ -8,6 +8,12 @@ admin token. A 200 from PSAMA carries at least one of ``uuid``,
 ``email`` and ``privileges``; a 200 without any of them means
 something other than PIC-SURE answered.
 
+An anonymous connection has no credential to check, so it sends
+``GET /picsure/system/status`` instead. The gateway serves that route
+without authentication and answers in plain text, either ``RUNNING``
+or ``ONE OR MORE COMPONENTS DEGRADED``, so the body alone proves a
+PIC-SURE gateway answered.
+
 A token whose ``exp`` passed within the last 60 seconds is still
 accepted, so a clock a few seconds fast on either side does not
 reject a good token. A token expiring within one day earns a warning,
@@ -31,7 +37,6 @@ from picsure._services._errors import _NEW_TOKEN_ADVICE, translate_transport_err
 from picsure._services.consents import fetch_consents
 from picsure._transport.client import VALIDATION_TIMEOUT_SECONDS, PicSureClient
 from picsure._transport.errors import (
-    TransportConnectionError,
     TransportError,
     TransportNotFoundError,
 )
@@ -55,6 +60,11 @@ _LOGGER_NAME = "picsure"
 
 _VALIDATION_PATH = "/psama/user/me"
 _VALIDATION_OPERATION = "the connect-time credential check"
+
+_STATUS_PATH = "/picsure/system/status"
+_STATUS_OPERATION = "the connect-time status check"
+_STATUS_RUNNING = "RUNNING"
+_STATUS_DEGRADED = "ONE OR MORE COMPONENTS DEGRADED"
 
 _PSAMA_USER_FIELDS = ("uuid", "email", "privileges")
 
@@ -136,8 +146,10 @@ def connect(
         validate: Whether to verify the connection before returning a
             Session. ``True`` (default) checks the token's shape and
             expiry locally, then sends one ``GET /psama/user/me`` to
-            confirm the deployment is reachable and, when a token was
-            given, that the server accepts it. ``False`` skips those
+            confirm the deployment is reachable and the server accepts
+            the token. An anonymous connection sends one
+            ``GET /picsure/system/status`` instead, and warns when the
+            gateway reports a degraded component. ``False`` skips those
             local checks, that request, and the consent-scoping probe a
             custom URL would otherwise get, so the returned Session may
             not work. A consent-gated platform still fetches its consent
@@ -158,8 +170,8 @@ def connect(
         PicSureTLSError: If the server's certificate cannot be verified.
         PicSureConnectionError: If the server cannot be reached, answers
             the validation request with something that is not a PIC-SURE
-            user record, or answers it with HTTP 404, which means the URL
-            is not a PIC-SURE deployment root.
+            user record or gateway status, or answers it with HTTP 404,
+            which means the URL is not a PIC-SURE deployment root.
 
     Example:
         >>> import picsure
@@ -467,15 +479,11 @@ def _validate_connection(client: PicSureClient, info: PlatformInfo) -> str | Non
     ``verify`` setting. Validating against a certificate we would not
     trust for real work would prove nothing.
 
-    What counts as success depends on what there is to verify:
-
-    * With a token, only ``200`` with a PSAMA user record will do.  The
-      server accepting the token is the verdict the local checks cannot
-      give.
-    * Without one, any HTTP response proves the deployment is there,
-      which is all an anonymous connection can honestly assert. PSAMA
-      answers ``403`` to an unauthenticated ``/user/me``, and that
-      ``403`` is itself proof the host exists and is PIC-SURE.
+    With a token, only ``200`` with a PSAMA user record will do.  The
+    server accepting the token is the verdict the local checks cannot
+    give.  Without one there is nothing to verify, so
+    :func:`_check_gateway_status` confirms a PIC-SURE gateway answers
+    instead.
 
     Returns:
         The email address the server reports for this account, or
@@ -486,54 +494,101 @@ def _validate_connection(client: PicSureClient, info: PlatformInfo) -> str | Non
             token, an unverifiable certificate, an unreachable host.
         PicSureConnectionError: If the server answers ``200`` with
             something that is not a PIC-SURE user record, including a
-            body that is not JSON, or answers ``404`` to a request that
-            carried a token.
+            body that is not JSON, or answers ``404``.
     """
+    if not info.requires_auth:
+        _check_gateway_status(client, info)
+        return None
+
     try:
         payload = client.get_json(
             _VALIDATION_PATH, timeout=VALIDATION_TIMEOUT_SECONDS, retry=False
         )
-    except TransportConnectionError as exc:
-        raise translate_transport_error(exc, operation=_VALIDATION_OPERATION) from exc
     except TransportNotFoundError as exc:
-        if not info.requires_auth:
-            return None
         raise PicSureConnectionError(
-            _not_picsure_message(info.url, answer=f"HTTP {exc.status_code}")
+            _not_picsure_message(
+                info.url, path=_VALIDATION_PATH, answer=f"HTTP {exc.status_code}"
+            )
         ) from exc
     except TransportError as exc:
-        if not info.requires_auth:
-            return None
         raise translate_transport_error(exc, operation=_VALIDATION_OPERATION) from exc
     except PicSureQueryError as exc:
         raise PicSureConnectionError(
-            _not_picsure_message(info.url, answer=_NOT_A_USER_RECORD)
+            _not_picsure_message(
+                info.url, path=_VALIDATION_PATH, answer=_NOT_A_USER_RECORD
+            )
         ) from exc
 
     if not isinstance(payload, dict) or not any(
         field in payload for field in _PSAMA_USER_FIELDS
     ):
         raise PicSureConnectionError(
-            _not_picsure_message(info.url, answer=_NOT_A_USER_RECORD)
+            _not_picsure_message(
+                info.url, path=_VALIDATION_PATH, answer=_NOT_A_USER_RECORD
+            )
         )
 
     email = payload.get("email")
     return email.strip() if isinstance(email, str) and email.strip() else None
 
 
+def _check_gateway_status(client: PicSureClient, info: PlatformInfo) -> None:
+    """Confirm an anonymous connection reaches a PIC-SURE gateway.
+
+    Sends ``GET /picsure/system/status`` under the same short deadline
+    and single attempt as the credential check.  ``RUNNING`` passes
+    silently.  ``ONE OR MORE COMPONENTS DEGRADED`` passes with a
+    warning, because the service this session needs may be one of the
+    healthy ones, and refusing the connection would hide that.
+
+    Raises:
+        PicSureError: Translated from the transport failure: an
+            unverifiable certificate, an unreachable host, a 5xx.
+        PicSureConnectionError: If the server answers ``404`` or a body
+            that is neither gateway status.
+    """
+    try:
+        body = client.get_text(
+            _STATUS_PATH, timeout=VALIDATION_TIMEOUT_SECONDS, retry=False
+        )
+    except TransportNotFoundError as exc:
+        raise PicSureConnectionError(
+            _not_picsure_message(
+                info.url, path=_STATUS_PATH, answer=f"HTTP {exc.status_code}"
+            )
+        ) from exc
+    except TransportError as exc:
+        raise translate_transport_error(exc, operation=_STATUS_OPERATION) from exc
+
+    status = body.strip()
+    if status == _STATUS_RUNNING:
+        return
+    if status == _STATUS_DEGRADED:
+        _warn(
+            f"{info.url} reports that one or more PIC-SURE components are "
+            f"degraded. Searches and queries may fail until it recovers."
+        )
+        return
+    raise PicSureConnectionError(
+        _not_picsure_message(info.url, path=_STATUS_PATH, answer=_NOT_A_GATEWAY_STATUS)
+    )
+
+
 _NOT_A_USER_RECORD = "HTTP 200, but the response is not a PIC-SURE user record"
+_NOT_A_GATEWAY_STATUS = "HTTP 200, but the response is not a PIC-SURE gateway status"
 
 
-def _not_picsure_message(url: str, *, answer: str) -> str:
-    """Explain an answer to the credential check that no PIC-SURE root gives.
+def _not_picsure_message(url: str, *, path: str, answer: str) -> str:
+    """Explain an answer to a connect-time check that no PIC-SURE root gives.
 
     Args:
         url: The deployment URL the caller connected to.
+        path: The route the check requested.
         answer: What came back, such as ``"HTTP 404"`` or
             :data:`_NOT_A_USER_RECORD`.
     """
     return (
-        f"{url} answered {_VALIDATION_PATH} with {answer}, so this URL may not "
+        f"{url} answered {path} with {answer}, so this URL may not "
         f"be a PIC-SURE endpoint. "
         f"Check that it is the deployment root (e.g. "
         f"https://picsure.biodatacatalyst.nhlbi.nih.gov) rather than a path "

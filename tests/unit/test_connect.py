@@ -11,6 +11,7 @@ import respx
 
 from picsure._models.session import Session
 from picsure._services.connect import (
+    _STATUS_PATH,
     _VALIDATION_PATH,
     _decode_jwt_payload,
     _email_from_payload,
@@ -109,6 +110,21 @@ def _mock_validation(
     body = USER_RECORD if payload is None else payload
     return respx.get(f"{base_url}{_VALIDATION_PATH}").mock(
         return_value=httpx.Response(status, json=body)
+    )
+
+
+def _mock_status(
+    base_url: str = BASE_URL,
+    *,
+    status: int = 200,
+    text: str = "RUNNING",
+    **kwargs: object,
+) -> respx.Route:
+    """Mock the gateway status request an anonymous connect() makes."""
+    if kwargs:
+        return respx.get(f"{base_url}{_STATUS_PATH}").mock(**kwargs)
+    return respx.get(f"{base_url}{_STATUS_PATH}").mock(
+        return_value=httpx.Response(status, text=text)
     )
 
 
@@ -237,9 +253,10 @@ class TestConnectValidatesTheConnection:
     def test_open_platform_also_sends_a_request(self):
         from picsure._transport.platforms import Platform
 
-        route = _mock_validation(Platform.BDC_DEV_OPEN.url)
+        route = _mock_status(Platform.BDC_DEV_OPEN.url)
         connect(platform=Platform.BDC_DEV_OPEN)
         assert route.called
+        assert len(respx.calls) == 1
 
     @respx.mock
     def test_unresolvable_host_raises_connection_error(self):
@@ -254,7 +271,7 @@ class TestConnectValidatesTheConnection:
     def test_unresolvable_host_fails_open_platforms_too(self):
         from picsure._transport.platforms import Platform
 
-        _mock_validation(
+        _mock_status(
             Platform.BDC_DEV_OPEN.url,
             side_effect=httpx.ConnectError("nodename nor servname provided"),
         )
@@ -276,12 +293,14 @@ class TestConnectValidatesTheConnection:
             connect(platform=BASE_URL, token=TOKEN)
 
     @respx.mock
-    def test_403_does_not_fail_an_open_connection(self):
-        """An unauthenticated 403 still proves the host is PIC-SURE."""
+    def test_open_connection_never_asks_psama_who_it_is(self):
+        """There is no token to check, so the credential route is not sent."""
         from picsure._transport.platforms import Platform
 
-        _mock_validation(Platform.BDC_DEV_OPEN.url, status=403, payload={})
+        user_me = _mock_validation(Platform.BDC_DEV_OPEN.url)
+        _mock_status(Platform.BDC_DEV_OPEN.url)
         session = connect(platform=Platform.BDC_DEV_OPEN)
+        assert not user_me.called
         assert session.user_email == "anonymous"
 
     @respx.mock
@@ -697,7 +716,7 @@ class TestConnectConsentDetection:
 
     @respx.mock
     def test_open_custom_url_is_not_warned_about_consents(self, capsys):
-        _mock_validation(status=403, payload={})
+        _mock_status()
 
         connect(platform=BASE_URL, requires_auth=False)
 
@@ -732,7 +751,7 @@ class TestConnectOpenAccess:
     def test_open_platform_connects_anonymously(self):
         from picsure._transport.platforms import Platform
 
-        _mock_validation(Platform.BDC_DEV_OPEN.url, status=403, payload={})
+        _mock_status(Platform.BDC_DEV_OPEN.url)
 
         session = connect(platform=Platform.BDC_DEV_OPEN)
 
@@ -744,7 +763,7 @@ class TestConnectOpenAccess:
     def test_open_platform_success_message(self, capsys):
         from picsure._transport.platforms import Platform
 
-        _mock_validation(Platform.BDC_DEV_OPEN.url, status=403, payload={})
+        _mock_status(Platform.BDC_DEV_OPEN.url)
 
         connect(platform=Platform.BDC_DEV_OPEN)
 
@@ -754,7 +773,7 @@ class TestConnectOpenAccess:
 
     @respx.mock
     def test_requires_auth_false_override_on_custom_url(self):
-        _mock_validation(status=403, payload={})
+        _mock_status()
 
         session = connect(platform=BASE_URL, requires_auth=False)
 
@@ -768,6 +787,7 @@ class TestConnectOpenAccess:
         from picsure._transport.platforms import Platform
 
         _mock_validation(Platform.BDC_DEV_OPEN.url)
+        _mock_status(Platform.BDC_DEV_OPEN.url)
 
         session = connect(platform=Platform.BDC_DEV_OPEN)
 
@@ -779,7 +799,7 @@ class TestConnectBackendSelection:
     def test_bdc_open_uses_open_backend(self):
         from picsure._transport.platforms import Platform
 
-        _mock_validation(Platform.BDC_DEV_OPEN.url, status=403, payload={})
+        _mock_status(Platform.BDC_DEV_OPEN.url)
 
         session = connect(platform=Platform.BDC_DEV_OPEN)
 
@@ -810,7 +830,7 @@ class TestConnectBackendSelection:
 
     @respx.mock
     def test_custom_url_open_override_uses_open_backend(self):
-        _mock_validation(status=403, payload={})
+        _mock_status()
 
         session = connect(platform=BASE_URL, requires_auth=False)
 
@@ -843,7 +863,7 @@ class TestBannerAgreesWithRouting:
 
     @respx.mock
     def test_open_banner_only_appears_on_the_open_backend(self, capsys):
-        _mock_validation(status=403, payload={})
+        _mock_status()
 
         session = connect(platform=BASE_URL, requires_auth=False)
 
@@ -1131,33 +1151,102 @@ class TestValidationNotFound:
         assert "404" in message
 
     @respx.mock
-    def test_404_without_a_token_still_connects(self):
-        """An open deployment may not map /psama/user/me at all.
-
-        There is no token to verify, so the only thing the check can
-        honestly assert is that something answered, and a 404 is an
-        answer. Failing here would refuse a working open platform.
-        """
+    def test_404_without_a_token_is_a_connection_error_naming_the_url(self):
+        """A host with no gateway status route is not a PIC-SURE deployment root."""
         from picsure._transport.platforms import Platform
 
-        route = _mock_validation(
-            Platform.BDC_DEV_OPEN.url, status=404, payload={"errorType": "not_found"}
-        )
+        _mock_status(Platform.BDC_DEV_OPEN.url, status=404, text="Not Found")
 
-        session = connect(platform=Platform.BDC_DEV_OPEN)
+        with pytest.raises(PicSureConnectionError) as exc_info:
+            connect(platform=Platform.BDC_DEV_OPEN)
 
-        assert route.called
-        assert session.user_email == "anonymous"
-        assert session.consents == []
+        message = str(exc_info.value)
+        assert Platform.BDC_DEV_OPEN.url in message
+        assert _STATUS_PATH in message
+        assert "404" in message
 
     @respx.mock
-    def test_404_on_a_custom_open_url_still_connects(self):
-        route = _mock_validation(status=404, payload={"errorType": "not_found"})
+    def test_404_on_a_custom_open_url_is_a_connection_error(self):
+        _mock_status(status=404, text="Not Found")
+
+        with pytest.raises(PicSureConnectionError):
+            connect(platform=BASE_URL, requires_auth=False)
+
+
+class TestAnonymousGatewayStatus:
+    @respx.mock
+    def test_running_connects_without_a_warning(self, capsys):
+        route = _mock_status()
 
         session = connect(platform=BASE_URL, requires_auth=False)
 
         assert route.called
         assert session.user_email == "anonymous"
+        assert "degraded" not in capsys.readouterr().err
+
+    @respx.mock
+    def test_status_request_uses_one_attempt(self):
+        route = _mock_status(side_effect=httpx.ReadTimeout("slow host"))
+
+        with pytest.raises(PicSureConnectionError):
+            connect(platform=BASE_URL, requires_auth=False)
+
+        assert route.call_count == 1
+
+    @respx.mock
+    def test_status_request_carries_no_credentials(self):
+        route = _mock_status()
+
+        connect(platform=BASE_URL, requires_auth=False)
+
+        request = route.calls.last.request
+        assert "Authorization" not in request.headers
+        assert request.headers["request-source"] == "Open"
+
+    @respx.mock
+    def test_surrounding_whitespace_is_ignored(self):
+        _mock_status(text="RUNNING\n")
+
+        session = connect(platform=BASE_URL, requires_auth=False)
+
+        assert session.user_email == "anonymous"
+
+    @respx.mock
+    def test_degraded_connects_with_a_warning_naming_the_url(self, capsys):
+        _mock_status(text="ONE OR MORE COMPONENTS DEGRADED")
+
+        session = connect(platform=BASE_URL, requires_auth=False)
+
+        assert session.user_email == "anonymous"
+        err = capsys.readouterr().err
+        assert "degraded" in err
+        assert BASE_URL in err
+
+    @respx.mock
+    def test_an_unrelated_200_is_a_connection_error(self):
+        _mock_status(text="<html>welcome</html>")
+
+        with pytest.raises(PicSureConnectionError) as exc_info:
+            connect(platform=BASE_URL, requires_auth=False)
+
+        message = str(exc_info.value)
+        assert BASE_URL in message
+        assert "gateway status" in message
+
+    @respx.mock
+    def test_a_5xx_is_a_server_error(self):
+        from picsure.errors import PicSureServerError
+
+        _mock_status(status=503, text="Service Unavailable")
+
+        with pytest.raises(PicSureServerError):
+            connect(platform=BASE_URL, requires_auth=False)
+
+    @respx.mock
+    def test_validate_false_sends_nothing(self):
+        connect(platform=BASE_URL, requires_auth=False, validate=False)
+
+        assert len(respx.calls) == 0
 
 
 class TestUserFacingMessagesHaveNoEmDashes:
