@@ -463,6 +463,31 @@ class PicSureClient:
         response = self._request("GET", path, retry=retry, **_timeout_kwargs(timeout))
         return _decode_json(response, path)
 
+    def get_text(
+        self,
+        path: str,
+        *,
+        timeout: float | None = None,
+        retry: bool = True,
+    ) -> str:
+        """Send GET request and return the response body as text.
+
+        For routes that answer in plain text rather than JSON, such as the
+        gateway's ``/system/status``.
+
+        Args:
+            path: Request path, relative to the client's base URL.
+            timeout: Per-request deadline in seconds, overriding the
+                session-wide one.
+            retry: Whether a transport failure or 5xx may be sent once
+                more.  ``False`` caps the call at a single attempt.
+
+        Returns:
+            The decoded body, unmodified.
+        """
+        response = self._request("GET", path, retry=retry, **_timeout_kwargs(timeout))
+        return response.text
+
     def post_json(self, path: str, body: RequestBody | None = None) -> JsonBody:
         """Send POST request with JSON body and return parsed JSON.
 
