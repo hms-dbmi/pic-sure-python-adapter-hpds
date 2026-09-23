@@ -18,9 +18,9 @@ class TestParsePhenotypicLeaf:
         }
         result = _parse_phenotypic(node)
         assert isinstance(result, Clause)
-        assert result.keys == ["\\phs1\\sex\\"]
+        assert result.keys == ("\\phs1\\sex\\",)
         assert result.type == PhenotypicFilterType.FILTER
-        assert result.categories == ["Male"]
+        assert result.categories == ("Male",)
         assert result.min is None
         assert result.max is None
 
@@ -48,7 +48,7 @@ class TestParsePhenotypicLeaf:
         result = _parse_phenotypic(node)
         assert isinstance(result, Clause)
         assert result.type == PhenotypicFilterType.REQUIRE
-        assert result.keys == ["\\phs1\\bmi\\"]
+        assert result.keys == ("\\phs1\\bmi\\",)
 
     def test_any_record_of_leaf(self):
         node = {
@@ -236,15 +236,22 @@ class TestToQuery:
 import httpx
 import respx
 
+from picsure._services._hpds_paths import query_metadata_path
 from picsure._services.query_load import load_query
 from picsure._transport.client import PicSureClient
-from picsure.errors import PicSureAuthError, PicSureConnectionError
+from picsure.errors import (
+    PicSureAuthError,
+    PicSureConnectionError,
+    PicSureConsentDeniedError,
+    PicSureConsentLookupError,
+)
 
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
 QUERY_ID = "11111111-2222-3333-4444-555555555555"
-META_URL = f"{BASE_URL}/picsure/query/{QUERY_ID}/metadata"
-V3_META_URL = f"{BASE_URL}/picsure/v3/query/{QUERY_ID}/metadata"
+META_URL = f"{BASE_URL}" + query_metadata_path("auth", QUERY_ID)
+# The retired non-versioned route, used only as a negative in routing tests.
+LEGACY_META_URL = f"{BASE_URL}/picsure/hpds/auth/query/{QUERY_ID}/metadata"
 
 
 def _make_client() -> PicSureClient:
@@ -302,7 +309,7 @@ class TestLoadQueryHappyPath:
             }
         )
         respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
-        result = load_query(_make_client(), QUERY_ID)
+        result = load_query(_make_client(), QUERY_ID, backend="auth")
         assert isinstance(result, Clause)
         assert result.type == PhenotypicFilterType.FILTER
 
@@ -319,7 +326,7 @@ class TestLoadQueryHappyPath:
             }
         )
         respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
-        result = load_query(_make_client(), QUERY_ID)
+        result = load_query(_make_client(), QUERY_ID, backend="auth")
         assert isinstance(result, Query)
         assert result.includeConcepts == ("\\phs1\\out\\",)
 
@@ -344,15 +351,15 @@ class TestLoadQueryHappyPath:
             inner_query_as_string=True,
         )
         respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
-        result = load_query(_make_client(), QUERY_ID)
+        result = load_query(_make_client(), QUERY_ID, backend="auth")
         assert isinstance(result, Query)
         assert result.includeConcepts == ("\\phs1\\out\\",)
 
     @respx.mock
-    def test_always_uses_legacy_path(self):
-        # The v3 metadata endpoint is broken on BDC; loadQueryByID pins
-        # reads to the legacy path for every deployment, regardless of
-        # how the session was connected.
+    def test_always_uses_versioned_path(self):
+        # Query metadata is served under the versioned (/v3) query routes;
+        # loadQueryByID pins reads to the versioned metadata route for every
+        # deployment, regardless of how the session was connected.
         body = _envelope(
             {
                 "select": [],
@@ -363,11 +370,15 @@ class TestLoadQueryHappyPath:
                 "id": None,
             }
         )
-        legacy = respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
-        v3 = respx.get(V3_META_URL).mock(return_value=httpx.Response(200, json=body))
-        load_query(_make_client(), QUERY_ID)
-        assert legacy.called
-        assert not v3.called
+        versioned = respx.get(META_URL).mock(
+            return_value=httpx.Response(200, json=body)
+        )
+        legacy = respx.get(LEGACY_META_URL).mock(
+            return_value=httpx.Response(200, json=body)
+        )
+        load_query(_make_client(), QUERY_ID, backend="auth")
+        assert versioned.called
+        assert not legacy.called
 
 
 class TestLoadQueryStrictness:
@@ -390,7 +401,7 @@ class TestLoadQueryStrictness:
         )
         respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
         with pytest.raises(PicSureValidationError, match="NOT"):
-            load_query(_make_client(), QUERY_ID)
+            load_query(_make_client(), QUERY_ID, backend="auth")
 
     @respx.mock
     def test_malformed_genomic_filter_missing_key_raises(self):
@@ -406,7 +417,7 @@ class TestLoadQueryStrictness:
         )
         respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
         with pytest.raises(PicSureQueryError, match="key"):
-            load_query(_make_client(), QUERY_ID)
+            load_query(_make_client(), QUERY_ID, backend="auth")
 
 
 class TestLoadQueryGenomic:
@@ -425,7 +436,7 @@ class TestLoadQueryGenomic:
             }
         )
         respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
-        result = load_query(_make_client(), QUERY_ID)
+        result = load_query(_make_client(), QUERY_ID, backend="auth")
         assert isinstance(result, Query)
         assert result.phenotypicFilter is None
         assert result.genomicFilters == (
@@ -451,7 +462,7 @@ class TestLoadQueryGenomic:
         )
         respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
         with pytest.raises(PicSureValidationError, match="numeric range"):
-            load_query(_make_client(), QUERY_ID)
+            load_query(_make_client(), QUERY_ID, backend="auth")
 
     @respx.mock
     def test_filter_with_any_min_max_rejected(self):
@@ -471,7 +482,7 @@ class TestLoadQueryGenomic:
         )
         respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
         with pytest.raises(PicSureValidationError, match="numeric range"):
-            load_query(_make_client(), QUERY_ID)
+            load_query(_make_client(), QUERY_ID, backend="auth")
 
     @respx.mock
     def test_rejects_variant_spec_genomic_filter(self):
@@ -491,31 +502,142 @@ class TestLoadQueryGenomic:
         )
         respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
         with pytest.raises(PicSureValidationError, match="SNP"):
-            load_query(_make_client(), QUERY_ID)
+            load_query(_make_client(), QUERY_ID, backend="auth")
+
+
+class TestLoadQueryIdValidation:
+    @pytest.mark.parametrize(
+        "bad_id",
+        [
+            "abc-123",
+            "not-a-uuid",
+            "11111111-2222-3333-4444",
+            "../../psama/user/me",
+            "11111111-2222-3333-4444-555555555555/../../admin",
+            "1' OR '1'='1",
+            "id with spaces",
+        ],
+    )
+    def test_non_uuid_rejected_before_http(self, bad_id):
+        """No respx mock is installed, so reaching the network raises otherwise."""
+        with pytest.raises(PicSureValidationError, match="not a valid query ID"):
+            load_query(_make_client(), bad_id, backend="auth")
+
+    def test_error_shows_a_uuid_example(self):
+        with pytest.raises(PicSureValidationError) as excinfo:
+            load_query(_make_client(), "abc-123", backend="auth")
+        assert "3fa85f64-5717-4562-b3fc-2c963f66afa6" in str(excinfo.value)
+
+    @respx.mock
+    def test_uppercase_uuid_normalized_to_canonical_form(self):
+        route = respx.get(META_URL).mock(
+            return_value=httpx.Response(
+                200,
+                json=_envelope(
+                    {
+                        "select": ["\\phs1\\sex\\"],
+                        "phenotypicClause": None,
+                    }
+                ),
+            )
+        )
+        load_query(_make_client(), QUERY_ID.upper(), backend="auth")
+        assert route.called
+        assert QUERY_ID in str(route.calls[0].request.url)
+
+    @respx.mock
+    def test_braced_uuid_normalized(self):
+        route = respx.get(META_URL).mock(
+            return_value=httpx.Response(
+                200,
+                json=_envelope({"select": ["\\phs1\\sex\\"], "phenotypicClause": None}),
+            )
+        )
+        load_query(_make_client(), f"{{{QUERY_ID}}}", backend="auth")
+        assert QUERY_ID in str(route.calls[0].request.url)
+
+    @respx.mock
+    def test_surrounding_whitespace_stripped(self):
+        route = respx.get(META_URL).mock(
+            return_value=httpx.Response(
+                200,
+                json=_envelope({"select": ["\\phs1\\sex\\"], "phenotypicClause": None}),
+            )
+        )
+        load_query(_make_client(), f"  {QUERY_ID}  ", backend="auth")
+        assert route.called
+
+    def test_path_traversal_cannot_reach_another_route(self):
+        """Validation rejects the id before any request is built."""
+        with pytest.raises(PicSureValidationError):
+            load_query(
+                _make_client(), "../../../operations/dataset/named", backend="auth"
+            )
 
 
 class TestLoadQueryErrors:
     def test_blank_id_raises_before_http(self):
         with pytest.raises(PicSureValidationError, match="query ID"):
-            load_query(_make_client(), "   ")
+            load_query(_make_client(), "   ", backend="auth")
 
     @respx.mock
     def test_404_raises_validation_with_friendly_message(self):
         respx.get(META_URL).mock(return_value=httpx.Response(404, text="not found"))
         with pytest.raises(PicSureValidationError, match="No saved query found"):
-            load_query(_make_client(), QUERY_ID)
+            load_query(_make_client(), QUERY_ID, backend="auth")
 
     @respx.mock
     def test_401_raises_auth_error(self):
         respx.get(META_URL).mock(return_value=httpx.Response(401, text="unauthorized"))
         with pytest.raises(PicSureAuthError):
-            load_query(_make_client(), QUERY_ID)
+            load_query(_make_client(), QUERY_ID, backend="auth")
+
+    @respx.mock
+    def test_consent_denied_raises_typed_error(self):
+        respx.get(META_URL).mock(
+            return_value=httpx.Response(
+                403,
+                json={
+                    "errorType": "consent_denied",
+                    "message": "You no longer have consent for this saved result",
+                },
+            )
+        )
+
+        with pytest.raises(PicSureConsentDeniedError) as exc_info:
+            load_query(_make_client(), QUERY_ID, backend="auth")
+
+        exc = exc_info.value
+        assert exc.status_code == 403
+        assert exc.error_type == "consent_denied"
+        assert exc.server_message == "You no longer have consent for this saved result"
+
+    @respx.mock
+    def test_consent_lookup_failure_raises_typed_error_without_retry(self):
+        route = respx.get(META_URL).mock(
+            return_value=httpx.Response(
+                502,
+                json={
+                    "errorType": "consent_lookup_failed",
+                    "message": "Unable to resolve caller consents",
+                },
+            )
+        )
+
+        with pytest.raises(PicSureConsentLookupError) as exc_info:
+            load_query(_make_client(), QUERY_ID, backend="auth")
+
+        exc = exc_info.value
+        assert exc.status_code == 502
+        assert exc.error_type == "consent_lookup_failed"
+        assert exc.server_message == "Unable to resolve caller consents"
+        assert route.call_count == 1
 
     @respx.mock
     def test_5xx_raises_connection_error(self):
         respx.get(META_URL).mock(return_value=httpx.Response(503, text="oops"))
         with pytest.raises(PicSureConnectionError):
-            load_query(_make_client(), QUERY_ID)
+            load_query(_make_client(), QUERY_ID, backend="auth")
 
     @respx.mock
     def test_missing_result_metadata_raises_query_error(self):
@@ -523,7 +645,7 @@ class TestLoadQueryErrors:
             return_value=httpx.Response(200, json={"status": "COMPLETED"})
         )
         with pytest.raises(PicSureQueryError, match="resultMetadata"):
-            load_query(_make_client(), QUERY_ID)
+            load_query(_make_client(), QUERY_ID, backend="auth")
 
     @respx.mock
     def test_missing_query_json_raises_query_error(self):
@@ -531,7 +653,7 @@ class TestLoadQueryErrors:
             return_value=httpx.Response(200, json={"resultMetadata": {}})
         )
         with pytest.raises(PicSureQueryError, match="queryJson"):
-            load_query(_make_client(), QUERY_ID)
+            load_query(_make_client(), QUERY_ID, backend="auth")
 
     @respx.mock
     def test_missing_inner_query_raises_query_error(self):
@@ -542,7 +664,7 @@ class TestLoadQueryErrors:
         }
         respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
         with pytest.raises(PicSureQueryError, match="query"):
-            load_query(_make_client(), QUERY_ID)
+            load_query(_make_client(), QUERY_ID, backend="auth")
 
     @respx.mock
     def test_empty_select_and_null_phenotypic_raises_query_error(self):
@@ -558,7 +680,7 @@ class TestLoadQueryErrors:
         )
         respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
         with pytest.raises(PicSureQueryError, match="empty"):
-            load_query(_make_client(), QUERY_ID)
+            load_query(_make_client(), QUERY_ID, backend="auth")
 
     @respx.mock
     def test_inner_query_string_with_invalid_json_raises_query_error(self):
@@ -574,4 +696,4 @@ class TestLoadQueryErrors:
         }
         respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
         with pytest.raises(PicSureQueryError, match="JSON"):
-            load_query(_make_client(), QUERY_ID)
+            load_query(_make_client(), QUERY_ID, backend="auth")

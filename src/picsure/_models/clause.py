@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import Enum
+
+from picsure.errors import PicSureValidationError
 
 
 class PhenotypicFilterType(Enum):
@@ -48,14 +51,40 @@ class Clause:
 
     **Wire format.** :meth:`to_query_json` emits a v3 ``PhenotypicFilter``
     leaf (or an ``OR`` ``PhenotypicSubquery`` of leaves for multi-key
-    clauses) per the ``/picsure/v3/query/sync`` contract.
+    clauses) per the ``/picsure/hpds/{auth,open}/v3/query`` contract.
+
+    **Immutability.** The dataclass is frozen and its collection fields are
+    tuples, so a clause is hashable and usable as a dict key or set member.
+    ``keys`` and ``categories`` accept any sequence of strings, or a bare
+    string meaning one element, and always store a tuple. Any iterable
+    works at runtime. A list field would have
+    left the frozen declaration only skin-deep, with ``hash()`` raising on a
+    supposedly immutable value object.
+
+    **Emptiness.** A clause with no keys is refused here, not only in
+    ``buildClause``. It serializes to ``phenotypicClauses: []``, the
+    payload the query service rejects for an empty group, and nesting it
+    in a group beside a real sibling hides that from the group's own
+    non-empty check, because the group still has one child.
     """
 
-    keys: list[str]
+    keys: Sequence[str]
     type: PhenotypicFilterType
-    categories: list[str] | None = None
+    categories: Sequence[str] | None = None
     min: float | None = None
     max: float | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "keys", _as_tuple(self.keys))
+        if not self.keys:
+            raise PicSureValidationError(
+                "Clause must have at least one concept path. A clause with no "
+                "keys serializes to an empty 'phenotypicClauses' list, which "
+                "the query service does not accept. Pass the concept path or "
+                "paths the clause filters on."
+            )
+        if self.categories is not None:
+            object.__setattr__(self, "categories", _as_tuple(self.categories))
 
     def concept_paths(self) -> list[str]:
         """Concept paths this clause references, in order.
@@ -96,3 +125,14 @@ class Clause:
             if self.max is not None:
                 leaf["max"] = self.max
         return leaf
+
+
+def _as_tuple(value: Iterable[str] | str) -> tuple[str, ...]:
+    """Normalize a concept-path or category argument to a tuple of strings.
+
+    A bare string becomes a one-element tuple rather than a tuple of its
+    characters, which is the only reading that is ever meant.
+    """
+    if isinstance(value, str):
+        return (value,)
+    return tuple(value)

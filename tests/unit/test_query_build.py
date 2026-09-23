@@ -15,15 +15,15 @@ class TestBuildClause:
             categories="Male",
         )
         assert isinstance(clause, Clause)
-        assert clause.keys == ["\\phs1\\sex\\"]
-        assert clause.categories == ["Male"]
+        assert clause.keys == ("\\phs1\\sex\\",)
+        assert clause.categories == ("Male",)
 
     def test_keys_list_preserved(self):
         clause = buildClause(
             ["\\p1\\", "\\p2\\"],
             type=PhenotypicFilterType.ANYRECORD,
         )
-        assert clause.keys == ["\\p1\\", "\\p2\\"]
+        assert clause.keys == ("\\p1\\", "\\p2\\")
 
     def test_categories_list_preserved(self):
         clause = buildClause(
@@ -31,7 +31,7 @@ class TestBuildClause:
             type=PhenotypicFilterType.FILTER,
             categories=["Male", "Female"],
         )
-        assert clause.categories == ["Male", "Female"]
+        assert clause.categories == ("Male", "Female")
 
     def test_continuous_filter_min_only(self):
         clause = buildClause(
@@ -135,6 +135,60 @@ class TestBuildClauseValidation:
             buildClause([], type=PhenotypicFilterType.FILTER, categories="x")
 
 
+class TestBuildClauseEmptyCategories:
+    def test_an_empty_category_list_is_no_criteria_at_all(self):
+        with pytest.raises(
+            PicSureValidationError, match="require at least one of: categories"
+        ):
+            buildClause("\\path\\", type=PhenotypicFilterType.FILTER, categories=[])
+
+    def test_an_empty_category_list_does_not_conflict_with_min(self):
+        clause = buildClause(
+            "\\path\\",
+            type=PhenotypicFilterType.FILTER,
+            categories=[],
+            min=40.0,
+        )
+
+        assert clause.categories is None
+        assert clause.min == 40.0
+
+    def test_an_empty_category_list_never_reaches_the_wire_as_empty_values(self):
+        clause = buildClause(
+            "\\path\\",
+            type=PhenotypicFilterType.FILTER,
+            categories=[],
+            max=80.0,
+        )
+
+        assert "values" not in clause.to_query_json()
+
+    def test_a_blank_category_string_is_refused(self):
+        with pytest.raises(PicSureValidationError, match="empty or blank strings"):
+            buildClause("\\path\\", type=PhenotypicFilterType.FILTER, categories="")
+
+    def test_a_blank_category_in_a_list_is_refused(self):
+        with pytest.raises(PicSureValidationError, match="empty or blank strings"):
+            buildClause("\\path\\", type=PhenotypicFilterType.FILTER, categories=[""])
+
+    def test_a_whitespace_only_category_is_refused(self):
+        with pytest.raises(PicSureValidationError, match="empty or blank strings"):
+            buildClause(
+                "\\path\\",
+                type=PhenotypicFilterType.FILTER,
+                categories=["Male", "   "],
+            )
+
+    def test_real_categories_still_build_a_values_filter(self):
+        clause = buildClause(
+            "\\path\\",
+            type=PhenotypicFilterType.FILTER,
+            categories=["Male", "Female"],
+        )
+
+        assert clause.to_query_json()["values"] == ["Male", "Female"]
+
+
 class TestSelectRemoved:
     def test_select_member_is_gone(self):
         assert not hasattr(PhenotypicFilterType, "SELECT")
@@ -173,6 +227,35 @@ class TestBuildClauseGroup:
         with pytest.raises(PicSureValidationError, match="at least one"):
             buildClauseGroup([])
 
+    def test_bare_clause_raises_the_documented_validation_error(self):
+        clause = buildClause("\\p1\\", type=PhenotypicFilterType.FILTER, categories="A")
+
+        with pytest.raises(PicSureValidationError, match="Clause or ClauseGroup"):
+            buildClauseGroup(clause)
+
+    def test_bare_group_raises_the_documented_validation_error(self):
+        clause = buildClause("\\p1\\", type=PhenotypicFilterType.FILTER, categories="A")
+        inner = buildClauseGroup([clause], operator=GroupOperator.OR)
+
+        with pytest.raises(PicSureValidationError, match="bare ClauseGroup"):
+            buildClauseGroup(inner)
+
+    def test_a_string_raises_instead_of_becoming_character_children(self):
+        with pytest.raises(PicSureValidationError, match="not a string"):
+            buildClauseGroup("abc")
+
+    def test_a_loaded_query_among_the_children_raises(self):
+        """A saved query loads as a Query, which is not composable."""
+        clause = buildClause("\\p1\\", type=PhenotypicFilterType.FILTER, categories="A")
+        saved = buildQuery(phenotypicFilter=clause, includeConcepts=["\\p2\\"])
+
+        with pytest.raises(PicSureValidationError) as exc_info:
+            buildClauseGroup([saved, clause])
+
+        message = str(exc_info.value)
+        assert "Query" in message
+        assert "phenotypicFilter" in message
+
     def test_copies_caller_list(self):
         c1 = buildClause("\\p1\\", type=PhenotypicFilterType.FILTER, categories="A")
         c2 = buildClause("\\p2\\", type=PhenotypicFilterType.FILTER, categories="B")
@@ -203,6 +286,40 @@ class TestBuildClauseGroup:
         assert children[0]["phenotypicFilterType"] == "FILTER"  # type: ignore[index]
         assert children[0]["conceptPath"] == "\\sex\\"  # type: ignore[index]
         assert children[2]["operator"] == "OR"  # type: ignore[index]
+
+
+class TestBuildClauseGroupNonSequence:
+    def test_none_names_the_argument_type(self):
+        with pytest.raises(PicSureValidationError, match="NoneType") as info:
+            buildClauseGroup(None)  # type: ignore[arg-type]
+
+        assert "at least one clause" not in str(info.value)
+
+    def test_an_include_only_saved_query_filter_is_named_as_a_missing_sequence(self):
+        include_only = buildQuery(includeConcepts=["\\p1\\"])
+
+        with pytest.raises(PicSureValidationError, match="cannot be iterated"):
+            buildClauseGroup(include_only.phenotypicFilter)  # type: ignore[arg-type]
+
+    def test_an_empty_string_names_the_type(self):
+        with pytest.raises(PicSureValidationError, match="not a string"):
+            buildClauseGroup("")  # type: ignore[arg-type]
+
+    def test_a_number_names_the_type(self):
+        with pytest.raises(PicSureValidationError, match="not a int"):
+            buildClauseGroup(0)  # type: ignore[arg-type]
+
+    def test_an_empty_list_keeps_its_own_message(self):
+        with pytest.raises(PicSureValidationError) as info:
+            buildClauseGroup([])
+
+        assert str(info.value) == "A clause group must contain at least one clause."
+
+    def test_an_empty_tuple_keeps_the_same_message(self):
+        with pytest.raises(PicSureValidationError) as info:
+            buildClauseGroup(())
+
+        assert str(info.value) == "A clause group must contain at least one clause."
 
 
 class TestBuildQuery:
@@ -440,4 +557,142 @@ class TestGenomicFilterKeyEnum:
         with pytest.raises(
             PicSureValidationError, match="not a valid variant severity"
         ):
-            buildGenomicFilter(GenomicFilterKey.VARIANT_SEVERITY, values="HIGH")
+            buildGenomicFilter(GenomicFilterKey.VARIANT_SEVERITY, values="Catastrophic")
+
+    def test_unknown_severity_message_names_both_vocabularies(self):
+        """The rejection names both vocabularies, so discovery output fits."""
+        from picsure import GenomicFilterKey, PicSureValidationError, buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError) as exc_info:
+            buildGenomicFilter(GenomicFilterKey.VARIANT_SEVERITY, values="Catastrophic")
+
+        message = str(exc_info.value)
+        assert "HIGH" in message
+        assert "MODIFIER" in message
+        assert "High Severity" in message
+        assert "searchGenomicValues" in message
+        assert "Variant_consequence_calculated" in message
+
+
+class TestVariantSeverityImpactValues:
+    """The backend's own ``Variant_severity`` vocabulary.
+
+    ``searchGenomicValues("Variant_severity")`` returns HIGH / MODERATE /
+    LOW / MODIFIER and the backend applies the key verbatim, so these are
+    sent through unchanged rather than expanded. Verified live: each of the
+    four returns a distinct non-zero count, and a bogus key or value returns
+    0, so the filter is genuinely applied.
+    """
+
+    @pytest.mark.parametrize("impact", ["HIGH", "MODERATE", "LOW", "MODIFIER"])
+    def test_impact_value_passes_through_on_severity_key(self, impact):
+        from picsure import GenomicFilterKey, buildGenomicFilter
+
+        gf = buildGenomicFilter(GenomicFilterKey.VARIANT_SEVERITY, values=impact)
+        assert gf.key == "Variant_severity"
+        assert gf.values == (impact,)
+
+    def test_impact_values_accepted_as_a_sequence(self):
+        from picsure import GenomicFilterKey, buildGenomicFilter
+
+        gf = buildGenomicFilter(
+            GenomicFilterKey.VARIANT_SEVERITY, values=["HIGH", "MODERATE"]
+        )
+        assert gf.key == "Variant_severity"
+        assert gf.values == ("HIGH", "MODERATE")
+
+    def test_impact_matching_strips_whitespace_only(self):
+        from picsure import buildGenomicFilter
+
+        gf = buildGenomicFilter("Variant_severity", values=["  HIGH ", "MODERATE"])
+        assert gf.key == "Variant_severity"
+        assert gf.values == ("HIGH", "MODERATE")
+
+    @pytest.mark.parametrize(
+        ("value", "spelling"),
+        [("High", "HIGH"), ("low", "LOW"), ("low severity", "Low Severity")],
+    )
+    def test_case_mismatch_is_rejected_with_the_accepted_spelling(
+        self, value, spelling
+    ):
+        from picsure import PicSureValidationError, buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError) as exc_info:
+            buildGenomicFilter("Variant_severity", values=value)
+
+        message = str(exc_info.value)
+        assert f"{value!r} is not a valid variant severity" in message
+        assert f"The accepted spelling is {spelling!r}" in message
+        assert "HIGH, MODERATE, LOW, MODIFIER" in message
+
+    def test_medium_is_rejected_pointing_at_moderate(self):
+        from picsure import PicSureValidationError, buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError) as exc_info:
+            buildGenomicFilter("Variant_severity", values="MEDIUM")
+
+        assert "The accepted spelling is 'MODERATE'" in str(exc_info.value)
+
+    def test_unknown_value_gets_no_spelling_hint(self):
+        from picsure import PicSureValidationError, buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError) as exc_info:
+            buildGenomicFilter("Variant_severity", values="Catastrophic")
+
+        assert "accepted spelling" not in str(exc_info.value)
+
+    def test_duplicate_impacts_are_collapsed(self):
+        from picsure import buildGenomicFilter
+
+        gf = buildGenomicFilter("Variant_severity", values=["HIGH", " HIGH", "HIGH"])
+        assert gf.values == ("HIGH",)
+
+    def test_modifier_is_unreachable_through_severity_buckets(self):
+        """MODIFIER has patients on the live stack but no bucket covers it.
+
+        The 32 patients come through intron_variant, so the impact vocabulary
+        is the only way to express it.
+        """
+        from picsure._models.genomic_filter import (
+            known_severities,
+            severity_consequences,
+        )
+
+        covered = {
+            consequence
+            for bucket in known_severities()
+            for consequence in severity_consequences(bucket)
+        }
+        assert "intron_variant" not in covered
+
+    def test_mixing_vocabularies_in_one_filter_is_rejected(self):
+        from picsure import GenomicFilterKey, PicSureValidationError, buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError, match="cannot mix"):
+            buildGenomicFilter(
+                GenomicFilterKey.VARIANT_SEVERITY,
+                values=["HIGH", "Low Severity"],
+            )
+
+    def test_mixing_message_explains_the_two_keys(self):
+        from picsure import PicSureValidationError, buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError) as exc_info:
+            buildGenomicFilter("Variant_severity", values=["HIGH", "Low Severity"])
+
+        message = str(exc_info.value)
+        assert "'Variant_severity'" in message
+        assert "'Variant_consequence_calculated'" in message
+
+    def test_buckets_still_expand_unchanged(self):
+        from picsure import VariantSeverity, buildGenomicFilter
+
+        gf = buildGenomicFilter("Variant_severity", values=VariantSeverity.HIGH)
+        assert gf.key == "Variant_consequence_calculated"
+        assert "stop_gained" in gf.values
+
+    def test_empty_values_sequence_is_rejected(self):
+        from picsure import PicSureValidationError, buildGenomicFilter
+
+        with pytest.raises(PicSureValidationError, match="non-empty"):
+            buildGenomicFilter("Gene_with_variant", values=[])

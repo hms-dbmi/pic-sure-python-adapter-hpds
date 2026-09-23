@@ -6,8 +6,10 @@ from picsure._dev.config import DevConfig
 from picsure._transport.client import PicSureClient
 from picsure._transport.errors import (
     TransportConnectionError,
+    TransportError,
     TransportServerError,
 )
+from picsure.errors import PicSureServerError
 
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token-abc"
@@ -31,11 +33,11 @@ def test_get_json_emits_http_event_when_enabled():
     assert e.status == 200
     assert e.retry == 0
     assert e.error is None
-    assert e.bytes_out is not None and e.bytes_out > 0
+    assert e.bytes_received is not None and e.bytes_received > 0
 
 
 @respx.mock
-def test_post_json_emits_http_event_with_bytes_in():
+def test_post_json_emits_http_event_with_bytes_sent():
     respx.post(f"{BASE_URL}/picsure/search/abc").mock(
         return_value=httpx.Response(200, json={"results": []})
     )
@@ -46,7 +48,34 @@ def test_post_json_emits_http_event_with_bytes_in():
 
     events = cfg.buffer.snapshot()
     assert len(events) == 1
-    assert events[0].bytes_in is not None and events[0].bytes_in > 0
+    assert events[0].bytes_sent is not None and events[0].bytes_sent > 0
+
+
+@respx.mock
+def test_byte_counters_are_not_swapped():
+    """A small request against a large response pins the direction.
+
+    The two counters used to be called ``bytes_in`` / ``bytes_out`` with the
+    request size under ``bytes_in``, so an assertion that only checked
+    "both are positive" passed either way round. Sizing the two bodies
+    differently is what makes a swap fail.
+    """
+    small_request = {"q": "x"}
+    large_response = {"results": ["y" * 500]}
+    respx.post(f"{BASE_URL}/picsure/search/abc").mock(
+        return_value=httpx.Response(200, json=large_response)
+    )
+    cfg = DevConfig(enabled=True, max_events=10)
+    client = PicSureClient(base_url=BASE_URL, token=TOKEN, dev_config=cfg)
+
+    client.post_json("/picsure/search/abc", body=small_request)
+
+    event = cfg.buffer.snapshot()[0]
+    assert event.bytes_sent is not None
+    assert event.bytes_received is not None
+    assert event.bytes_sent < 100
+    assert event.bytes_received > 500
+    assert event.bytes_sent < event.bytes_received
 
 
 @respx.mock
@@ -174,4 +203,240 @@ def test_participant_query_body_not_logged():
     events = cfg.buffer.snapshot()
     http_events = [e for e in events if e.kind == "http"]
     assert http_events[-1].metadata.get("redacted") == "participant"
-    assert http_events[-1].bytes_out is not None and http_events[-1].bytes_out > 0
+    assert (
+        http_events[-1].bytes_received is not None
+        and http_events[-1].bytes_received > 0
+    )
+
+
+_QUERY_ID = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+
+
+def _job_paths() -> tuple[str, str, str]:
+    """Return the submit, status and result paths of a participant query."""
+    from picsure._services._hpds_paths import (
+        query_result_path,
+        query_status_path,
+        query_submit_path,
+    )
+
+    return (
+        query_submit_path("auth"),
+        query_status_path("auth", _QUERY_ID),
+        query_result_path("auth", _QUERY_ID),
+    )
+
+
+def _mock_job(result: httpx.Response) -> None:
+    submit_path, status_path, result_path = _job_paths()
+    respx.post(f"{BASE_URL}{submit_path}").mock(
+        return_value=httpx.Response(200, json={"picsureResultId": _QUERY_ID})
+    )
+    respx.post(f"{BASE_URL}{status_path}").mock(
+        return_value=httpx.Response(200, json={"status": "AVAILABLE"})
+    )
+    respx.post(f"{BASE_URL}{result_path}").mock(return_value=result)
+
+
+class TestStreamedDownloadEvents:
+    """A download that goes to disk must still be accounted for.
+
+    Participant and timestamp queries stream to a temporary file rather
+    than buffering the body, and the streaming helper does not go through
+    ``_request``.  Without its own event, switching those queries to the
+    streaming path silently removed them from the dev-mode buffer. The
+    submit and the status poll that precede the download are ordinary
+    buffered requests with events of their own.
+    """
+
+    @staticmethod
+    def _run(query_type: str, content: bytes, cfg: DevConfig):
+        from picsure._models.clause import Clause, PhenotypicFilterType
+        from picsure._services.query_run import run_query
+
+        _mock_job(httpx.Response(200, content=content))
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN, dev_config=cfg)
+        clause = Clause(
+            keys=["\\a\\b\\"], type=PhenotypicFilterType.FILTER, categories=["X"]
+        )
+        return run_query(client, clause, query_type, backend="auth")
+
+    @staticmethod
+    def _download_events(cfg: DevConfig) -> list:
+        _, _, result_path = _job_paths()
+        return [
+            e
+            for e in cfg.buffer.snapshot()
+            if e.kind == "http" and e.name == result_path
+        ]
+
+    @respx.mock
+    @pytest.mark.parametrize("query_type", ["participant", "timestamp"])
+    def test_a_streamed_query_emits_one_http_event_per_step(self, query_type):
+        cfg = DevConfig(enabled=True, max_events=10)
+
+        self._run(query_type, b"patient_id,age\nP1,42\n", cfg)
+
+        http_events = [e for e in cfg.buffer.snapshot() if e.kind == "http"]
+        assert [e.name for e in http_events] == list(_job_paths())
+        assert [e.status for e in http_events] == [200, 200, 200]
+
+    @respx.mock
+    def test_the_event_reports_the_bytes_written_to_disk(self):
+        cfg = DevConfig(enabled=True, max_events=10)
+        content = b"patient_id,age\nP1,42\nP2,51\n"
+
+        self._run("participant", content, cfg)
+
+        download = self._download_events(cfg)
+        assert len(download) == 1
+        assert download[0].bytes_received == len(content)
+
+    @respx.mock
+    def test_a_streamed_participant_body_is_still_marked_redacted(self):
+        """The buffered path marked these.
+
+        Without the mark a participant-bearing body looks safe to log.
+        Every step resends the participant-bearing body, so every step's
+        event carries the mark.
+        """
+        cfg = DevConfig(enabled=True, max_events=10)
+
+        self._run("participant", b"patient_id,age\nP1,42\n", cfg)
+
+        http_events = [e for e in cfg.buffer.snapshot() if e.kind == "http"]
+        assert len(http_events) == 3
+        assert all(e.metadata.get("redacted") == "participant" for e in http_events)
+
+    @respx.mock
+    def test_a_failed_download_emits_an_error_event(self):
+        from picsure._models.clause import Clause, PhenotypicFilterType
+        from picsure._services.query_run import run_query
+
+        _mock_job(httpx.Response(500, text="boom"))
+        cfg = DevConfig(enabled=True, max_events=10)
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN, dev_config=cfg)
+        clause = Clause(
+            keys=["\\a\\b\\"], type=PhenotypicFilterType.FILTER, categories=["X"]
+        )
+
+        with pytest.raises(PicSureServerError):
+            run_query(client, clause, "participant", backend="auth")
+
+        errors = [e for e in cfg.buffer.snapshot() if e.kind == "error"]
+        assert errors and errors[0].error == "TransportServerError"
+        assert errors[0].name == _job_paths()[2]
+
+    @respx.mock
+    def test_nothing_is_emitted_when_dev_mode_is_off(self):
+        cfg = DevConfig(enabled=False, max_events=10)
+
+        self._run("participant", b"patient_id,age\nP1,42\n", cfg)
+
+        assert cfg.buffer.snapshot() == []
+
+
+class _FailsMidStream(httpx.SyncByteStream):
+    """Response stream that yields one chunk, then dies like a reset."""
+
+    def __iter__(self):
+        yield b"first-chunk"
+        raise httpx.ReadError("Connection reset by peer")
+
+
+class TestStreamedFailureEvents:
+    """A streamed download is accounted for like a buffered request.
+
+    The buffered path records a 4xx/5xx as an http event carrying the
+    status and then an error event, records every retried attempt, and
+    never records a success it did not finish.  The streaming path must
+    match, or dev-mode statistics silently diverge for the largest
+    downloads.
+    """
+
+    URL = f"{BASE_URL}/download"
+
+    @staticmethod
+    def _client(cfg: DevConfig) -> PicSureClient:
+        return PicSureClient(base_url=BASE_URL, token=TOKEN, dev_config=cfg)
+
+    @respx.mock
+    @pytest.mark.parametrize(
+        ("status", "error_name"),
+        [(404, "TransportNotFoundError"), (500, "TransportServerError")],
+    )
+    def test_a_status_failure_emits_http_then_error(self, status, error_name, tmp_path):
+        respx.post(self.URL).mock(return_value=httpx.Response(status, text="boom"))
+        cfg = DevConfig(enabled=True, max_events=10)
+
+        with pytest.raises(TransportError):
+            self._client(cfg).post_raw_to_file("/download", tmp_path / "out")
+
+        events = cfg.buffer.snapshot()
+        assert [e.kind for e in events] == ["http", "error"]
+        assert events[0].status == status
+        assert events[0].bytes_received == len(b"boom")
+        assert events[1].error == error_name
+
+    @respx.mock
+    def test_a_retried_attempt_is_recorded_and_the_download_carries_the_retry(
+        self, tmp_path
+    ):
+        respx.post(self.URL).mock(
+            side_effect=[
+                httpx.ConnectError("refused"),
+                httpx.Response(200, content=b"col\n1\n"),
+            ]
+        )
+        cfg = DevConfig(enabled=True, max_events=10)
+
+        self._client(cfg).post_raw_to_file("/download", tmp_path / "out")
+
+        events = cfg.buffer.snapshot()
+        assert [(e.kind, e.retry) for e in events] == [("error", 0), ("http", 1)]
+        assert events[0].error == "ConnectError"
+        assert events[1].status == 200
+        assert events[1].bytes_received == len(b"col\n1\n")
+
+    @respx.mock
+    def test_a_mid_stream_failure_emits_one_error_event(self, tmp_path):
+        respx.post(self.URL).mock(
+            return_value=httpx.Response(200, stream=_FailsMidStream())
+        )
+        cfg = DevConfig(enabled=True, max_events=10)
+
+        with pytest.raises(TransportConnectionError):
+            self._client(cfg).post_raw_to_file("/download", tmp_path / "out")
+
+        events = cfg.buffer.snapshot()
+        assert [e.kind for e in events] == ["error"]
+        assert events[0].error == "TransportConnectionError"
+
+    @respx.mock
+    def test_a_failed_rename_emits_an_error_and_no_success(self, tmp_path):
+        respx.post(self.URL).mock(return_value=httpx.Response(200, content=b"data"))
+        target = tmp_path / "out"
+        target.mkdir()
+        (target / "occupant").write_text("x")
+        cfg = DevConfig(enabled=True, max_events=10)
+
+        with pytest.raises(OSError):
+            self._client(cfg).post_raw_to_file("/download", target)
+
+        events = cfg.buffer.snapshot()
+        assert [e.kind for e in events] == ["error"]
+        assert events[0].error in {"OSError", "IsADirectoryError", "PermissionError"}
+
+    @respx.mock
+    def test_a_completed_download_emits_one_http_event_after_the_file_lands(
+        self, tmp_path
+    ):
+        respx.post(self.URL).mock(return_value=httpx.Response(200, content=b"data"))
+        cfg = DevConfig(enabled=True, max_events=10)
+        target = tmp_path / "out"
+
+        self._client(cfg).post_raw_to_file("/download", target)
+
+        events = cfg.buffer.snapshot()
+        assert [(e.kind, e.status, e.retry) for e in events] == [("http", 200, 0)]
+        assert target.read_bytes() == b"data"

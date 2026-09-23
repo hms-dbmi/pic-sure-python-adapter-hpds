@@ -1,3 +1,8 @@
+import json
+import ssl
+from pathlib import Path
+from unittest.mock import patch
+
 import httpx
 import pytest
 import respx
@@ -5,23 +10,49 @@ import respx
 from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.clause_group import ClauseGroup, GroupOperator
 from picsure._models.count_result import CountResult
+from picsure._models.genomic_filter import GenomicFilter
 from picsure._models.query import Query
 from picsure._models.query_type import QueryType
-from picsure._models.resource import Resource
 from picsure._models.session import Session
-from picsure._services.query_run import _resolve_query_type, run_query
+from picsure._services._hpds_paths import query_prefix
+from picsure._services.query_run import (
+    _resolve_query_type,
+    run_async_query_to_file,
+    run_query,
+)
 from picsure._transport.client import PicSureClient
+from picsure._transport.errors import TransportConsentLookupError, TransportServerError
 from picsure.errors import (
+    PicSureAuthenticationError,
+    PicSureAuthError,
+    PicSureAuthorizationError,
     PicSureConnectionError,
+    PicSureConsentDeniedError,
+    PicSureConsentLookupError,
+    PicSureError,
     PicSureQueryError,
+    PicSureServerError,
+    PicSureTLSError,
     PicSureValidationError,
 )
 
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
-RESOURCE_UUID = "resource-uuid-aaaa-1111"
-QUERY_URL = f"{BASE_URL}/picsure/v3/query/sync"
-LEGACY_QUERY_URL = f"{BASE_URL}/picsure/query/sync"
+QUERY_URL = f"{BASE_URL}{query_prefix('auth', v3=True)}/query/sync"
+OPEN_QUERY_URL = f"{BASE_URL}{query_prefix('open', v3=True)}/query/sync"
+QUERY_ID = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+
+
+def _async_urls(backend: str) -> tuple[str, str, str]:
+    """Return the submit, status and result URLs of the async query flow."""
+    prefix = f"{BASE_URL}{query_prefix(backend, v3=True)}/query"
+    return prefix, f"{prefix}/{QUERY_ID}/status", f"{prefix}/{QUERY_ID}/result"
+
+
+SUBMIT_URL, STATUS_URL, RESULT_URL = _async_urls("auth")
+OPEN_SUBMIT_URL, OPEN_STATUS_URL, OPEN_RESULT_URL = _async_urls("open")
+
+SLEEP = "picsure._services.query_run.time.sleep"
 
 
 def _make_client() -> PicSureClient:
@@ -34,12 +65,370 @@ def _simple_clause() -> Clause:
     )
 
 
+def _submit_ok() -> httpx.Response:
+    return httpx.Response(200, json={"picsureResultId": QUERY_ID})
+
+
+def _status(value: str) -> httpx.Response:
+    return httpx.Response(200, json={"status": value})
+
+
+def _mock_async_result(
+    content: bytes, *, backend: str = "auth", statuses: tuple[str, ...] = ("AVAILABLE",)
+) -> tuple[respx.Route, respx.Route, respx.Route]:
+    """Mock the submit, status and result routes of one async query.
+
+    ``statuses`` is what successive polls answer; the last one is repeated
+    for any poll after that, so a single ``AVAILABLE`` serves a happy path.
+    """
+    submit_url, status_url, result_url = _async_urls(backend)
+    submit = respx.post(submit_url).mock(return_value=_submit_ok())
+    status = respx.post(status_url).mock(
+        side_effect=[_status(value) for value in statuses[:-1]]
+        + [_status(statuses[-1])] * 50
+    )
+    result = respx.post(result_url).mock(
+        return_value=httpx.Response(200, content=content)
+    )
+    return submit, status, result
+
+
+def _request_bodies(route: respx.Route) -> list[dict]:
+    return [json.loads(call.request.content) for call in route.calls]
+
+
+def _simple_body(result_type: str = "DATAFRAME") -> dict[str, object]:
+    return {"query": {"expectedResultType": result_type}}
+
+
+class TestRunAsyncQueryToFile:
+    """The shared submit, poll and download loop."""
+
+    @respx.mock
+    def test_downloads_the_result_when_the_first_poll_is_available(self, tmp_path):
+        _mock_async_result(b"patient_id\nP001\n")
+        target = tmp_path / "out.csv"
+
+        with patch(SLEEP) as sleep_mock:
+            run_async_query_to_file(
+                _make_client(), "auth", _simple_body(), target, operation="the query"
+            )
+
+        assert target.read_bytes() == b"patient_id\nP001\n"
+        assert sleep_mock.call_count == 0
+
+    @respx.mock
+    def test_the_first_poll_happens_before_any_sleep(self, tmp_path):
+        _, status, _ = _mock_async_result(b"x", statuses=("PENDING", "AVAILABLE"))
+        order: list[str] = []
+        status.side_effect = lambda request: (
+            order.append("poll"),
+            _status("PENDING" if order.count("poll") == 1 else "AVAILABLE"),
+        )[1]
+
+        with patch(SLEEP, side_effect=lambda _s: order.append("sleep")):
+            run_async_query_to_file(
+                _make_client(),
+                "auth",
+                _simple_body(),
+                tmp_path / "out.csv",
+                operation="the query",
+            )
+
+        assert order == ["poll", "sleep", "poll"]
+
+    @respx.mock
+    def test_sleeps_double_between_polls(self, tmp_path):
+        _mock_async_result(b"x", statuses=("QUEUED", "PENDING", "AVAILABLE"))
+
+        with patch(SLEEP) as sleep_mock:
+            run_async_query_to_file(
+                _make_client(),
+                "auth",
+                _simple_body(),
+                tmp_path / "out.csv",
+                operation="the query",
+            )
+
+        assert [call.args[0] for call in sleep_mock.call_args_list] == [1.0, 2.0]
+
+    @respx.mock
+    def test_the_sleep_caps_at_ten_seconds(self, tmp_path):
+        _mock_async_result(b"x", statuses=("PENDING",) * 6 + ("AVAILABLE",))
+
+        with patch(SLEEP) as sleep_mock:
+            run_async_query_to_file(
+                _make_client(),
+                "auth",
+                _simple_body(),
+                tmp_path / "out.csv",
+                operation="the query",
+            )
+
+        intervals = [call.args[0] for call in sleep_mock.call_args_list]
+        assert intervals == [1.0, 2.0, 4.0, 8.0, 10.0, 10.0]
+
+    @respx.mock
+    def test_the_budget_is_the_client_timeout(self, tmp_path, clock):
+        _mock_async_result(b"x", statuses=("PENDING",))
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN, timeout=5.0)
+        target = tmp_path / "out.csv"
+
+        with pytest.raises(PicSureConnectionError) as info:
+            run_async_query_to_file(
+                client, "auth", _simple_body(), target, operation="the query"
+            )
+
+        message = str(info.value)
+        assert "the query" in message
+        assert QUERY_ID in message
+        assert "5 seconds" in message
+        assert clock.sleeps == [1.0, 2.0, 2.0]
+        assert not target.exists()
+
+    @respx.mock
+    def test_the_last_sleep_is_clamped_to_the_remaining_budget(self, tmp_path, clock):
+        _mock_async_result(b"x", statuses=("PENDING",))
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN, timeout=12.0)
+
+        with pytest.raises(PicSureConnectionError):
+            run_async_query_to_file(
+                client,
+                "auth",
+                _simple_body(),
+                tmp_path / "out.csv",
+                operation="the query",
+            )
+
+        assert clock.sleeps == [1.0, 2.0, 4.0, 5.0]
+        assert clock.now == 12.0
+
+    @respx.mock
+    def test_a_wait_past_ten_minutes_is_fine_inside_a_larger_timeout(
+        self, tmp_path, clock
+    ):
+        _mock_async_result(b"x", statuses=("PENDING",) * 65 + ("AVAILABLE",))
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN, timeout=1000.0)
+        target = tmp_path / "out.csv"
+
+        run_async_query_to_file(
+            client, "auth", _simple_body(), target, operation="the query"
+        )
+
+        assert clock.now > 600.0
+        assert target.read_bytes() == b"x"
+
+    @respx.mock
+    def test_the_budget_counts_from_before_the_submit(self, tmp_path, clock):
+        """A slow submit eats into the wait, so the whole call is bounded."""
+        _mock_async_result(b"x", statuses=("PENDING",))
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN, timeout=5.0)
+
+        def slow_submit(request):
+            clock.now += 4.5
+            return _submit_ok()
+
+        respx.post(SUBMIT_URL).mock(side_effect=slow_submit)
+
+        with pytest.raises(PicSureConnectionError):
+            run_async_query_to_file(
+                client,
+                "auth",
+                _simple_body(),
+                tmp_path / "out.csv",
+                operation="the query",
+            )
+
+        assert clock.sleeps == [0.5]
+
+    @respx.mock
+    def test_an_error_status_raises_query_error_naming_the_query(self, tmp_path):
+        _mock_async_result(b"x", statuses=("QUEUED", "ERROR"))
+        target = tmp_path / "out.csv"
+
+        with (
+            patch(SLEEP),
+            pytest.raises(PicSureQueryError) as info,
+        ):
+            run_async_query_to_file(
+                _make_client(), "auth", _simple_body(), target, operation="the query"
+            )
+
+        message = str(info.value)
+        assert QUERY_ID in message
+        assert "failed" in message
+        assert "the query" in message
+        assert not target.exists()
+
+    @respx.mock
+    def test_a_poll_without_a_status_field_raises_query_error(self, tmp_path):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        respx.post(STATUS_URL).mock(return_value=httpx.Response(200, json={}))
+
+        with pytest.raises(PicSureQueryError, match="status field"):
+            run_async_query_to_file(
+                _make_client(),
+                "auth",
+                _simple_body(),
+                tmp_path / "out.csv",
+                operation="the query",
+            )
+
+    @respx.mock
+    def test_resource_status_is_read_when_status_is_absent(self, tmp_path):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        respx.post(STATUS_URL).mock(
+            return_value=httpx.Response(200, json={"resourceStatus": "available"})
+        )
+        respx.post(RESULT_URL).mock(return_value=httpx.Response(200, content=b"x"))
+        target = tmp_path / "out.csv"
+
+        run_async_query_to_file(
+            _make_client(), "auth", _simple_body(), target, operation="the query"
+        )
+
+        assert target.read_bytes() == b"x"
+
+    @respx.mock
+    def test_a_non_uuid_query_id_is_refused_before_any_poll(self, tmp_path):
+        respx.post(SUBMIT_URL).mock(
+            return_value=httpx.Response(200, json={"picsureResultId": "abc-123"})
+        )
+        status = respx.post(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+
+        with pytest.raises(PicSureQueryError, match="not a UUID"):
+            run_async_query_to_file(
+                _make_client(),
+                "auth",
+                _simple_body(),
+                tmp_path / "out.csv",
+                operation="the query",
+            )
+
+        assert status.call_count == 0
+
+    @respx.mock
+    def test_a_submit_without_a_query_id_is_refused(self, tmp_path):
+        respx.post(SUBMIT_URL).mock(return_value=httpx.Response(200, json={}))
+
+        with pytest.raises(PicSureQueryError, match="query id"):
+            run_async_query_to_file(
+                _make_client(),
+                "auth",
+                _simple_body(),
+                tmp_path / "out.csv",
+                operation="the query",
+            )
+
+    @respx.mock
+    def test_a_404_on_the_submit_is_a_query_error(self, tmp_path):
+        respx.post(SUBMIT_URL).mock(return_value=httpx.Response(404, text=""))
+
+        with pytest.raises(PicSureQueryError, match="HTTP 404"):
+            run_async_query_to_file(
+                _make_client(),
+                "auth",
+                _simple_body(),
+                tmp_path / "out.csv",
+                operation="the query",
+            )
+
+    @respx.mock
+    def test_a_404_on_the_status_is_a_query_error(self, tmp_path):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        respx.post(STATUS_URL).mock(return_value=httpx.Response(404, text=""))
+
+        with pytest.raises(PicSureQueryError, match="HTTP 404"):
+            run_async_query_to_file(
+                _make_client(),
+                "auth",
+                _simple_body(),
+                tmp_path / "out.csv",
+                operation="the query",
+            )
+
+    @respx.mock
+    def test_a_404_on_the_result_is_a_query_error(self, tmp_path):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        respx.post(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+        respx.post(RESULT_URL).mock(return_value=httpx.Response(404, text=""))
+        target = tmp_path / "out.csv"
+
+        with pytest.raises(PicSureQueryError, match="HTTP 404"):
+            run_async_query_to_file(
+                _make_client(), "auth", _simple_body(), target, operation="the query"
+            )
+
+        assert not target.exists()
+        assert not (tmp_path / "out.csv.part").exists()
+
+    @respx.mock
+    def test_the_open_backend_uses_the_open_routes(self, tmp_path):
+        submit, status, result = _mock_async_result(b"x", backend="open")
+        auth_submit = respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+
+        run_async_query_to_file(
+            _make_client(),
+            "open",
+            _simple_body(),
+            tmp_path / "out.csv",
+            operation="the query",
+        )
+
+        assert [call.request.url.path for call in respx.calls] == [
+            "/picsure/hpds/open/v3/query",
+            f"/picsure/hpds/open/v3/query/{QUERY_ID}/status",
+            f"/picsure/hpds/open/v3/query/{QUERY_ID}/result",
+        ]
+        assert auth_submit.call_count == 0
+
+    @respx.mock
+    def test_every_step_resends_the_body(self, tmp_path):
+        submit, status, result = _mock_async_result(
+            b"x", statuses=("PENDING", "AVAILABLE")
+        )
+        body = _simple_body("DATAFRAME_TIMESERIES")
+
+        with patch(SLEEP):
+            run_async_query_to_file(
+                _make_client(),
+                "auth",
+                body,
+                tmp_path / "out.csv",
+                operation="the query",
+            )
+
+        for route in (submit, status, result):
+            assert route.called
+            for sent in _request_bodies(route):
+                assert sent["query"]["expectedResultType"] == "DATAFRAME_TIMESERIES"
+
+    @respx.mock
+    def test_a_local_write_failure_leaves_no_partial_file(self, tmp_path):
+        _mock_async_result(b"x")
+        target = tmp_path / "out.csv"
+
+        with (
+            patch(
+                "picsure._transport.client.os.replace",
+                side_effect=OSError("disk full"),
+            ),
+            pytest.raises(OSError, match="disk full"),
+        ):
+            run_async_query_to_file(
+                _make_client(), "auth", _simple_body(), target, operation="the query"
+            )
+
+        assert not target.exists()
+        assert not (tmp_path / "out.csv.part").exists()
+
+
 class TestRunQueryCount:
     @respx.mock
     def test_returns_count_result(self):
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"1234"))
         client = _make_client()
-        result = run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+        result = run_query(client, _simple_clause(), "count", backend="auth")
         assert isinstance(result, CountResult)
         assert result.value == 1234
         assert result.margin is None
@@ -53,12 +442,14 @@ class TestRunQueryCount:
             return_value=httpx.Response(200, content=b"42")
         )
         client = _make_client()
-        run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+        run_query(client, _simple_clause(), "count", backend="auth")
 
         import json
 
         body = json.loads(route.calls[0].request.content)
-        assert body["resourceUUID"] == RESOURCE_UUID
+        # The gateway selects the HPDS backend by URL path, so the body
+        # must not carry a top-level resourceUUID sibling anymore.
+        assert "resourceUUID" not in body
         query = body["query"]
         assert query["expectedResultType"] == "COUNT"
         # The clause's own concept path is folded into ``select`` so a
@@ -83,7 +474,7 @@ class TestRunQueryCount:
             return_value=httpx.Response(200, content=b"7")
         )
         client = _make_client()
-        run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+        run_query(client, _simple_clause(), "count", backend="auth")
 
         import json
 
@@ -97,7 +488,7 @@ class TestRunQueryCount:
         )
         client = _make_client()
         with pytest.raises(PicSureQueryError, match="Expected a count"):
-            run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+            run_query(client, _simple_clause(), "count", backend="auth")
 
     @respx.mock
     def test_count_strips_surrounding_whitespace(self):
@@ -105,7 +496,7 @@ class TestRunQueryCount:
             return_value=httpx.Response(200, content=b"  567  \n")
         )
         client = _make_client()
-        result = run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+        result = run_query(client, _simple_clause(), "count", backend="auth")
         assert result.value == 567
         assert result.obfuscated is False
 
@@ -115,7 +506,7 @@ class TestRunQueryCount:
             return_value=httpx.Response(200, content="11309 \u00b13".encode())
         )
         client = _make_client()
-        result = run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+        result = run_query(client, _simple_clause(), "count", backend="auth")
         assert result.value == 11309
         assert result.margin == 3
         assert result.cap is None
@@ -125,7 +516,7 @@ class TestRunQueryCount:
     def test_suppressed_count_has_cap_and_null_value(self):
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"< 10"))
         client = _make_client()
-        result = run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+        result = run_query(client, _simple_clause(), "count", backend="auth")
         assert result.value is None
         assert result.margin is None
         assert result.cap == 10
@@ -138,69 +529,514 @@ class TestRunQueryCount:
         )
         client = _make_client()
         with pytest.raises(PicSureQueryError, match="Expected a count"):
-            run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+            run_query(client, _simple_clause(), "count", backend="auth")
 
     @respx.mock
     def test_empty_response_raises(self):
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
         client = _make_client()
-        with pytest.raises(PicSureQueryError, match="Expected a count"):
-            run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+        with pytest.raises(PicSureQueryError, match="empty body"):
+            run_query(client, _simple_clause(), "count", backend="auth")
+
+
+class TestEmptyCountBodyDiagnostic:
+    """An empty 200 body means the query probably never ran.
+
+    Verified live: a filter whose shape does not match its concept's type
+    (numeric min/max on a categorical concept, or categories on a continuous
+    one) returns HTTP 200 with a zero-length body, while a merely unknown
+    category value or concept path returns "0". So the empty body points at
+    a filter/concept type mismatch, and the message should say so.
+    """
+
+    @respx.mock
+    def test_message_suggests_the_query_was_not_run(self):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
+        with pytest.raises(PicSureQueryError) as exc_info:
+            run_query(_make_client(), _simple_clause(), "count", backend="auth")
+
+        message = str(exc_info.value)
+        assert "was not run" in message
+        assert "min/max" in message
+        assert "categorical" in message
+
+    @respx.mock
+    def test_message_names_the_filtered_concept(self):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
+        with pytest.raises(PicSureQueryError) as exc_info:
+            run_query(_make_client(), _simple_clause(), "count", backend="auth")
+
+        assert "\\phs1\\sex\\" in str(exc_info.value)
+
+    @respx.mock
+    def test_message_names_genomic_filter_keys(self):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
+        query = Query(
+            phenotypicFilter=None,
+            includeConcepts=(),
+            genomicFilters=(GenomicFilter(key="Gene_with_variant", values=("BRCA1",)),),
+        )
+        with pytest.raises(PicSureQueryError) as exc_info:
+            run_query(_make_client(), query, "count", backend="auth")
+
+        assert "Gene_with_variant" in str(exc_info.value)
+
+    @respx.mock
+    def test_message_does_not_blame_the_server(self):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
+        with pytest.raises(PicSureQueryError) as exc_info:
+            run_query(_make_client(), _simple_clause(), "count", backend="auth")
+
+        message = str(exc_info.value).lower()
+        for blame in ("malformed", "broken", "invalid response", "server error"):
+            assert blame not in message
+
+    @respx.mock
+    def test_names_concepts_from_a_nested_clause_group(self):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
+        group = ClauseGroup(
+            clauses=[
+                Clause(
+                    keys=["\\a\\"],
+                    type=PhenotypicFilterType.FILTER,
+                    categories=["x"],
+                ),
+                ClauseGroup(
+                    clauses=[
+                        Clause(
+                            keys=["\\b\\"],
+                            type=PhenotypicFilterType.FILTER,
+                            min=1.0,
+                        )
+                    ],
+                    operator=GroupOperator.OR,
+                ),
+            ],
+            operator=GroupOperator.AND,
+        )
+        with pytest.raises(PicSureQueryError) as exc_info:
+            run_query(_make_client(), group, "count", backend="auth")
+
+        message = str(exc_info.value)
+        assert "\\a\\" in message
+        assert "\\b\\" in message
+
+    @respx.mock
+    def test_message_without_filters_names_the_select_paths(self):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
+        query = Query(
+            phenotypicFilter=None, includeConcepts=("\\a\\",), genomicFilters=()
+        )
+        with pytest.raises(PicSureQueryError) as exc_info:
+            run_query(_make_client(), query, "count", backend="auth")
+
+        message = str(exc_info.value)
+        assert "returned an empty body where a count was expected" in message
+        assert "HTTP 200" not in message
+        assert "carried no filters, only the select paths '\\a\\'" in message
+        assert "each select path" in message
+        assert "min/max" not in message
+
+    def test_summarize_request_tolerates_an_unexpected_body(self):
+        from picsure._services.query_run import _summarize_request
+
+        assert _summarize_request({}) is None
+        assert _summarize_request({"query": "not-a-dict"}) is None
+        summary = _summarize_request({"query": {}})
+        assert summary is not None
+        assert not summary.has_filters
+        assert (
+            summary.describe() == "The request carried no filters and no select paths."
+        )
+
+
+class _CertRejectingPollTransport(httpx.BaseTransport):
+    """Answers the submit, then fails every poll as an untrusted certificate does."""
+
+    def __init__(self) -> None:
+        self.poll_attempts = 0
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        if not request.url.path.endswith("/status"):
+            return httpx.Response(200, json={"picsureResultId": QUERY_ID})
+        self.poll_attempts += 1
+        try:
+            raise ssl.SSLCertVerificationError("certificate verify failed")
+        except ssl.SSLCertVerificationError as cause:
+            raise httpx.ConnectError(
+                "certificate verify failed", request=request
+            ) from cause
+
+
+def _consent_lookup_failed() -> httpx.Response:
+    return httpx.Response(
+        502,
+        json={
+            "errorType": "consent_lookup_failed",
+            "message": "Unable to resolve caller consents",
+        },
+    )
+
+
+class TestTransientPollFailures:
+    """A poll that fails for a passing reason is sent again inside the budget."""
+
+    @staticmethod
+    def _run(client: PicSureClient, target: Path) -> None:
+        run_async_query_to_file(
+            client, "auth", _simple_body(), target, operation="the query"
+        )
+
+    @respx.mock
+    def test_a_429_poll_waits_the_retry_after_it_carries(self, tmp_path):
+        _mock_async_result(b"x")
+        respx.post(STATUS_URL).mock(
+            side_effect=[
+                httpx.Response(429, headers={"Retry-After": "7"}),
+                _status("AVAILABLE"),
+            ]
+        )
+        target = tmp_path / "out.csv"
+
+        with patch(SLEEP) as sleep_mock:
+            self._run(_make_client(), target)
+
+        assert [call.args[0] for call in sleep_mock.call_args_list] == [7.0]
+        assert target.read_bytes() == b"x"
+
+    @respx.mock
+    def test_a_429_poll_without_retry_after_waits_the_current_interval(self, tmp_path):
+        _mock_async_result(b"x")
+        respx.post(STATUS_URL).mock(
+            side_effect=[
+                _status("PENDING"),
+                httpx.Response(429),
+                _status("AVAILABLE"),
+            ]
+        )
+
+        with patch(SLEEP) as sleep_mock:
+            self._run(_make_client(), tmp_path / "out.csv")
+
+        assert [call.args[0] for call in sleep_mock.call_args_list] == [1.0, 2.0]
+
+    @respx.mock
+    @pytest.mark.parametrize("retry_after", ["0", "-1"])
+    def test_a_retry_after_below_the_interval_waits_the_interval(
+        self, retry_after, tmp_path
+    ):
+        _mock_async_result(b"x")
+        respx.post(STATUS_URL).mock(
+            side_effect=[
+                _status("PENDING"),
+                httpx.Response(429, headers={"Retry-After": retry_after}),
+                _status("AVAILABLE"),
+            ]
+        )
+        target = tmp_path / "out.csv"
+
+        with patch(SLEEP) as sleep_mock:
+            self._run(_make_client(), target)
+
+        assert [call.args[0] for call in sleep_mock.call_args_list] == [1.0, 2.0]
+        assert target.read_bytes() == b"x"
+
+    @respx.mock
+    def test_a_consent_lookup_502_poll_is_polled_again(self, tmp_path):
+        _mock_async_result(b"x")
+        respx.post(STATUS_URL).mock(
+            side_effect=[_consent_lookup_failed(), _status("AVAILABLE")]
+        )
+        target = tmp_path / "out.csv"
+
+        with patch(SLEEP) as sleep_mock:
+            self._run(_make_client(), target)
+
+        assert [call.args[0] for call in sleep_mock.call_args_list] == [1.0]
+        assert target.read_bytes() == b"x"
+
+    @respx.mock
+    def test_repeated_consent_lookup_502s_until_the_budget_passes_chain_the_cause(
+        self, tmp_path, clock
+    ):
+        _mock_async_result(b"x")
+        respx.post(STATUS_URL).mock(return_value=_consent_lookup_failed())
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN, timeout=5.0)
+
+        with pytest.raises(PicSureConsentLookupError) as info:
+            self._run(client, tmp_path / "out.csv")
+
+        message = str(info.value)
+        assert isinstance(info.value.__cause__, TransportConsentLookupError)
+        assert QUERY_ID in message
+        assert "5 seconds" in message
+        assert "consent permissions" in message
+        assert "Unable to resolve caller consents" in message
+        assert clock.sleeps == [1.0, 2.0, 2.0]
+
+    @respx.mock
+    def test_a_502_poll_is_polled_again(self, tmp_path):
+        _mock_async_result(b"x")
+        respx.post(STATUS_URL).mock(
+            side_effect=[httpx.Response(502, text="bad gateway"), _status("AVAILABLE")]
+        )
+        target = tmp_path / "out.csv"
+
+        with patch(SLEEP) as sleep_mock:
+            self._run(_make_client(), target)
+
+        assert [call.args[0] for call in sleep_mock.call_args_list] == [1.0]
+        assert target.read_bytes() == b"x"
+
+    @respx.mock
+    def test_a_read_timeout_on_a_poll_is_polled_again(self, tmp_path):
+        _mock_async_result(b"x")
+        respx.post(STATUS_URL).mock(
+            side_effect=[httpx.ReadTimeout("timed out"), _status("AVAILABLE")]
+        )
+        target = tmp_path / "out.csv"
+
+        with patch(SLEEP) as sleep_mock:
+            self._run(_make_client(), target)
+
+        assert [call.args[0] for call in sleep_mock.call_args_list] == [1.0]
+        assert target.read_bytes() == b"x"
+
+    @respx.mock
+    def test_a_refused_connection_on_a_poll_is_polled_again(self, tmp_path):
+        """The client resends a refused connection once itself, so two refusals
+        are what it takes for the failure to reach the loop."""
+        _mock_async_result(b"x")
+        respx.post(STATUS_URL).mock(
+            side_effect=[
+                httpx.ConnectError("refused"),
+                httpx.ConnectError("refused"),
+                _status("AVAILABLE"),
+            ]
+        )
+        target = tmp_path / "out.csv"
+
+        with patch(SLEEP) as sleep_mock:
+            self._run(_make_client(), target)
+
+        assert [call.args[0] for call in sleep_mock.call_args_list] == [1.0]
+        assert target.read_bytes() == b"x"
+
+    @respx.mock
+    def test_repeated_502s_until_the_budget_passes_name_the_failure(
+        self, tmp_path, clock
+    ):
+        _mock_async_result(b"x")
+        respx.post(STATUS_URL).mock(
+            return_value=httpx.Response(502, text="bad gateway")
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN, timeout=5.0)
+
+        with pytest.raises(PicSureServerError) as info:
+            self._run(client, tmp_path / "out.csv")
+
+        message = str(info.value)
+        assert "the query" in message
+        assert QUERY_ID in message
+        assert "5 seconds" in message
+        assert "HTTP 502" in message
+        assert isinstance(info.value.__cause__, TransportServerError)
+        assert clock.sleeps == [1.0, 2.0, 2.0]
+
+    @respx.mock
+    def test_a_poll_that_answers_after_a_failure_clears_it_from_the_message(
+        self, tmp_path, clock
+    ):
+        _mock_async_result(b"x")
+        respx.post(STATUS_URL).mock(
+            side_effect=[httpx.Response(502, text="bad gateway")]
+            + [_status("PENDING")] * 20
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN, timeout=5.0)
+
+        with pytest.raises(PicSureConnectionError) as info:
+            self._run(client, tmp_path / "out.csv")
+
+        assert "502" not in str(info.value)
+
+    @respx.mock
+    @pytest.mark.parametrize(
+        ("status", "expected"),
+        [
+            (400, PicSureValidationError),
+            (401, PicSureAuthenticationError),
+            (403, PicSureAuthorizationError),
+            (404, PicSureQueryError),
+        ],
+    )
+    def test_a_refusal_on_a_poll_raises_at_once(self, status, expected, tmp_path):
+        _mock_async_result(b"x")
+        poll = respx.post(STATUS_URL).mock(
+            side_effect=[httpx.Response(status, text=""), _status("AVAILABLE")]
+        )
+
+        with patch(SLEEP) as sleep_mock, pytest.raises(expected):
+            self._run(_make_client(), tmp_path / "out.csv")
+
+        assert poll.call_count == 1
+        assert sleep_mock.call_count == 0
+
+    def test_a_rejected_certificate_on_a_poll_raises_at_once(self, tmp_path):
+        transport = _CertRejectingPollTransport()
+        client = _make_client()
+        client._http = httpx.Client(base_url=BASE_URL, transport=transport)
+
+        with patch(SLEEP) as sleep_mock, pytest.raises(PicSureTLSError):
+            self._run(client, tmp_path / "out.csv")
+
+        assert transport.poll_attempts == 1
+        assert sleep_mock.call_count == 0
+
+    @respx.mock
+    def test_a_bodiless_success_poll_raises_at_once(self, tmp_path):
+        """An answered poll that cannot be read is a protocol break, not a wait."""
+        _mock_async_result(b"x")
+        poll = respx.post(STATUS_URL).mock(
+            side_effect=[httpx.Response(200, content=b""), _status("AVAILABLE")]
+        )
+
+        with patch(SLEEP) as sleep_mock, pytest.raises(PicSureQueryError) as info:
+            self._run(_make_client(), tmp_path / "out.csv")
+
+        message = str(info.value)
+        assert "empty body" in message
+        assert "200" in message
+        assert "JSON" not in message
+        assert poll.call_count == 1
+        assert sleep_mock.call_count == 0
+
+    @respx.mock
+    def test_a_bodiless_redirect_poll_names_the_gateway_session(self, tmp_path):
+        _mock_async_result(b"x")
+        respx.post(STATUS_URL).mock(
+            return_value=httpx.Response(302, headers={"Location": "/sso/login"})
+        )
+
+        with patch(SLEEP), pytest.raises(PicSureQueryError) as info:
+            self._run(_make_client(), tmp_path / "out.csv")
+
+        message = str(info.value)
+        assert "302" in message
+        assert "gateway session" in message
+        assert "Reconnect" in message
+        assert "JSON" not in message
+
+    @respx.mock
+    def test_a_502_on_the_submit_still_raises_at_once(self, tmp_path):
+        respx.post(SUBMIT_URL).mock(return_value=httpx.Response(502, text="bad"))
+
+        with patch(SLEEP) as sleep_mock, pytest.raises(PicSureServerError):
+            self._run(_make_client(), tmp_path / "out.csv")
+
+        assert sleep_mock.call_count == 0
+
+    @respx.mock
+    def test_a_502_on_the_download_still_raises_at_once(self, tmp_path):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        respx.post(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+        result = respx.post(RESULT_URL).mock(
+            return_value=httpx.Response(502, text="bad")
+        )
+
+        with patch(SLEEP) as sleep_mock, pytest.raises(PicSureServerError):
+            self._run(_make_client(), tmp_path / "out.csv")
+
+        assert result.call_count == 1
+        assert sleep_mock.call_count == 0
 
 
 class TestRunQueryParticipant:
+    """Participant results come from the server's job flow, not /query/sync."""
+
     @respx.mock
     def test_returns_dataframe(self, participant_response):
-        respx.post(QUERY_URL).mock(
-            return_value=httpx.Response(200, content=participant_response)
-        )
+        _mock_async_result(participant_response)
         client = _make_client()
-        df = run_query(client, RESOURCE_UUID, _simple_clause(), "participant")
+        df = run_query(client, _simple_clause(), "participant", backend="auth")
         assert len(df) == 5
         assert "patient_id" in df.columns
         assert "sex" in df.columns
 
     @respx.mock
-    def test_sends_participant_result_type(self):
-        route = respx.post(QUERY_URL).mock(
-            return_value=httpx.Response(200, content=b"id\n1\n")
+    def test_never_posts_to_the_sync_route(self):
+        sync = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(400, text="served asynchronously")
         )
+        _mock_async_result(b"id\n1\n")
+
+        run_query(_make_client(), _simple_clause(), "participant", backend="auth")
+
+        assert sync.call_count == 0
+
+    @respx.mock
+    def test_sends_participant_result_type_on_every_step(self):
+        submit, status, result = _mock_async_result(b"id\n1\n")
         client = _make_client()
-        run_query(client, RESOURCE_UUID, _simple_clause(), "participant")
+        run_query(client, _simple_clause(), "participant", backend="auth")
 
-        import json
+        for route in (submit, status, result):
+            assert route.call_count == 1
+            body = _request_bodies(route)[0]
+            assert body["query"]["expectedResultType"] == "DATAFRAME"
 
-        body = json.loads(route.calls[0].request.content)
-        assert body["query"]["expectedResultType"] == "DATAFRAME"
+    @respx.mock
+    def test_waits_for_a_pending_query(self):
+        _mock_async_result(b"id\n1\n", statuses=("QUEUED", "PENDING", "AVAILABLE"))
+
+        with patch(SLEEP) as sleep_mock:
+            df = run_query(
+                _make_client(), _simple_clause(), "participant", backend="auth"
+            )
+
+        assert len(df) == 1
+        assert [call.args[0] for call in sleep_mock.call_args_list] == [1.0, 2.0]
+
+    @respx.mock
+    def test_a_query_that_outlives_the_timeout_is_a_connection_error(self, clock):
+        _mock_async_result(b"id\n1\n", statuses=("PENDING",))
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN, timeout=3.0)
+
+        with pytest.raises(PicSureConnectionError, match="3 seconds"):
+            run_query(client, _simple_clause(), "participant", backend="auth")
+
+    @respx.mock
+    def test_a_failed_query_is_a_query_error(self):
+        _mock_async_result(b"id\n1\n", statuses=("ERROR",))
+
+        with pytest.raises(PicSureQueryError, match=QUERY_ID):
+            run_query(_make_client(), _simple_clause(), "participant", backend="auth")
 
     @respx.mock
     def test_empty_csv_returns_empty_dataframe(self):
-        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
+        _mock_async_result(b"")
         client = _make_client()
-        df = run_query(client, RESOURCE_UUID, _simple_clause(), "participant")
+        df = run_query(client, _simple_clause(), "participant", backend="auth")
         assert len(df) == 0
 
 
 class TestRunQueryTimestamp:
     @respx.mock
-    def test_sends_timestamp_result_type(self):
-        route = respx.post(QUERY_URL).mock(
-            return_value=httpx.Response(200, content=b"id,date,val\n1,2024-01-01,120\n")
-        )
+    def test_sends_timestamp_result_type_on_every_step(self):
+        submit, status, result = _mock_async_result(b"id,date,val\n1,2024-01-01,120\n")
         client = _make_client()
-        run_query(client, RESOURCE_UUID, _simple_clause(), "timestamp")
+        run_query(client, _simple_clause(), "timestamp", backend="auth")
 
-        import json
-
-        body = json.loads(route.calls[0].request.content)
-        assert body["query"]["expectedResultType"] == "DATAFRAME_TIMESERIES"
+        for route in (submit, status, result):
+            assert route.call_count == 1
+            body = _request_bodies(route)[0]
+            assert body["query"]["expectedResultType"] == "DATAFRAME_TIMESERIES"
 
     @respx.mock
     def test_returns_dataframe(self):
         csv = b"patient_id,variable,date,value\nP001,bp,2024-01-15,120\n"
-        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=csv))
+        _mock_async_result(csv)
         client = _make_client()
-        df = run_query(client, RESOURCE_UUID, _simple_clause(), "timestamp")
+        df = run_query(client, _simple_clause(), "timestamp", backend="auth")
         assert len(df) == 1
         assert "date" in df.columns
 
@@ -212,20 +1048,20 @@ class TestRunQueryParticipantMalformed:
         # We wrap that as PicSureQueryError with a preview so the user
         # sees an actionable message instead of a raw pandas traceback.
         body = b"a,b,c\n1,2,3\n4,5,6,7,8\n"
-        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=body))
+        _mock_async_result(body)
         client = _make_client()
         with pytest.raises(PicSureQueryError, match="malformed CSV"):
-            run_query(client, RESOURCE_UUID, _simple_clause(), "participant")
+            run_query(client, _simple_clause(), "participant", backend="auth")
 
     @respx.mock
     def test_malformed_csv_error_includes_preview(self):
         # The preview in the error message lets the user spot a proxy
         # error page or truncated response without enabling debug logs.
         body = b"a,b,c\n1,2,3\n4,5,6,7,8\nmarker-xyz\n"
-        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=body))
+        _mock_async_result(body)
         client = _make_client()
         with pytest.raises(PicSureQueryError) as excinfo:
-            run_query(client, RESOURCE_UUID, _simple_clause(), "participant")
+            run_query(client, _simple_clause(), "participant", backend="auth")
         assert "a,b,c" in str(excinfo.value)
 
     @respx.mock
@@ -233,25 +1069,25 @@ class TestRunQueryParticipantMalformed:
         # Bytes that aren't valid UTF-8 should produce a PicSureQueryError
         # rather than leaking a raw UnicodeDecodeError.
         body = b"\xff\xfe\x00\x00invalid utf-8"
-        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=body))
+        _mock_async_result(body)
         client = _make_client()
         with pytest.raises(PicSureQueryError, match="malformed CSV"):
-            run_query(client, RESOURCE_UUID, _simple_clause(), "participant")
+            run_query(client, _simple_clause(), "participant", backend="auth")
 
     @respx.mock
     def test_empty_response_still_returns_empty_dataframe(self):
         # Regression guard: empty body is a legitimate "no rows" signal,
         # not a parse error.
-        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
+        _mock_async_result(b"")
         client = _make_client()
-        df = run_query(client, RESOURCE_UUID, _simple_clause(), "participant")
+        df = run_query(client, _simple_clause(), "participant", backend="auth")
         assert len(df) == 0
 
     @respx.mock
     def test_whitespace_only_response_returns_empty_dataframe(self):
-        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"   \n"))
+        _mock_async_result(b"   \n")
         client = _make_client()
-        df = run_query(client, RESOURCE_UUID, _simple_clause(), "participant")
+        df = run_query(client, _simple_clause(), "participant", backend="auth")
         assert len(df) == 0
 
 
@@ -262,7 +1098,7 @@ class TestRunQueryCrossCount:
             return_value=httpx.Response(200, content=b'{"\\\\phs000001\\\\": "42"}')
         )
         client = _make_client()
-        run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")
+        run_query(client, _simple_clause(), "cross_count", backend="auth")
 
         import json
 
@@ -277,7 +1113,7 @@ class TestRunQueryCrossCount:
         route = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b'{"\\\\phs1\\\\sex\\\\": "42"}')
         )
-        run_query(_make_client(), RESOURCE_UUID, _simple_clause(), "cross_count")
+        run_query(_make_client(), _simple_clause(), "cross_count", backend="auth")
 
         import json
 
@@ -295,7 +1131,7 @@ class TestRunQueryCrossCount:
         ).encode()
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=payload))
         client = _make_client()
-        result = run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")
+        result = run_query(client, _simple_clause(), "cross_count", backend="auth")
 
         assert isinstance(result, dict)
         assert set(result.keys()) == {
@@ -323,14 +1159,14 @@ class TestRunQueryCrossCount:
         )
         client = _make_client()
         with pytest.raises(PicSureQueryError, match="cross-count"):
-            run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")
+            run_query(client, _simple_clause(), "cross_count", backend="auth")
 
     @respx.mock
     def test_non_object_json_raises(self):
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"[1,2,3]"))
         client = _make_client()
         with pytest.raises(PicSureQueryError, match="cross-count"):
-            run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")
+            run_query(client, _simple_clause(), "cross_count", backend="auth")
 
     @respx.mock
     def test_invalid_count_value_raises(self):
@@ -339,7 +1175,7 @@ class TestRunQueryCrossCount:
         )
         client = _make_client()
         with pytest.raises(PicSureQueryError, match="Expected a count"):
-            run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")
+            run_query(client, _simple_clause(), "cross_count", backend="auth")
 
     @respx.mock
     def test_integer_values_direct_hpds_shape(self):
@@ -349,7 +1185,7 @@ class TestRunQueryCrossCount:
         payload = b'{"\\\\phs000007\\\\": 42, "\\\\phs000013\\\\": 100}'
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=payload))
         client = _make_client()
-        result = run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")
+        result = run_query(client, _simple_clause(), "cross_count", backend="auth")
 
         assert isinstance(result, dict)
         assert set(result.keys()) == {"\\phs000007\\", "\\phs000013\\"}
@@ -375,7 +1211,7 @@ class TestRunQueryCrossCount:
         ).encode()
         respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=payload))
         client = _make_client()
-        result = run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")
+        result = run_query(client, _simple_clause(), "cross_count", backend="auth")
 
         assert result["\\a\\"].value == 42
         assert result["\\a\\"].obfuscated is False
@@ -396,7 +1232,7 @@ class TestRunQueryCrossCount:
         )
         client = _make_client()
         with pytest.raises(PicSureQueryError, match="Expected a count"):
-            run_query(client, RESOURCE_UUID, _simple_clause(), "cross_count")
+            run_query(client, _simple_clause(), "cross_count", backend="auth")
 
 
 class TestRunQueryWithClauseGroup:
@@ -411,7 +1247,7 @@ class TestRunQueryWithClauseGroup:
             operator=GroupOperator.AND,
         )
         client = _make_client()
-        run_query(client, RESOURCE_UUID, group, "count")
+        run_query(client, group, "count", backend="auth")
 
         import json
 
@@ -435,7 +1271,7 @@ class TestRunQueryWithClauseGroup:
             includeConcepts=("\\out_a\\", "\\out_b\\"),
         )
         client = _make_client()
-        run_query(client, RESOURCE_UUID, query, "count")
+        run_query(client, query, "count", backend="auth")
 
         import json
 
@@ -452,7 +1288,7 @@ class TestRunQueryWithClauseGroup:
         )
         query = Query(includeConcepts=("\\a\\", "\\b\\"))
         client = _make_client()
-        run_query(client, RESOURCE_UUID, query, "count")
+        run_query(client, query, "count", backend="auth")
 
         import json
 
@@ -469,7 +1305,7 @@ class TestRunQueryWithClauseGroup:
             return_value=httpx.Response(200, content=b"100")
         )
         client = _make_client()
-        run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+        run_query(client, _simple_clause(), "count", backend="auth")
 
         import json
 
@@ -482,14 +1318,10 @@ class TestSelectIncludesFilterConcepts:
     """Filter variables are returned as output columns without includeConcepts."""
 
     def _select_for(self, query) -> list[str]:
-        route = respx.post(QUERY_URL).mock(
-            return_value=httpx.Response(200, content=b"1")
-        )
-        run_query(_make_client(), RESOURCE_UUID, query, "participant")
+        submit, _, _ = _mock_async_result(b"1")
+        run_query(_make_client(), query, "participant", backend="auth")
 
-        import json
-
-        return json.loads(route.calls[0].request.content)["query"]["select"]
+        return _request_bodies(submit)[0]["query"]["select"]
 
     @respx.mock
     def test_bare_clause_group_selects_all_filter_concepts(self):
@@ -551,7 +1383,7 @@ class TestRunQueryValidation:
     def test_invalid_query_type_raises(self):
         client = _make_client()
         with pytest.raises(PicSureValidationError, match="not a valid query type"):
-            run_query(client, RESOURCE_UUID, _simple_clause(), "invalid")
+            run_query(client, _simple_clause(), "invalid", backend="auth")
 
     def test_plain_dict_query_raises_validation_error(self):
         # A plain dict is not a Clause or ClauseGroup. We want an
@@ -564,13 +1396,63 @@ class TestRunQueryValidation:
         ):
             run_query(
                 client,
-                RESOURCE_UUID,
                 {"keys": ["\\phs1\\sex\\"]},  # type: ignore[arg-type]
                 "count",
+                backend="auth",
             )
 
 
 class TestRunQueryErrors:
+    @respx.mock
+    def test_consent_denied_raises_typed_error(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(
+                403,
+                json={
+                    "errorType": "consent_denied",
+                    "message": "You no longer have consent for this saved result",
+                },
+            )
+        )
+
+        with pytest.raises(PicSureConsentDeniedError) as exc_info:
+            run_query(_make_client(), _simple_clause(), "count", backend="auth")
+
+        exc = exc_info.value
+        assert exc.status_code == 403
+        assert exc.error_type == "consent_denied"
+        assert exc.server_message == "You no longer have consent for this saved result"
+
+    @respx.mock
+    def test_variant_consent_lookup_failure_is_not_unsupported(self):
+        route = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(
+                502,
+                json={
+                    "errorType": "consent_lookup_failed",
+                    "message": "Unable to resolve caller consents",
+                },
+            )
+        )
+
+        with pytest.raises(PicSureConsentLookupError) as exc_info:
+            run_query(_make_client(), _simple_clause(), "variant_count", backend="auth")
+
+        exc = exc_info.value
+        assert exc.status_code == 502
+        assert exc.error_type == "consent_lookup_failed"
+        assert exc.server_message == "Unable to resolve caller consents"
+        assert route.call_count == 1
+
+    @respx.mock
+    def test_401_raises_auth_error(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(401, text="Unauthorized")
+        )
+
+        with pytest.raises(PicSureAuthError):
+            run_query(_make_client(), _simple_clause(), "count", backend="auth")
+
     @respx.mock
     def test_server_error_raises_connection_error(self):
         respx.post(QUERY_URL).mock(
@@ -578,14 +1460,14 @@ class TestRunQueryErrors:
         )
         client = _make_client()
         with pytest.raises(PicSureConnectionError, match="query"):
-            run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+            run_query(client, _simple_clause(), "count", backend="auth")
 
     @respx.mock
     def test_network_error_raises_connection_error(self):
         respx.post(QUERY_URL).mock(side_effect=httpx.ConnectError("Connection refused"))
         client = _make_client()
         with pytest.raises(PicSureConnectionError):
-            run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+            run_query(client, _simple_clause(), "count", backend="auth")
 
 
 class TestQueryTypeMemberInput:
@@ -632,9 +1514,9 @@ class TestRunQueryWithQueryTypeMember:
         client = _make_client()
         result = run_query(
             client,
-            RESOURCE_UUID,
             _simple_clause(),
             QueryType.COUNT,
+            backend="auth",
         )
 
         assert isinstance(result, CountResult)
@@ -660,10 +1542,6 @@ class TestSessionRunQueryWithMember:
             client=client,
             user_email="test@example.com",
             token_expiration="N/A",
-            resources=[
-                Resource(uuid=RESOURCE_UUID, name="R", description="d"),
-            ],
-            resource_uuid=RESOURCE_UUID,
         )
 
         result = session.runQuery(_simple_clause(), type=QueryType.COUNT)
@@ -672,70 +1550,59 @@ class TestSessionRunQueryWithMember:
         assert result.value == 7
 
 
-class TestRunQueryLegacyPath:
+class TestRunQueryBackendRouting:
     @respx.mock
-    def test_default_uses_v3_path(self):
-        v3 = respx.post(QUERY_URL).mock(
+    def test_auth_backend_uses_auth_v3_path(self):
+        auth = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"1"),
         )
-        legacy = respx.post(LEGACY_QUERY_URL).mock(
+        open_route = respx.post(OPEN_QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"99"),
         )
         client = _make_client()
 
-        result = run_query(client, RESOURCE_UUID, _simple_clause(), "count")
+        result = run_query(client, _simple_clause(), "count", backend="auth")
 
         assert isinstance(result, CountResult)
         assert result.value == 1
-        assert v3.call_count == 1
-        assert legacy.call_count == 0
+        assert auth.call_count == 1
+        assert open_route.call_count == 0
 
     @respx.mock
-    def test_flag_routes_to_legacy_path(self):
-        # BDC's API gateway 401s open-access requests on the v3 sync
-        # endpoint.  Open-only deployments must use the legacy path.
-        v3 = respx.post(QUERY_URL).mock(
+    def test_open_backend_routes_to_open_path(self):
+        # BDC's API gateway 401s open-access requests on the auth v3 sync
+        # endpoint.  Open-only deployments must use the open path.
+        auth = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(401, text="Unauthorized"),
         )
-        legacy = respx.post(LEGACY_QUERY_URL).mock(
+        open_route = respx.post(OPEN_QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"42"),
         )
         client = _make_client()
 
-        result = run_query(
-            client,
-            RESOURCE_UUID,
-            _simple_clause(),
-            "count",
-            use_legacy_query_path=True,
-        )
+        result = run_query(client, _simple_clause(), "count", backend="open")
 
         assert isinstance(result, CountResult)
         assert result.value == 42
-        assert v3.call_count == 0
-        assert legacy.call_count == 1
+        assert auth.call_count == 0
+        assert open_route.call_count == 1
+        assert open_route.calls[0].request.headers["Authorization"] == f"Bearer {TOKEN}"
 
     @respx.mock
-    def test_legacy_path_preserves_body_shape(self):
-        # The legacy endpoint accepts the same v3-shaped body; we should
+    def test_open_path_preserves_body_shape(self):
+        # The open endpoint accepts the same body shape as auth; we should
         # not start emitting a different shape just because we're routing
-        # to /picsure/query/sync.
-        route = respx.post(LEGACY_QUERY_URL).mock(
+        # to /picsure/hpds/open/v3/query/sync.
+        route = respx.post(OPEN_QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"7"),
         )
         client = _make_client()
-        run_query(
-            client,
-            RESOURCE_UUID,
-            _simple_clause(),
-            "count",
-            use_legacy_query_path=True,
-        )
+        run_query(client, _simple_clause(), "count", backend="open")
 
         import json
 
         body = json.loads(route.calls[0].request.content)
-        assert body["resourceUUID"] == RESOURCE_UUID
+        assert "resourceUUID" not in body
         query = body["query"]
         assert query["expectedResultType"] == "COUNT"
         assert "authorizationFilters" not in query
@@ -743,11 +1610,11 @@ class TestRunQueryLegacyPath:
         assert query["id"] is None
 
     @respx.mock
-    def test_session_with_legacy_flag_routes_to_legacy(self):
-        legacy = respx.post(LEGACY_QUERY_URL).mock(
+    def test_session_with_open_backend_routes_to_open(self):
+        open_route = respx.post(OPEN_QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"3"),
         )
-        v3 = respx.post(QUERY_URL).mock(
+        auth = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(401, text="Unauthorized"),
         )
         client = _make_client()
@@ -755,26 +1622,37 @@ class TestRunQueryLegacyPath:
             client=client,
             user_email="anonymous",
             token_expiration="N/A",
-            resources=[
-                Resource(uuid=RESOURCE_UUID, name="R", description="d"),
-            ],
-            resource_uuid=RESOURCE_UUID,
-            use_legacy_query_path=True,
+            backend="open",
         )
 
         result = session.runQuery(_simple_clause(), type=QueryType.COUNT)
 
         assert isinstance(result, CountResult)
         assert result.value == 3
-        assert legacy.call_count == 1
-        assert v3.call_count == 0
+        assert open_route.call_count == 1
+        assert auth.call_count == 0
 
     @respx.mock
-    def test_session_without_legacy_flag_routes_to_v3(self):
-        v3 = respx.post(QUERY_URL).mock(
+    def test_open_backend_participant_query_uses_the_open_job_routes(self):
+        _mock_async_result(b"patient_id\nP001\n", backend="open")
+        auth_submit = respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+
+        df = run_query(_make_client(), _simple_clause(), "participant", backend="open")
+
+        assert len(df) == 1
+        assert auth_submit.call_count == 0
+        assert [call.request.url.path for call in respx.calls] == [
+            "/picsure/hpds/open/v3/query",
+            f"/picsure/hpds/open/v3/query/{QUERY_ID}/status",
+            f"/picsure/hpds/open/v3/query/{QUERY_ID}/result",
+        ]
+
+    @respx.mock
+    def test_session_default_backend_routes_to_auth(self):
+        auth = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"5"),
         )
-        legacy = respx.post(LEGACY_QUERY_URL).mock(
+        open_route = respx.post(OPEN_QUERY_URL).mock(
             return_value=httpx.Response(401, text="Unauthorized"),
         )
         client = _make_client()
@@ -782,18 +1660,14 @@ class TestRunQueryLegacyPath:
             client=client,
             user_email="test@example.com",
             token_expiration="N/A",
-            resources=[
-                Resource(uuid=RESOURCE_UUID, name="R", description="d"),
-            ],
-            resource_uuid=RESOURCE_UUID,
         )
 
         result = session.runQuery(_simple_clause(), type=QueryType.COUNT)
 
         assert isinstance(result, CountResult)
         assert result.value == 5
-        assert v3.call_count == 1
-        assert legacy.call_count == 0
+        assert auth.call_count == 1
+        assert open_route.call_count == 0
 
 
 class TestBuildQueryBodyGenomic:
@@ -803,7 +1677,7 @@ class TestBuildQueryBodyGenomic:
 
         gf = buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
         q = buildQuery(genomicFilters=gf, includeConcepts=["\\bmi\\"])
-        body = build_query_body(q, "uuid-1", "COUNT")
+        body = build_query_body(q, "COUNT")
         assert body["query"]["genomicFilters"] == [
             {"key": "Gene_with_variant", "values": ["BRCA1"]}
         ]
@@ -813,7 +1687,7 @@ class TestBuildQueryBodyGenomic:
         from picsure._services.query_run import build_query_body
 
         c = buildClause("\\path\\", type=PhenotypicFilterType.FILTER, categories="X")
-        body = build_query_body(c, "uuid-1", "COUNT")
+        body = build_query_body(c, "COUNT")
         assert body["query"]["genomicFilters"] == []
 
     def test_genomic_filters_do_not_affect_select(self):
@@ -822,7 +1696,7 @@ class TestBuildQueryBodyGenomic:
 
         gf = buildGenomicFilter("Gene_with_variant", values=["BRCA1"])
         q = buildQuery(genomicFilters=gf, includeConcepts=["\\bmi\\"])
-        body = build_query_body(q, "uuid-1", "DATAFRAME")
+        body = build_query_body(q, "DATAFRAME")
         assert body["query"]["select"] == ["\\bmi\\"]
 
 
@@ -943,7 +1817,7 @@ class TestVariantResultParsing:
             return_value=httpx.Response(500, text="ri_error 500")
         )
         with pytest.raises(PicSureQueryError, match="not available on this"):
-            run_query(_make_client(), RESOURCE_UUID, _simple_clause(), "variant_count")
+            run_query(_make_client(), _simple_clause(), "variant_count", backend="auth")
 
     @respx.mock
     def test_nonvariant_500_stays_temporarily_unavailable(self):
@@ -951,4 +1825,566 @@ class TestVariantResultParsing:
         # outage, not an unsupported feature.
         respx.post(QUERY_URL).mock(return_value=httpx.Response(500, text="boom"))
         with pytest.raises(PicSureConnectionError, match="temporarily unavailable"):
-            run_query(_make_client(), RESOURCE_UUID, _simple_clause(), "count")
+            run_query(_make_client(), _simple_clause(), "count", backend="auth")
+
+
+VARIANT_COUNT_LIVE = b'{"count":1,"message":"Query ran successfully"}'
+VARIANT_COUNT_NO_FILTERS_LIVE = (
+    b'{"count":"0","message":"No variant filters were supplied, so no query was run."}'
+)
+VARIANT_LIST_NOT_ALLOWED_LIVE = b"VARIANT_LIST query type not allowed"
+VCF_EXCERPT_NOT_ALLOWED_LIVE = b"VCF_EXCERPT query type not allowed"
+AGGREGATE_VCF_NOT_ALLOWED_LIVE = b"AGGREGATE_VCF_EXCERPT query type not allowed"
+
+
+def _genomic_query() -> Query:
+    return Query(
+        phenotypicFilter=None,
+        includeConcepts=(),
+        genomicFilters=(
+            GenomicFilter(key="Gene_with_variant", values=("CONSENTQA902_1",)),
+        ),
+    )
+
+
+class TestRunQueryVariantCountEndToEnd:
+    """Drive VARIANT_COUNT through ``run_query``.
+
+    The server answers with a JSON object, which the old parser rejected
+    because it expected a bare count string. Reproduced live before the fix.
+    The ``*_LIVE`` bodies were captured from a local all-in-one stack with
+    genomic data loaded on 2026-09-10. VARIANT_COUNT is the only variant type
+    that deployment serves; the other three answer with the
+    "query type not allowed" body, so their success shapes are unit-tested
+    only.
+    """
+
+    @respx.mock
+    def test_parses_the_live_json_body(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(
+                200,
+                content=VARIANT_COUNT_LIVE,
+                headers={"content-type": "application/json"},
+            )
+        )
+        result = run_query(
+            _make_client(), _genomic_query(), "variant_count", backend="auth"
+        )
+        assert isinstance(result, CountResult)
+        assert result.value == 1
+        assert result.margin is None
+        assert result.cap is None
+        assert result.obfuscated is False
+
+    @respx.mock
+    def test_raw_preserves_the_whole_body_including_message(self):
+        """The server's message survives because ``raw`` keeps the whole body."""
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=VARIANT_COUNT_LIVE)
+        )
+        result = run_query(
+            _make_client(), _genomic_query(), "variant_count", backend="auth"
+        )
+        assert result.raw == VARIANT_COUNT_LIVE.decode()
+        assert "Query ran successfully" in result.raw
+
+    @respx.mock
+    def test_sends_the_expected_request_body(self):
+        route = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=VARIANT_COUNT_LIVE)
+        )
+        run_query(_make_client(), _genomic_query(), "variant_count", backend="auth")
+
+        import json
+
+        body = json.loads(route.calls[0].request.content)
+        query = body["query"]
+        assert query["expectedResultType"] == "VARIANT_COUNT_FOR_QUERY"
+        assert query["genomicFilters"] == [
+            {"key": "Gene_with_variant", "values": ["CONSENTQA902_1"]}
+        ]
+        assert query["phenotypicClause"] is None
+        assert query["select"] == []
+        assert "resourceUUID" not in body
+
+    @respx.mock
+    def test_accepts_a_string_count(self):
+        """Some responses send ``count`` as a JSON string."""
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b'{"count":"7"}')
+        )
+        result = run_query(
+            _make_client(), _genomic_query(), "variant_count", backend="auth"
+        )
+        assert result.value == 7
+
+    @respx.mock
+    def test_string_count_keeps_obfuscation_metadata(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content='{"count":"11309 ±3"}'.encode())
+        )
+        result = run_query(
+            _make_client(), _genomic_query(), "variant_count", backend="auth"
+        )
+        assert result.value == 11309
+        assert result.margin == 3
+        assert result.obfuscated is True
+
+    @respx.mock
+    def test_suppressed_string_count(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b'{"count":"< 10"}')
+        )
+        result = run_query(
+            _make_client(), _genomic_query(), "variant_count", backend="auth"
+        )
+        assert result.value is None
+        assert result.cap == 10
+        assert result.obfuscated is True
+
+    @respx.mock
+    def test_bare_numeric_body_still_accepted(self):
+        """A bare count string still parses, for deployments that send one."""
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"42"))
+        result = run_query(
+            _make_client(), _genomic_query(), "variant_count", backend="auth"
+        )
+        assert result.value == 42
+        assert result.raw == "42"
+
+    @respx.mock
+    def test_empty_body_names_the_request(self):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b""))
+        with pytest.raises(PicSureQueryError) as exc_info:
+            run_query(_make_client(), _genomic_query(), "variant_count", backend="auth")
+
+        message = str(exc_info.value)
+        assert "returned an empty body where a variant count was expected" in message
+        assert "HTTP 200" not in message
+        assert "genomic filter keys 'Gene_with_variant'" in message
+        assert "not available on this PIC-SURE deployment" in message
+
+    @respx.mock
+    def test_no_variant_filters_message_raises_instead_of_reporting_zero(self):
+        """Live shape for a variant count with no genomic filter.
+
+        Returning CountResult(value=0) would read as no matching variants
+        when the server never ran a query at all.
+        """
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=VARIANT_COUNT_NO_FILTERS_LIVE)
+        )
+        with pytest.raises(PicSureQueryError) as exc_info:
+            run_query(_make_client(), _simple_clause(), "variant_count", backend="auth")
+
+        message = str(exc_info.value)
+        assert "at least one genomic filter" in message
+        assert "buildGenomicFilter" in message
+
+    @respx.mock
+    def test_negative_count_is_rejected(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b'{"count":-1,"message":"x"}')
+        )
+        with pytest.raises(PicSureQueryError, match="non-negative"):
+            run_query(_make_client(), _genomic_query(), "variant_count", backend="auth")
+
+    @respx.mock
+    def test_json_object_without_a_count_raises(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b'{"message":"hi"}')
+        )
+        with pytest.raises(PicSureQueryError, match="'count' field"):
+            run_query(_make_client(), _genomic_query(), "variant_count", backend="auth")
+
+    @respx.mock
+    def test_json_object_with_a_boolean_count_raises(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b'{"count":true}')
+        )
+        with pytest.raises(PicSureQueryError, match="'count' field"):
+            run_query(_make_client(), _genomic_query(), "variant_count", backend="auth")
+
+    @respx.mock
+    def test_json_object_with_a_non_scalar_count_raises(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b'{"count":[1,2]}')
+        )
+        with pytest.raises(PicSureQueryError, match="number or a count string"):
+            run_query(_make_client(), _genomic_query(), "variant_count", backend="auth")
+
+    @respx.mock
+    def test_garbage_body_still_raises(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"not a count")
+        )
+        with pytest.raises(PicSureQueryError, match="Expected a count"):
+            run_query(_make_client(), _genomic_query(), "variant_count", backend="auth")
+
+    @respx.mock
+    def test_disabled_result_type_body_raises(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(
+                200, content=b"VARIANT_COUNT_FOR_QUERY query type not allowed"
+            )
+        )
+        with pytest.raises(PicSureQueryError, match="may be disabled"):
+            run_query(_make_client(), _genomic_query(), "variant_count", backend="auth")
+
+
+class TestRunQueryVariantListEndToEnd:
+    """Drive VARIANT_LIST through ``run_query``.
+
+    Disabled on the verified deployment, so the "not allowed" body is the
+    live shape and the success shape is unit-tested only.
+    """
+
+    @respx.mock
+    def test_sends_the_expected_request_body(self):
+        route = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"[]")
+        )
+        run_query(_make_client(), _genomic_query(), "variant_list", backend="auth")
+
+        import json
+
+        query = json.loads(route.calls[0].request.content)["query"]
+        assert query["expectedResultType"] == "VARIANT_LIST_FOR_QUERY"
+        assert query["genomicFilters"] == [
+            {"key": "Gene_with_variant", "values": ["CONSENTQA902_1"]}
+        ]
+
+    @respx.mock
+    def test_parses_a_multi_spec_list(self):
+        body = b"[7,100000,A,T,CHD8,missense_variant, 7,100001,C,G,CHD8,stop_gained]"
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=body))
+        result = run_query(
+            _make_client(), _genomic_query(), "variant_list", backend="auth"
+        )
+        assert result == [
+            "7,100000,A,T,CHD8,missense_variant",
+            "7,100001,C,G,CHD8,stop_gained",
+        ]
+
+    @respx.mock
+    def test_parses_an_empty_list(self):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"[]"))
+        result = run_query(
+            _make_client(), _genomic_query(), "variant_list", backend="auth"
+        )
+        assert result == []
+
+    @respx.mock
+    def test_live_disabled_body_raises(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=VARIANT_LIST_NOT_ALLOWED_LIVE)
+        )
+        with pytest.raises(PicSureQueryError, match="may be disabled"):
+            run_query(_make_client(), _genomic_query(), "variant_list", backend="auth")
+
+    @respx.mock
+    def test_unbracketed_body_raises(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"7,100000,A,T")
+        )
+        with pytest.raises(PicSureQueryError, match="bracketed variant list"):
+            run_query(_make_client(), _genomic_query(), "variant_list", backend="auth")
+
+
+class TestRunQueryVcfExcerptEndToEnd:
+    """Drive both VCF excerpt types through ``run_query``.
+
+    Both are disabled on the verified deployment, so their success shapes
+    are unit-tested only; the "not allowed" bodies are the live ones.
+    """
+
+    @pytest.mark.parametrize(
+        ("query_type", "expected_result_type"),
+        [
+            ("vcf_excerpt", "VCF_EXCERPT"),
+            ("aggregate_vcf_excerpt", "AGGREGATE_VCF_EXCERPT"),
+        ],
+    )
+    @respx.mock
+    def test_sends_the_expected_request_body(self, query_type, expected_result_type):
+        route = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"CHROM\tPOS\n7\t100000\n")
+        )
+        run_query(_make_client(), _genomic_query(), query_type, backend="auth")
+
+        import json
+
+        query = json.loads(route.calls[0].request.content)["query"]
+        assert query["expectedResultType"] == expected_result_type
+        assert query["genomicFilters"] == [
+            {"key": "Gene_with_variant", "values": ["CONSENTQA902_1"]}
+        ]
+
+    @pytest.mark.parametrize("query_type", ["vcf_excerpt", "aggregate_vcf_excerpt"])
+    @respx.mock
+    def test_parses_the_tab_separated_body(self, query_type):
+        body = b"CHROM\tPOS\tREF\tALT\n7\t100000\tA\tT\n7\t100001\tC\tG\n"
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=body))
+        df = run_query(_make_client(), _genomic_query(), query_type, backend="auth")
+        assert list(df.columns) == ["CHROM", "POS", "REF", "ALT"]
+        assert len(df) == 2
+        assert df["POS"].tolist() == [100000, 100001]
+
+    @pytest.mark.parametrize("query_type", ["vcf_excerpt", "aggregate_vcf_excerpt"])
+    @respx.mock
+    def test_no_variants_sentinel_is_an_empty_frame(self, query_type):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"No Variants Found\n")
+        )
+        df = run_query(_make_client(), _genomic_query(), query_type, backend="auth")
+        assert df.empty
+
+    @pytest.mark.parametrize(
+        ("query_type", "body"),
+        [
+            ("vcf_excerpt", VCF_EXCERPT_NOT_ALLOWED_LIVE),
+            ("aggregate_vcf_excerpt", AGGREGATE_VCF_NOT_ALLOWED_LIVE),
+        ],
+    )
+    @respx.mock
+    def test_live_disabled_body_raises(self, query_type, body):
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=body))
+        with pytest.raises(PicSureQueryError, match="may be disabled"):
+            run_query(_make_client(), _genomic_query(), query_type, backend="auth")
+
+
+class TestVariantParserDefensiveBranches:
+    """Branches reachable only from a malformed body."""
+
+    def test_clause_concept_paths_ignores_a_non_list_subquery(self):
+        from picsure._services.query_run import _clause_concept_paths
+
+        assert _clause_concept_paths({"phenotypicClauses": "not-a-list"}) == []
+        assert _clause_concept_paths({"operator": "AND"}) == []
+        assert _clause_concept_paths("not-a-dict") == []
+
+    def test_empty_count_message_without_context(self):
+        from picsure._services.query_run import _empty_count_message
+
+        message = _empty_count_message(None)
+        assert "empty body" in message
+        assert "  " not in message
+
+    def test_no_variant_filters_message_without_context(self):
+        from picsure._services.query_run import _parse_variant_count
+
+        with pytest.raises(PicSureQueryError, match="at least one genomic filter"):
+            _parse_variant_count(VARIANT_COUNT_NO_FILTERS_LIVE)
+
+    def test_vcf_excerpt_undecodable_body_raises(self):
+        from picsure._services.query_run import _parse_vcf_excerpt
+
+        with pytest.raises(PicSureQueryError, match="malformed VCF excerpt"):
+            _parse_vcf_excerpt(b"\xff\xfe\x00bad")
+
+    def test_vcf_excerpt_unparsable_table_raises(self):
+        from picsure._services.query_run import _parse_vcf_excerpt
+
+        ragged_rows = b'CHROM\tPOS\n7\t100000\n"unclosed\tquote\t\t\t\n'
+        with pytest.raises(PicSureQueryError, match="malformed VCF excerpt"):
+            _parse_vcf_excerpt(ragged_rows)
+
+
+class TestUndecodableBodyStaysInTheErrorHierarchy:
+    """A body that is not UTF-8 must not leak a raw UnicodeDecodeError.
+
+    UnicodeDecodeError is a ValueError, so it walks straight through a
+    caller's ``except PicSureError``. Every parser that decodes a body goes
+    through one helper that raises PicSureQueryError instead.
+    """
+
+    UNDECODABLE = b"\xff\xfe\x00count"
+
+    @pytest.mark.parametrize(
+        ("query_type", "expected"),
+        [
+            ("count", "malformed count response"),
+            ("cross_count", "malformed cross-count response"),
+            ("variant_count", "malformed variant-count response"),
+            ("variant_list", "malformed variant-list response"),
+            ("vcf_excerpt", "malformed VCF excerpt"),
+        ],
+    )
+    @respx.mock
+    def test_each_result_type_raises_a_query_error(self, query_type, expected):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=self.UNDECODABLE)
+        )
+
+        with pytest.raises(PicSureQueryError, match=expected) as excinfo:
+            run_query(_make_client(), _genomic_query(), query_type, backend="auth")
+
+        assert isinstance(excinfo.value, PicSureError)
+        assert not isinstance(excinfo.value, UnicodeDecodeError)
+
+    @respx.mock
+    def test_the_message_quotes_the_leading_bytes(self):
+        respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=self.UNDECODABLE)
+        )
+
+        with pytest.raises(PicSureQueryError) as excinfo:
+            run_query(_make_client(), _genomic_query(), "count", backend="auth")
+
+        assert repr(self.UNDECODABLE) in str(excinfo.value)
+
+
+def test_cross_count_negative_value_is_rejected():
+    from picsure._services.query_run import _parse_cross_count
+
+    with pytest.raises(PicSureQueryError, match="non-negative"):
+        _parse_cross_count(b'{"\\\\a\\\\": -1}')
+
+
+class TestDataframeQueriesStreamToDisk:
+    """Participant and timestamp results are streamed, not buffered.
+
+    The buffered path held the whole CSV in memory before handing it to
+    pandas, so peak usage was the raw bytes plus the frame, enough to
+    kill a notebook kernel on a large cohort, silently.
+    """
+
+    @staticmethod
+    def _spy_on_streaming(monkeypatch) -> list[Path]:
+        """Record the target each streamed download is written to."""
+        targets: list[Path] = []
+        real = PicSureClient.post_raw_to_file
+
+        def spy(self, path, target, body=None):
+            targets.append(Path(target))
+            return real(self, path, target, body=body)
+
+        monkeypatch.setattr(PicSureClient, "post_raw_to_file", spy)
+        return targets
+
+    @staticmethod
+    def _forbid_buffering(monkeypatch) -> None:
+        def fail(self, path, body=None):
+            raise AssertionError("post_raw buffers the whole body in memory")
+
+        monkeypatch.setattr(PicSureClient, "post_raw", fail)
+
+    @respx.mock
+    @pytest.mark.parametrize("query_type", ["participant", "timestamp"])
+    def test_the_result_is_streamed_rather_than_buffered(self, query_type, monkeypatch):
+        csv = b"patient_id,age\nP001,42\nP002,51\n"
+        _mock_async_result(csv)
+        targets = self._spy_on_streaming(monkeypatch)
+        self._forbid_buffering(monkeypatch)
+
+        df = run_query(_make_client(), _simple_clause(), query_type, backend="auth")
+
+        assert len(targets) == 1
+        assert len(df) == 2
+
+    @respx.mock
+    def test_a_count_query_is_still_fetched_in_one_piece(self, monkeypatch):
+        """Small bodies gain nothing from streaming and keep the buffered path."""
+        respx.post(QUERY_URL).mock(return_value=httpx.Response(200, content=b"7"))
+        targets = self._spy_on_streaming(monkeypatch)
+
+        result = run_query(_make_client(), _simple_clause(), "count", backend="auth")
+
+        assert targets == []
+        assert result.value == 7
+
+    @respx.mock
+    def test_the_temporary_file_is_removed_after_a_successful_parse(self, monkeypatch):
+        csv = b"patient_id,age\nP001,42\n"
+        _mock_async_result(csv)
+        targets = self._spy_on_streaming(monkeypatch)
+
+        run_query(_make_client(), _simple_clause(), "participant", backend="auth")
+
+        assert not targets[0].exists()
+        assert not targets[0].parent.exists()
+
+    @respx.mock
+    def test_the_temporary_file_is_removed_when_the_download_fails(self, monkeypatch):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        respx.post(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+        respx.post(RESULT_URL).mock(return_value=httpx.Response(500, text="boom"))
+        targets = self._spy_on_streaming(monkeypatch)
+
+        with pytest.raises(PicSureServerError):
+            run_query(_make_client(), _simple_clause(), "participant", backend="auth")
+
+        assert not targets[0].parent.exists()
+
+    @respx.mock
+    def test_the_temporary_file_is_removed_when_the_parse_fails(self, monkeypatch):
+        _mock_async_result(b"a,b,c\n1,2,3\n4,5,6,7,8\n")
+        targets = self._spy_on_streaming(monkeypatch)
+
+        with pytest.raises(PicSureQueryError, match="malformed CSV"):
+            run_query(_make_client(), _simple_clause(), "participant", backend="auth")
+
+        assert not targets[0].exists()
+        assert not targets[0].parent.exists()
+
+    @respx.mock
+    @pytest.mark.parametrize("failing_url", [SUBMIT_URL, STATUS_URL, RESULT_URL])
+    def test_a_transport_failure_is_still_translated(self, failing_url, clock):
+        """A refused poll is retried until the budget passes, so the clock is faked."""
+        _mock_async_result(b"patient_id\nP001\n")
+        respx.post(failing_url).mock(side_effect=httpx.ConnectError("refused"))
+
+        with pytest.raises(PicSureConnectionError, match="refused"):
+            run_query(_make_client(), _simple_clause(), "participant", backend="auth")
+
+    @respx.mock
+    def test_a_local_disk_failure_is_a_connection_error(self, monkeypatch):
+        csv = b"patient_id,age\nP001,42\n"
+        _mock_async_result(csv)
+
+        def full_disk(self, path, target, body=None):
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(PicSureClient, "post_raw_to_file", full_disk)
+
+        with pytest.raises(PicSureConnectionError, match="No space left") as info:
+            run_query(_make_client(), _simple_clause(), "participant", backend="auth")
+
+        assert isinstance(info.value.__cause__, OSError)
+
+    @respx.mock
+    def test_a_missing_temporary_directory_is_a_connection_error(
+        self, monkeypatch, tmp_path
+    ):
+        import tempfile
+
+        csv = b"patient_id,age\nP001,42\n"
+        _mock_async_result(csv)
+        monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "gone"))
+
+        with pytest.raises(PicSureConnectionError, match="local disk"):
+            run_query(_make_client(), _simple_clause(), "participant", backend="auth")
+
+    @respx.mock
+    def test_a_local_disk_failure_is_caught_as_picsure_error(self, monkeypatch):
+        csv = b"patient_id,age\nP001,42\n"
+        _mock_async_result(csv)
+
+        def full_disk(self, path, target, body=None):
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(PicSureClient, "post_raw_to_file", full_disk)
+
+        with pytest.raises(PicSureError):
+            run_query(_make_client(), _simple_clause(), "participant", backend="auth")
+
+    @respx.mock
+    def test_a_body_larger_than_one_read_chunk_round_trips(self):
+        rows = b"".join(f"P{i:06d},{i}\n".encode() for i in range(20000))
+        _mock_async_result(b"patient_id,n\n" + rows)
+
+        df = run_query(_make_client(), _simple_clause(), "participant", backend="auth")
+
+        assert len(df) == 20000
+        assert list(df.columns) == ["patient_id", "n"]

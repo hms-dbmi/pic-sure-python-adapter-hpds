@@ -7,8 +7,13 @@ import respx
 
 import picsure
 from picsure._models.clause import Clause, PhenotypicFilterType
-from picsure._models.resource import Resource
 from picsure._models.session import Session
+from picsure._services._hpds_paths import query_metadata_path, query_prefix
+from picsure._services.search import (
+    _CONCEPTS_PATH,
+    _DEFAULT_PAGE_SIZE,
+    _FACETS_PATH,
+)
 from picsure._transport.client import PicSureClient
 from picsure.errors import PicSureValidationError
 
@@ -33,8 +38,6 @@ def _make_genomic_session(supports_genomic, client=None):
         client=client or _GenomicFakeClient(),
         user_email="u",
         token_expiration="N/A",
-        resources=[Resource(uuid="RID", name="auth-hpds", description="")],
-        resource_uuid="RID",
         supports_genomic=supports_genomic,
     )
 
@@ -97,43 +100,18 @@ def test_search_genomic_values_authorized_delegates():
 
 
 def _make_session(
-    resources: list[Resource] | None = None,
     email: str = "user@example.com",
     expiration: str = "2026-06-15T00:00:00Z",
 ) -> Session:
     client = MagicMock()
-    if resources is None:
-        resources = [
-            Resource(uuid="uuid-1", name="Resource A", description="Desc A"),
-            Resource(uuid="uuid-2", name="Resource B", description="Desc B"),
-        ]
     return Session(
         client=client,
         user_email=email,
         token_expiration=expiration,
-        resources=resources,
     )
 
 
 class TestSession:
-    def test_get_resource_id_returns_dataframe(self):
-        session = _make_session()
-        df = session.getResourceID()
-        assert isinstance(df, pd.DataFrame)
-        assert list(df.columns) == ["uuid", "name", "description"]
-        assert len(df) == 2
-
-    def test_get_resource_id_empty(self):
-        session = _make_session(resources=[])
-        df = session.getResourceID()
-        assert isinstance(df, pd.DataFrame)
-        assert len(df) == 0
-        assert list(df.columns) == ["uuid", "name", "description"]
-
-    def test_resource_uuid_defaults_to_none(self):
-        session = _make_session()
-        assert session._resource_uuid is None
-
     def test_consents_default_to_empty(self):
         session = _make_session()
         assert session.consents == []
@@ -144,7 +122,6 @@ class TestSession:
             client=client,
             user_email="u@e.com",
             token_expiration="",
-            resources=[],
             session_id="sess-abc-123",
         )
         assert session.session_id == "sess-abc-123"
@@ -159,104 +136,83 @@ class TestSession:
             client=client,
             user_email="u@e.com",
             token_expiration="",
-            resources=[],
             consents=["phs000007.c1"],
         )
         session.consents.append("phs999999.c9")
         assert session.consents == ["phs000007.c1"]
 
-    def test_set_resource_id(self):
+
+class TestSessionIdentity:
+    """The connected account and the token deadline, without the token."""
+
+    def test_user_email_is_readable(self):
+        session = _make_session(email="researcher@university.edu")
+
+        assert session.user_email == "researcher@university.edu"
+
+    def test_token_expiration_is_readable(self):
+        session = _make_session(expiration="2026-06-15T00:00:00Z")
+
+        assert session.token_expiration == "2026-06-15T00:00:00Z"
+
+    def test_anonymous_session_reports_no_expiry(self):
+        session = _make_session(email="anonymous", expiration="N/A")
+
+        assert session.user_email == "anonymous"
+        assert session.token_expiration == "N/A"
+
+    def test_user_email_is_read_only(self):
         session = _make_session()
-        session.setResourceID("uuid-1")
-        assert session._resource_uuid == "uuid-1"
 
-    def test_set_resource_id_invalid_raises(self):
-        import pytest
+        with pytest.raises(AttributeError):
+            session.user_email = "someone@else.example"
 
-        from picsure.errors import PicSureValidationError
-
+    def test_token_expiration_is_read_only(self):
         session = _make_session()
-        with pytest.raises(PicSureValidationError, match="not a valid resource UUID"):
-            session.setResourceID("nonexistent-uuid")
 
-    def test_set_resource_id_by_name(self):
-        session = _make_session()
-        session.setResourceIDByName("Resource B")
-        assert session._resource_uuid == "uuid-2"
+        with pytest.raises(AttributeError):
+            session.token_expiration = "2099-01-01T00:00:00Z"
 
-    def test_set_resource_id_by_name_invalid_raises(self):
-        import pytest
-
-        from picsure.errors import PicSureValidationError
-
-        session = _make_session()
-        with pytest.raises(PicSureValidationError, match="does not match"):
-            session.setResourceIDByName("nonexistent")
-
-
-class TestSessionDefaultResourceUuid:
-    def test_returns_explicit_resource_uuid_when_set(self):
-        client = MagicMock()
-        resources = [
-            Resource(uuid="uuid-1", name="A", description=""),
-            Resource(uuid="uuid-2", name="B", description=""),
-        ]
+    def test_neither_property_exposes_the_token(self):
+        token = "header.payload.signature"
+        client = PicSureClient(base_url=BASE_URL, token=token)
         session = Session(
             client=client,
-            user_email="u@e.com",
-            token_expiration="",
-            resources=resources,
-            resource_uuid="uuid-2",
+            user_email="researcher@university.edu",
+            token_expiration="2026-06-15T00:00:00Z",
         )
-        assert session._default_resource_uuid() == "uuid-2"
 
-    def test_returns_single_resource_when_not_set(self):
-        session = _make_session(
-            resources=[Resource(uuid="only-uuid", name="Solo", description="")]
+        assert token not in session.user_email
+        assert token not in session.token_expiration
+        assert "signature" not in session.token_expiration
+
+    def test_no_public_attribute_returns_the_token(self):
+        token = "header.payload.signature"
+        client = PicSureClient(base_url=BASE_URL, token=token)
+        session = Session(
+            client=client,
+            user_email="researcher@university.edu",
+            token_expiration="2026-06-15T00:00:00Z",
         )
-        assert session._default_resource_uuid() == "only-uuid"
 
-    def test_raises_when_multiple_resources_unselected(self):
-        import pytest
-
-        from picsure.errors import PicSureValidationError
-
-        session = _make_session()
-        with pytest.raises(PicSureValidationError) as exc_info:
-            session._default_resource_uuid()
-        msg = str(exc_info.value)
-        assert "setResourceID" in msg
-        assert "Available resources:" in msg
-        assert "uuid-1" in msg
-        assert "Resource A" in msg
-        assert "uuid-2" in msg
-        assert "Resource B" in msg
-
-    def test_raises_when_no_resources(self):
-        session = _make_session(resources=[])
-        with __import__("pytest").raises(
-            __import__("picsure.errors", fromlist=["PicSureError"]).PicSureError,
-            match="No resources",
-        ):
-            session._default_resource_uuid()
+        public = [
+            getattr(session, name) for name in dir(session) if not name.startswith("_")
+        ]
+        assert not any(value == token for value in public if isinstance(value, str))
 
 
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
 
 
-def _make_live_session(
-    resource_uuid: str = "resource-uuid-aaaa-1111",
-) -> Session:
+def _make_live_session() -> Session:
     from picsure._transport.client import PicSureClient
 
     client = PicSureClient(base_url=BASE_URL, token=TOKEN)
-    resources = [Resource(uuid=resource_uuid, name="Test", description="")]
     return Session(
         client=client,
         user_email="test@test.com",
         token_expiration="2026-12-31T00:00:00Z",
-        resources=resources,
     )
 
 
@@ -264,20 +220,16 @@ def _client() -> PicSureClient:
     return PicSureClient(base_url=BASE_URL, token=TOKEN)
 
 
-def _session_with_resources(
+def _session_on_backend(
     client: PicSureClient,
     *,
-    resources: list[Resource],
-    resource_uuid: str | None = None,
-    use_legacy_query_path: bool = False,
+    backend: str = "auth",
 ) -> Session:
     return Session(
         client=client,
         user_email="x@y.com",
         token_expiration="2030-01-01",
-        resources=resources,
-        resource_uuid=resource_uuid,
-        use_legacy_query_path=use_legacy_query_path,
+        backend=backend,
     )
 
 
@@ -312,10 +264,31 @@ def _metadata_envelope(
 
 
 _CONCEPTS_URL = (
-    f"{BASE_URL}/picsure/proxy/dictionary-api/concepts"
-    "?page_number=0&page_size=2147483647"
+    f"{BASE_URL}{_CONCEPTS_PATH}?page_number=0&page_size={_DEFAULT_PAGE_SIZE}"
 )
-_FACETS_URL = f"{BASE_URL}/picsure/proxy/dictionary-api/facets"
+_FACETS_URL = f"{BASE_URL}{_FACETS_PATH}"
+# The versioned auth HPDS query-lifecycle base (submit/status/result/sync).
+_AUTH_QUERY_BASE = f"{BASE_URL}{query_prefix('auth', v3=True)}/query"
+
+_SAVED_QUERY_ID = "11111111-2222-3333-4444-555555555555"
+_JOB_ID = "6b2f4d1e-9c3a-4f5b-8d7e-1a2b3c4d5e6f"
+
+
+def _mock_auth_job(content: bytes) -> None:
+    """Mock the submit, status and result routes of one finished query."""
+    respx.post(_AUTH_QUERY_BASE).mock(
+        return_value=httpx.Response(200, json={"picsureResultId": _JOB_ID})
+    )
+    respx.post(f"{_AUTH_QUERY_BASE}/{_JOB_ID}/status").mock(
+        return_value=httpx.Response(200, json={"status": "AVAILABLE"})
+    )
+    respx.post(f"{_AUTH_QUERY_BASE}/{_JOB_ID}/result").mock(
+        return_value=httpx.Response(200, content=content)
+    )
+
+
+def _meta_url(query_id: str, backend: str = "auth") -> str:
+    return f"{BASE_URL}" + query_metadata_path(backend, query_id)
 
 
 class TestSessionSearch:
@@ -354,12 +327,66 @@ class TestSessionSearch:
             client=client,
             user_email="u@e.com",
             token_expiration="",
-            resources=[Resource(uuid="r", name="t", description="")],
             consents=["phs000007.c1"],
         )
         session.searchDictionary("age")
         body = __import__("json").loads(route.calls[0].request.content)
         assert body["consents"] == ["phs000007.c1"]
+
+    @respx.mock
+    def test_search_forwards_page_and_page_size(self, search_response):
+        route = respx.post(
+            f"{BASE_URL}{_CONCEPTS_PATH}?page_number=2&page_size=50"
+        ).mock(return_value=httpx.Response(200, json=search_response))
+
+        session = _make_live_session()
+        df = session.searchDictionary("sex", page=2, page_size=50)
+
+        assert len(route.calls) == 1
+        assert route.calls[0].request.url.params["page_number"] == "2"
+        assert route.calls[0].request.url.params["page_size"] == "50"
+        assert df.attrs["page"] == 2
+        assert df.attrs["page_size"] == 50
+
+    @respx.mock
+    def test_search_without_page_collects_every_page(self):
+        first = respx.post(_CONCEPTS_URL).mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "content": [{"conceptPath": "\\a\\", "name": "a"}],
+                    "totalElements": 2,
+                    "last": False,
+                },
+            )
+        )
+        second = respx.post(
+            f"{BASE_URL}{_CONCEPTS_PATH}?page_number=1&page_size={_DEFAULT_PAGE_SIZE}"
+        ).mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "content": [{"conceptPath": "\\b\\", "name": "b"}],
+                    "totalElements": 2,
+                    "last": True,
+                },
+            )
+        )
+
+        session = _make_live_session()
+        df = session.searchDictionary()
+
+        assert first.called
+        assert second.called
+        assert len(df) == 2
+        assert df.attrs["page"] is None
+        assert df.attrs["pages_fetched"] == 2
+        assert df.attrs["has_more"] is False
+
+    def test_search_rejects_bad_page_before_any_request(self):
+        session = _make_live_session()
+        with pytest.raises(PicSureValidationError, match="zero-based"):
+            session.searchDictionary("sex", page=-1)
 
 
 class TestSessionFacets:
@@ -480,7 +507,7 @@ class TestSessionShowAllFacets:
 class TestSessionRunQuery:
     @respx.mock
     def test_run_query_count(self):
-        respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
+        respx.post(f"{_AUTH_QUERY_BASE}/sync").mock(
             return_value=httpx.Response(200, content=b"42")
         )
         from picsure._models.clause import Clause, PhenotypicFilterType
@@ -498,9 +525,7 @@ class TestSessionRunQuery:
 
     @respx.mock
     def test_run_query_participant(self, participant_response):
-        respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
-            return_value=httpx.Response(200, content=participant_response)
-        )
+        _mock_auth_job(participant_response)
         from picsure._models.clause import Clause, PhenotypicFilterType
 
         session = _make_live_session()
@@ -518,16 +543,7 @@ class TestSessionExport:
     def test_export_pfb(self, tmp_path):
         # Session.exportAsPFB drives the async flow:
         # submit -> poll status -> stream result.
-        query_id = "session-pfb-1"
-        respx.post(f"{BASE_URL}/picsure/v3/query").mock(
-            return_value=httpx.Response(200, json={"picsureResultId": query_id})
-        )
-        respx.post(f"{BASE_URL}/picsure/v3/query/{query_id}/status").mock(
-            return_value=httpx.Response(200, json={"status": "AVAILABLE"})
-        )
-        respx.post(f"{BASE_URL}/picsure/v3/query/{query_id}/result").mock(
-            return_value=httpx.Response(200, content=b"pfb_data")
-        )
+        _mock_auth_job(b"pfb_data")
         from unittest.mock import patch
 
         from picsure._models.clause import Clause, PhenotypicFilterType
@@ -537,7 +553,7 @@ class TestSessionExport:
             keys=["\\sex\\"], type=PhenotypicFilterType.FILTER, categories=["Male"]
         )
         output = tmp_path / "test.pfb"
-        with patch("picsure._services.export.time.sleep"):
+        with patch("picsure._services.query_run.time.sleep"):
             session.exportAsPFB(clause, output)
 
         assert output.exists()
@@ -556,9 +572,7 @@ class TestSessionExport:
             client=client,
             user_email="anonymous",
             token_expiration="N/A",
-            resources=[Resource(uuid="uuid-1", name="open-hpds", description="")],
-            resource_uuid="uuid-1",
-            use_legacy_query_path=True,
+            backend="open",
         )
         clause = Clause(
             keys=["\\sex\\"], type=PhenotypicFilterType.FILTER, categories=["Male"]
@@ -576,13 +590,10 @@ class TestSessionExport:
 
     def test_save_query_by_name_forwards_to_service(self, monkeypatch):
         # Verify Session.saveQueryByName forwards to the service layer with
-        # the session-bound client, resource UUID, and legacy-flag.
+        # the session-bound client and backend.
         from picsure._models import session as session_module
 
-        session = _make_session(
-            resources=[Resource(uuid="uuid-1", name="hpds", description="x")],
-        )
-        session._resource_uuid = "uuid-1"
+        session = _make_session()
         clause = Clause(
             keys=["\\sex\\"], type=PhenotypicFilterType.FILTER, categories=["Male"]
         )
@@ -591,18 +602,16 @@ class TestSessionExport:
 
         def fake_save(
             client,
-            resource_uuid,
             query,
             name,
             *,
-            use_legacy_query_path,
+            backend,
             overwrite,
         ):
             captured["client"] = client
-            captured["resource_uuid"] = resource_uuid
             captured["query"] = query
             captured["name"] = name
-            captured["use_legacy_query_path"] = use_legacy_query_path
+            captured["backend"] = backend
             captured["overwrite"] = overwrite
             return "qid-fake-001"
 
@@ -616,10 +625,9 @@ class TestSessionExport:
 
         assert qid == "qid-fake-001"
         assert captured["client"] is session._client
-        assert captured["resource_uuid"] == "uuid-1"
         assert captured["query"] is clause
         assert captured["name"] == "Cohort A"
-        assert captured["use_legacy_query_path"] is False
+        assert captured["backend"] == "auth"
         assert captured["overwrite"] is True
         # Silence unused-import warning from ruff for the imported alias.
         assert session_module.Session is Session
@@ -675,16 +683,12 @@ class TestSessionClose:
 
 class TestSessionLoadQueryByID:
     @respx.mock
-    def test_always_hits_legacy_metadata_endpoint(self):
-        # The v3 metadata endpoint is broken on BDC; loadQueryByID pins
-        # reads to the legacy path regardless of how the session was
-        # connected (authorized v3 sessions still hit legacy here).
+    def test_hits_versioned_metadata_endpoint(self):
+        # Query metadata is served under the versioned (/v3) query routes, so
+        # loadQueryByID reads the /picsure/hpds/{backend}/v3/query/{id}/metadata
+        # route, never the retired non-versioned one.
         client = _client()
-        session = _session_with_resources(
-            client,
-            resources=[Resource(uuid="r-1", name="hpds", description="x")],
-            resource_uuid="r-1",
-        )
+        session = _session_on_backend(client)
         body = _metadata_envelope(
             select=[],
             phenotypic={
@@ -694,38 +698,17 @@ class TestSessionLoadQueryByID:
                 "not": False,
             },
         )
-        legacy = respx.get(f"{BASE_URL}/picsure/query/abc-123/metadata").mock(
+        versioned = respx.get(_meta_url(_SAVED_QUERY_ID)).mock(
             return_value=httpx.Response(200, json=body)
         )
-        v3 = respx.get(f"{BASE_URL}/picsure/v3/query/abc-123/metadata").mock(
-            return_value=httpx.Response(200, json=body)
-        )
-        result = session.loadQueryByID("abc-123")
-        assert legacy.called
-        assert not v3.called
+        legacy = respx.get(
+            f"{BASE_URL}/picsure/hpds/auth/query/{_SAVED_QUERY_ID}/metadata"
+        ).mock(return_value=httpx.Response(200, json=body))
+        result = session.loadQueryByID(_SAVED_QUERY_ID)
+        assert versioned.called
+        assert not legacy.called
         assert isinstance(result, Clause)
         assert result.type == PhenotypicFilterType.FILTER
-
-    @respx.mock
-    def test_works_without_resource_uuid_set(self):
-        # The metadata endpoint is not scoped to a resource; loadQueryByID
-        # must not require setResourceID first.
-        client = _client()
-        session = _session_with_resources(client, resources=[])
-        body = _metadata_envelope(
-            select=[],
-            phenotypic={
-                "phenotypicFilterType": "FILTER",
-                "conceptPath": "\\phs1\\sex\\",
-                "values": ["Male"],
-                "not": False,
-            },
-        )
-        respx.get(f"{BASE_URL}/picsure/query/abc-123/metadata").mock(
-            return_value=httpx.Response(200, json=body)
-        )
-        result = session.loadQueryByID("abc-123")
-        assert isinstance(result, Clause)
 
 
 class TestSessionRunQueryByID:
@@ -736,11 +719,7 @@ class TestSessionRunQueryByID:
         from picsure._models.count_result import CountResult
 
         client = _client()
-        session = _session_with_resources(
-            client,
-            resources=[Resource(uuid="r-1", name="hpds", description="x")],
-            resource_uuid="r-1",
-        )
+        session = _session_on_backend(client)
         body = _metadata_envelope(
             select=[],
             phenotypic={
@@ -750,14 +729,14 @@ class TestSessionRunQueryByID:
                 "not": False,
             },
         )
-        metadata = respx.get(f"{BASE_URL}/picsure/query/abc-123/metadata").mock(
+        metadata = respx.get(_meta_url(_SAVED_QUERY_ID)).mock(
             return_value=httpx.Response(200, json=body)
         )
-        sync = respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
+        sync = respx.post(f"{_AUTH_QUERY_BASE}/sync").mock(
             return_value=httpx.Response(200, content=b"42")
         )
 
-        result = session.runQueryByID("abc-123", type="count")
+        result = session.runQueryByID(_SAVED_QUERY_ID, type="count")
 
         assert metadata.called
         assert sync.called
@@ -767,11 +746,7 @@ class TestSessionRunQueryByID:
     @respx.mock
     def test_run_query_by_id_participant(self, participant_response):
         client = _client()
-        session = _session_with_resources(
-            client,
-            resources=[Resource(uuid="r-1", name="hpds", description="x")],
-            resource_uuid="r-1",
-        )
+        session = _session_on_backend(client)
         body = _metadata_envelope(
             select=["\\phs1\\age\\"],
             phenotypic={
@@ -781,14 +756,12 @@ class TestSessionRunQueryByID:
                 "not": False,
             },
         )
-        respx.get(f"{BASE_URL}/picsure/query/abc-123/metadata").mock(
+        respx.get(_meta_url(_SAVED_QUERY_ID)).mock(
             return_value=httpx.Response(200, json=body)
         )
-        respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
-            return_value=httpx.Response(200, content=participant_response)
-        )
+        _mock_auth_job(participant_response)
 
-        df = session.runQueryByID("abc-123", type="participant")
+        df = session.runQueryByID(_SAVED_QUERY_ID, type="participant")
 
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 5
@@ -799,3 +772,57 @@ class TestSessionRunQueryByID:
         session = _make_live_session()
         with pytest.raises(PicSureValidationError, match="non-empty query ID"):
             session.runQueryByID("   ", type="count")
+
+
+class TestSessionBackendIsValidated:
+    """The backend string is interpolated into every HPDS path."""
+
+    def test_unknown_backend_raises(self):
+        from picsure._transport.client import PicSureClient
+        from picsure.errors import PicSureValidationError
+
+        with pytest.raises(PicSureValidationError, match="backend must be one of"):
+            Session(
+                client=PicSureClient(base_url=BASE_URL),
+                user_email="u@example.com",
+                token_expiration="N/A",
+                backend="aut",
+            )
+
+    def test_both_real_backends_are_accepted(self):
+        from picsure._transport.client import PicSureClient
+
+        for backend in ("auth", "open"):
+            session = Session(
+                client=PicSureClient(base_url=BASE_URL),
+                user_email="u@example.com",
+                token_expiration="N/A",
+                backend=backend,
+            )
+            assert session._backend == backend
+
+    def test_the_session_and_the_path_builders_give_the_same_message(self):
+        with pytest.raises(PicSureValidationError) as from_session:
+            Session(
+                client=PicSureClient(base_url=BASE_URL),
+                user_email="u@example.com",
+                token_expiration="N/A",
+                backend="aut",
+            )
+
+        with pytest.raises(PicSureValidationError) as from_paths:
+            query_prefix("aut", v3=True)
+
+        assert str(from_session.value) == str(from_paths.value)
+
+
+class TestSessionSavedQueryIdValidation:
+    def test_load_query_by_id_rejects_a_non_uuid_id(self):
+        session = _make_live_session()
+        with pytest.raises(PicSureValidationError, match="not a valid query ID"):
+            session.loadQueryByID("abc-123")
+
+    def test_run_query_by_id_rejects_a_non_uuid_id(self):
+        session = _make_live_session()
+        with pytest.raises(PicSureValidationError, match="not a valid query ID"):
+            session.runQueryByID("abc-123", type="count")

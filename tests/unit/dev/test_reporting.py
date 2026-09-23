@@ -8,8 +8,8 @@ _EVENT_COLS = [
     "kind",
     "name",
     "duration_ms",
-    "bytes_in",
-    "bytes_out",
+    "bytes_sent",
+    "bytes_received",
     "status",
     "retry",
     "error",
@@ -24,8 +24,8 @@ _STATS_COLS = [
     "avg_ms",
     "min_ms",
     "max_ms",
-    "bytes_in_total",
-    "bytes_out_total",
+    "bytes_sent_total",
+    "bytes_received_total",
     "retries",
     "errors",
 ]
@@ -37,8 +37,8 @@ def _event(
     duration=10.0,
     retry=0,
     error=None,
-    bytes_in=100,
-    bytes_out=200,
+    bytes_sent=100,
+    bytes_received=200,
     status=200,
 ):
     return Event(
@@ -46,8 +46,8 @@ def _event(
         kind=kind,
         name=name,
         duration_ms=duration,
-        bytes_in=bytes_in,
-        bytes_out=bytes_out,
+        bytes_sent=bytes_sent,
+        bytes_received=bytes_received,
         status=status,
         retry=retry,
         error=error,
@@ -75,9 +75,13 @@ def test_stats_to_df_empty_has_columns():
 
 def test_stats_to_df_aggregates_by_kind_and_name():
     events = [
-        _event(kind="http", name="/a", duration=10.0, bytes_in=100, bytes_out=200),
-        _event(kind="http", name="/a", duration=20.0, bytes_in=50, bytes_out=400),
-        _event(kind="http", name="/b", duration=5.0, bytes_in=10, bytes_out=20),
+        _event(
+            kind="http", name="/a", duration=10.0, bytes_sent=100, bytes_received=200
+        ),
+        _event(
+            kind="http", name="/a", duration=20.0, bytes_sent=50, bytes_received=400
+        ),
+        _event(kind="http", name="/b", duration=5.0, bytes_sent=10, bytes_received=20),
     ]
     df = stats_to_df(events)
     a = df[df["name"] == "/a"].iloc[0]
@@ -86,8 +90,8 @@ def test_stats_to_df_aggregates_by_kind_and_name():
     assert a["avg_ms"] == 15.0
     assert a["min_ms"] == 10.0
     assert a["max_ms"] == 20.0
-    assert a["bytes_in_total"] == 150
-    assert a["bytes_out_total"] == 600
+    assert a["bytes_sent_total"] == 150
+    assert a["bytes_received_total"] == 600
 
 
 def test_stats_counts_retries_and_errors():
@@ -104,8 +108,10 @@ def test_stats_counts_retries_and_errors():
 
 def test_stats_handles_none_bytes():
     events = [
-        _event(kind="function", name="session.search", bytes_in=None, bytes_out=None),
+        _event(
+            kind="function", name="session.search", bytes_sent=None, bytes_received=None
+        ),
     ]
     df = stats_to_df(events)
-    assert df.iloc[0]["bytes_in_total"] == 0
-    assert df.iloc[0]["bytes_out_total"] == 0
+    assert df.iloc[0]["bytes_sent_total"] == 0
+    assert df.iloc[0]["bytes_received_total"] == 0

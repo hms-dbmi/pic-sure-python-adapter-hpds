@@ -1,19 +1,86 @@
+"""Translation from internal transport errors to the public hierarchy.
+
+Every service routes its transport failures through
+:func:`translate_transport_error` so one status maps to one public type
+and one message everywhere.  ``operation`` is a noun phrase naming what
+the caller was doing, e.g. ``"the dictionary search"``; the templates
+below read it as an object, so it must not be a bare verb.
+"""
+
 from __future__ import annotations
 
 from picsure._transport.errors import (
     TransportAuthenticationError,
+    TransportConsentDeniedError,
+    TransportConsentLookupError,
     TransportError,
     TransportNotFoundError,
     TransportRateLimitError,
+    TransportServerError,
+    TransportTLSError,
     TransportValidationError,
+    redact_credentials,
 )
 from picsure.errors import (
+    EmptyBodyError,
+    PicSureAuthenticationError,
     PicSureAuthError,
+    PicSureAuthorizationError,
     PicSureConnectionError,
+    PicSureConsentDeniedError,
+    PicSureConsentLookupError,
     PicSureError,
     PicSureQueryError,
+    PicSureServerError,
+    PicSureTLSError,
     PicSureValidationError,
 )
+
+_NEW_TOKEN_ADVICE = (
+    "Copy a fresh token from the PIC-SURE user interface and pass it as "
+    "picsure.connect(token=...)."
+)
+
+
+def _server_said(body: str) -> str:
+    """Quote the server's own explanation, or nothing when it sent none.
+
+    Some PIC-SURE refusals carry an empty body; appending a bare "The
+    server said:" to those reads as a truncated message.
+
+    The quoted text is redacted twice on purpose. Every transport class
+    that stores a body already ran
+    :func:`picsure._transport.errors.redact_credentials` over it in its
+    constructor, and this repeats the pass on the way into a message a
+    user will see. The redundancy costs one regex sweep of at most 200
+    characters and covers a constructor that is added later without the
+    first pass.
+    """
+    quoted = redact_credentials(body.strip()[:200])
+    return f" The server said: {quoted}" if quoted else ""
+
+
+def bodiless_response_succeeded(exc: EmptyBodyError) -> bool:
+    """Whether a bodiless response's status says the request succeeded.
+
+    The transport translates only 4xx and 5xx and does not follow
+    redirects, so every status below 400 arrives as an
+    :class:`~picsure.errors.EmptyBodyError`. Some routes answer a
+    success with no body on purpose, a ``200`` on a lookup that found
+    nothing and a ``201`` or ``204`` on a write, while a ``302`` to an
+    SSO login on an expired gateway session is byte-for-byte the same
+    failure to decode. The status is the only thing that tells them
+    apart, so both consumers of the class ask the question here rather
+    than each writing its own comparison.
+
+    Args:
+        exc: The empty-body failure the transport raised.
+
+    Returns:
+        ``True`` for a 2xx, ``False`` for every other status that can
+        reach here.
+    """
+    return 200 <= exc.status_code < 300
 
 
 def rate_limit_message(
@@ -23,9 +90,10 @@ def rate_limit_message(
 ) -> str:
     """Render a consistent rate-limit message across services.
 
-    ``suffix`` is appended after "Rate limited" so callers can add
-    operation-specific context (e.g. " by BDC Authorized",
-    " on PFB result").
+    Split out of :func:`translate_transport_error` for readability
+    rather than for reuse: the one caller is twenty lines below, and
+    ``suffix`` is the operation phrase it passes (e.g. " on the PFB
+    export download").
     """
     base = f"Rate limited{suffix}"
     if exc.retry_after is not None:
@@ -33,33 +101,117 @@ def rate_limit_message(
     return f"{base}. Please wait and try again."
 
 
-def translate_stage_error(
+def translate_transport_error(
     exc: TransportError,
     *,
-    service: str,
-    stage: str,
+    operation: str,
 ) -> PicSureError:
     """Translate a transport exception to the public hierarchy.
 
-    Shared shape for multi-stage flows (PFB export, saveQueryByName)
-    where each stage gets the same template message keyed by
-    ``"{service} {stage}"`` (e.g. ``"PFB submit"``).
+    Args:
+        exc: The internal transport exception the client raised.
+        operation: Noun phrase naming what was being attempted, read as
+            the object of the message templates (e.g. ``"the dictionary
+            search"``, ``"the PFB export download"``).
+
+    Returns:
+        The public exception to raise.  A 401 becomes
+        :class:`PicSureAuthenticationError`, a 403
+        :class:`PicSureAuthorizationError` (or
+        :class:`PicSureConsentDeniedError`), an unreachable server
+        :class:`PicSureConnectionError`, and a 5xx
+        :class:`PicSureServerError`.
     """
-    label = f"{service} {stage}"
+    if isinstance(exc, TransportConsentDeniedError):
+        return PicSureConsentDeniedError(
+            exc.status_code,
+            exc.body,
+            exc.error_type,
+            exc.server_message,
+            f"Consent denied for {operation} (HTTP {exc.status_code}). This is a "
+            f"consent decision, not an outage: your approved consents do not cover "
+            f"the data this request touches. The server said: "
+            f"{redact_credentials(exc.server_message)}",
+        )
+    if isinstance(exc, TransportConsentLookupError):
+        return PicSureConsentLookupError(
+            exc.status_code,
+            exc.body,
+            exc.error_type,
+            exc.server_message,
+            f"The server could not resolve your consent permissions for "
+            f"{operation} (HTTP {exc.status_code}). This is a failure inside "
+            f"PIC-SURE, not a problem with your token or your approvals; try "
+            f"again shortly. The server said: "
+            f"{redact_credentials(exc.server_message)}",
+        )
+    if isinstance(exc, TransportAuthenticationError):
+        return _refusal_error(exc, operation)
     if isinstance(exc, TransportValidationError):
         return PicSureValidationError(
-            f"Server rejected the {label} request "
-            f"(HTTP {exc.status_code}): {exc.body[:200]}"
+            f"The server rejected {operation} (HTTP {exc.status_code})."
+            f"{_server_said(exc.body)}"
         )
     if isinstance(exc, TransportNotFoundError):
-        return PicSureQueryError(f"{label} endpoint returned 404: {exc.body[:200]}")
-    if isinstance(exc, TransportAuthenticationError):
-        return PicSureAuthError(
-            f"Authentication failed on {label} "
-            f"(HTTP {exc.status_code}): {exc.body[:200]}"
+        return PicSureQueryError(
+            f"The endpoint for {operation} returned HTTP 404.{_server_said(exc.body)}"
         )
     if isinstance(exc, TransportRateLimitError):
-        return PicSureConnectionError(rate_limit_message(exc, suffix=f" on {label}"))
+        return PicSureConnectionError(
+            rate_limit_message(exc, suffix=f" on {operation}")
+        )
+    return _unreachable_error(exc, operation=operation)
+
+
+def _unreachable_error(
+    exc: TransportError,
+    *,
+    operation: str,
+) -> PicSureConnectionError:
+    """Translate a transport failure that produced no usable response.
+
+    Split out of :func:`translate_transport_error` for readability
+    rather than for reuse; its one caller is the fallback branch at the
+    end of that function. It keeps a rejected certificate and a 5xx as
+    the distinct types callers can handle, rather than flattening both
+    into "temporarily unavailable".
+    """
+    if isinstance(exc, TransportTLSError):
+        return PicSureTLSError(str(exc))
+    if isinstance(exc, TransportServerError):
+        return PicSureServerError(
+            f"The server failed to complete {operation} (HTTP {exc.status_code}) "
+            f"and may be temporarily unavailable. Try again shortly."
+            f"{_server_said(exc.body)}"
+        )
     return PicSureConnectionError(
-        f"Could not {stage} {service}. The server may be temporarily unavailable."
+        f"Could not reach the PIC-SURE server for {operation}. The server may be "
+        f"temporarily unavailable, or the network path to it is down. Details: "
+        f"{exc}"
+    )
+
+
+def _refusal_error(
+    exc: TransportAuthenticationError,
+    operation: str,
+) -> PicSureAuthError:
+    """Split a 401/403 refusal into a token problem and a permission problem.
+
+    The 403 wording stops short of asserting the token is good: PSAMA
+    answers 403 rather than 401 for a stale token on some routes, so a
+    message that promised "your token is valid" would be wrong there.
+    """
+    if exc.status_code == 401:
+        return PicSureAuthenticationError(
+            f"Your PIC-SURE token was rejected on {operation} (HTTP 401). The "
+            f"token is missing, malformed, or expired. This is not a permissions "
+            f"problem and not a server outage. {_NEW_TOKEN_ADVICE}"
+            f"{_server_said(exc.body)}"
+        )
+    return PicSureAuthorizationError(
+        f"PIC-SURE refused {operation} (HTTP 403): this account is not authorized "
+        f"for it. This is a permissions decision, not a server outage. Check that "
+        f"the account holds the privilege or study approval the request needs; if "
+        f"it should, the token may be stale or issued for a different environment, "
+        f"so try a fresh one.{_server_said(exc.body)}"
     )

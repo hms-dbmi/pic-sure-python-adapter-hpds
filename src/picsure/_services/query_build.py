@@ -9,8 +9,11 @@ from picsure._models.genomic_filter import (
     GenomicFilter,
     GenomicFilterKey,
     is_variant_spec,
+    known_impacts,
     known_severities,
+    normalize_impact,
     severity_consequences,
+    suggest_severity_spelling,
 )
 from picsure._models.query import Query
 from picsure.errors import PicSureValidationError
@@ -31,7 +34,10 @@ def buildClause(  # noqa: N802
             categorical or range filters, ``PhenotypicFilterType.ANYRECORD``
             to match the presence of any value, or
             ``PhenotypicFilterType.REQUIRE`` to require a non-null value.
-        categories: For FILTER clauses on categorical variables.
+        categories: For FILTER clauses on categorical variables. An empty
+            list counts as no categories at all, so it does not satisfy a
+            FILTER's criteria requirement and does not conflict with
+            ``min``/``max``. A blank or whitespace-only value is refused.
         min: For FILTER clauses on numeric variables, minimum value.
         max: For FILTER clauses on numeric variables, maximum value.
 
@@ -41,7 +47,8 @@ def buildClause(  # noqa: N802
         ``Session.runQuery()``.
 
     Raises:
-        PicSureValidationError: If the clause configuration is invalid.
+        PicSureValidationError: If the clause configuration is invalid, or a
+            supplied category value is empty or blank.
 
     Note:
         Variables you filter on are returned as output columns automatically.
@@ -62,15 +69,25 @@ def buildClause(  # noqa: N802
         ...     min=40.0,
         ... )
     """
-    keys = [keys] if isinstance(keys, str) else list(keys)
-    if categories is not None:
-        categories = [categories] if isinstance(categories, str) else list(categories)
+    key_paths = (keys,) if isinstance(keys, str) else tuple(keys)
+    supplied_categories = (
+        ()
+        if categories is None
+        else ((categories,) if isinstance(categories, str) else tuple(categories))
+    )
+    if any(not str(value).strip() for value in supplied_categories):
+        raise PicSureValidationError(
+            "buildClause 'categories' must not contain empty or blank strings. "
+            "Pass the category labels to match, or leave categories out and "
+            "filter with min/max."
+        )
+    category_values = supplied_categories or None
 
-    if not keys:
+    if not key_paths:
         raise PicSureValidationError("Clause must have at least one concept path.")
 
     if type == PhenotypicFilterType.ANYRECORD:
-        if categories is not None:
+        if category_values is not None:
             raise PicSureValidationError(
                 "ANYRECORD clauses cannot have categories. ANYRECORD matches "
                 "the presence of any value for the variable. Remove the "
@@ -84,28 +101,28 @@ def buildClause(  # noqa: N802
             )
 
     if type == PhenotypicFilterType.FILTER:
-        if categories is None and min is None and max is None:
+        if category_values is None and min is None and max is None:
             raise PicSureValidationError(
                 "FILTER clauses require at least one of: categories, min, or max. "
                 "Use categories for categorical variables or min/max for "
                 "continuous variables."
             )
-        if categories is not None and (min is not None or max is not None):
+        if category_values is not None and (min is not None or max is not None):
             raise PicSureValidationError(
                 "FILTER clauses cannot have both categories and min/max."
             )
 
     if type == PhenotypicFilterType.REQUIRE and (
-        categories is not None or min is not None or max is not None
+        category_values is not None or min is not None or max is not None
     ):
         raise PicSureValidationError(
             "REQUIRE clauses cannot have categories, min, or max."
         )
 
     return Clause(
-        keys=keys,
+        keys=key_paths,
         type=type,
-        categories=categories,
+        categories=category_values,
         min=min,
         max=max,
     )
@@ -128,7 +145,17 @@ def buildClauseGroup(  # noqa: N802
         ``Session.runQuery()``.
 
     Raises:
-        PicSureValidationError: If the clause list is empty.
+        PicSureValidationError: If the clause list is empty, if
+            ``clauses`` is a bare Clause, a bare ClauseGroup, a string or
+            anything else that is not a sequence of them, or if any
+            element is neither a Clause nor a ClauseGroup. A Query is the
+            common case, since ``Session.loadQueryByID`` may return one;
+            its ``phenotypicFilter`` is the part that composes, and on an
+            include-only saved query that attribute is ``None``. An empty
+            sequence is answered here; every other argument reaches
+            :class:`ClauseGroup` unconverted, so its guards name the type
+            that arrived rather than reporting an empty group, an
+            unwrapped ``TypeError`` or a later ``AttributeError``.
 
     Example:
         >>> from picsure import buildClauseGroup, GroupOperator
@@ -137,10 +164,10 @@ def buildClauseGroup(  # noqa: N802
         ...     operator=GroupOperator.AND,
         ... )
     """
-    if not clauses:
+    if isinstance(clauses, Sequence) and not isinstance(clauses, str) and not clauses:
         raise PicSureValidationError("A clause group must contain at least one clause.")
 
-    return ClauseGroup(clauses=list(clauses), operator=operator)
+    return ClauseGroup(clauses=clauses, operator=operator)
 
 
 def buildQuery(  # noqa: N802
@@ -228,26 +255,41 @@ def buildGenomicFilter(  # noqa: N802
     Args:
         key: The genomic annotation to filter on. Pass a
             :class:`GenomicFilterKey` member (preferred) or the equivalent
-            string — an unrecognized string raises an error listing the valid
-            keys. ``GenomicFilterKey.VARIANT_SEVERITY`` is a *virtual* key: the
-            backend has no ``Variant_severity`` filter, so this builder expands
-            the requested :class:`VariantSeverity` buckets into the matching
-            ``Variant_consequence_calculated`` values. Variant-spec (SNP) keys —
-            an rsID or a ``chr,pos,ref,alt`` spec — are not supported and are
-            rejected.
+            string. An unrecognized string raises an error listing the valid
+            keys. Variant-spec (SNP) keys, an rsID or a ``chr,pos,ref,alt``
+            spec, are not supported and are rejected.
         values: One value or a sequence of values that must match.
             :class:`VariantFrequency` / :class:`VariantSeverity` members are
             accepted and coerced to their string value.
 
     Returns:
         A :class:`GenomicFilter` to pass to ``buildQuery(genomicFilters=...)``.
-        For ``VARIANT_SEVERITY`` the returned filter's ``key`` is
-        ``"Variant_consequence_calculated"``.
+
+    Note:
+        ``GenomicFilterKey.VARIANT_SEVERITY`` accepts two vocabularies, and a
+        single filter must not mix them:
+
+        - the backend's own impact values, ``HIGH``, ``MODERATE``, ``LOW`` and
+          ``MODIFIER`` (:func:`known_impacts`), exactly what
+          ``searchGenomicValues("Variant_severity")`` returns, are sent on
+          the ``Variant_severity`` key unchanged;
+        - this adapter's :class:`VariantSeverity` buckets (e.g.
+          ``"High Severity"``) are expanded into the matching
+          ``Variant_consequence_calculated`` values, so the returned filter's
+          ``key`` is ``"Variant_consequence_calculated"``.
+
+        On observed data the two routes select the same patients, but only the
+        impact values can express ``MODIFIER``, which no bucket covers.
+
+        Values are matched exactly apart from surrounding whitespace. A near
+        miss such as ``"High"`` or ``"MEDIUM"`` is rejected with the accepted
+        spelling in the message.
 
     Raises:
         PicSureValidationError: If ``key`` is empty, unrecognized, or a
             variant-spec (SNP) key; if ``values`` is empty or contains blank
-            strings; or if a ``VARIANT_SEVERITY`` value is not a valid severity.
+            strings; or if a ``VARIANT_SEVERITY`` value is neither an impact
+            value nor a severity bucket, or mixes the two.
 
     Example:
         >>> from picsure import buildGenomicFilter, GenomicFilterKey, VariantSeverity
@@ -256,6 +298,9 @@ def buildGenomicFilter(  # noqa: N802
         ... )
         >>> severe = buildGenomicFilter(
         ...     GenomicFilterKey.VARIANT_SEVERITY, values=VariantSeverity.HIGH
+        ... )
+        >>> high_impact = buildGenomicFilter(
+        ...     GenomicFilterKey.VARIANT_SEVERITY, values="HIGH"
         ... )
     """
     if isinstance(key, GenomicFilterKey):
@@ -294,21 +339,80 @@ def buildGenomicFilter(  # noqa: N802
         )
 
     if resolved is GenomicFilterKey.VARIANT_SEVERITY:
-        expanded: list[str] = []
-        for severity in normalized:
-            try:
-                expanded.extend(severity_consequences(severity))
-            except KeyError:
-                valid_severities = ", ".join(known_severities())
-                raise PicSureValidationError(
-                    f"{severity!r} is not a valid variant severity. Valid "
-                    f"severities: {valid_severities}. Pass a VariantSeverity "
-                    "member or one of these strings."
-                ) from None
-        effective_key = GenomicFilterKey.VARIANT_CONSEQUENCE_CALCULATED.value
-        effective_values = tuple(dict.fromkeys(expanded))
-    else:
-        effective_key = resolved.value
-        effective_values = normalized
+        return _build_severity_filter(normalized)
 
-    return GenomicFilter(key=effective_key, values=effective_values)
+    return GenomicFilter(key=resolved.value, values=normalized)
+
+
+def _build_severity_filter(values: tuple[str, ...]) -> GenomicFilter:
+    """Build the effective filter for a ``Variant_severity`` request.
+
+    Impact values pass through on the ``Variant_severity`` key; severity
+    buckets expand into ``Variant_consequence_calculated`` values. The two
+    vocabularies describe the same thing through different keys, so one
+    filter cannot carry both.
+
+    Args:
+        values: The already-normalized requested severity values.
+
+    Returns:
+        The :class:`GenomicFilter` to send.
+
+    Raises:
+        PicSureValidationError: If a value belongs to neither vocabulary, or
+            the request mixes the two.
+    """
+    impacts: list[str] = []
+    buckets: list[str] = []
+    for value in values:
+        candidate = value.strip()
+        impact = normalize_impact(candidate)
+        if impact is not None:
+            impacts.append(impact)
+        elif candidate in known_severities():
+            buckets.append(candidate)
+        else:
+            raise PicSureValidationError(_severity_value_message(candidate))
+
+    if impacts and buckets:
+        raise PicSureValidationError(
+            "buildGenomicFilter cannot mix Variant_severity vocabularies in "
+            f"one filter: {', '.join(repr(i) for i in impacts)} are backend "
+            "impact values sent on the 'Variant_severity' key, while "
+            f"{', '.join(repr(b) for b in buckets)} are severity buckets "
+            "expanded into 'Variant_consequence_calculated' values. Build one "
+            "filter per vocabulary and pass both to buildQuery."
+        )
+
+    if impacts:
+        return GenomicFilter(
+            key=GenomicFilterKey.VARIANT_SEVERITY.value,
+            values=tuple(dict.fromkeys(impacts)),
+        )
+
+    expanded: list[str] = []
+    for bucket in buckets:
+        expanded.extend(severity_consequences(bucket))
+    return GenomicFilter(
+        key=GenomicFilterKey.VARIANT_CONSEQUENCE_CALCULATED.value,
+        values=tuple(dict.fromkeys(expanded)),
+    )
+
+
+def _severity_value_message(value: str) -> str:
+    """Explain both accepted ``Variant_severity`` vocabularies for a bad value.
+
+    When ``value`` is a near miss, the message leads with the accepted
+    spelling so the fix is a one-word edit.
+    """
+    spelling = suggest_severity_spelling(value)
+    hint = f" The accepted spelling is {spelling!r}." if spelling else ""
+    return (
+        f"{value!r} is not a valid variant severity.{hint} Pass either a "
+        f"backend impact value ({', '.join(known_impacts())}), which is what "
+        "searchGenomicValues('Variant_severity') returns and is sent on the "
+        "'Variant_severity' key unchanged, or a severity bucket "
+        f"({', '.join(known_severities())}), which is expanded into the "
+        "matching 'Variant_consequence_calculated' values. A single filter "
+        "cannot mix the two."
+    )

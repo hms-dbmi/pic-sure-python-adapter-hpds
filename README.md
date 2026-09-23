@@ -10,11 +10,10 @@ data — all from a Jupyter notebook.
 pip install picsure
 ```
 
-For PFB export support:
-
-```bash
-pip install picsure[pfb]
-```
+That is everything the library needs, PFB export included:
+`exportAsPFB` streams the server's Avro bytes straight to a file and
+builds nothing locally. Reading the exported file back is a separate
+job, and a PFB reader such as `fastavro` or `pypfb` is what does it.
 
 ## Quickstart
 

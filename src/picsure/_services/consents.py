@@ -1,58 +1,71 @@
 from __future__ import annotations
 
-import json
-
-from picsure._transport.client import PicSureClient
+from picsure._services._errors import translate_transport_error
+from picsure._transport.client import PicSureClient, json_object
 from picsure._transport.errors import TransportError
-from picsure.errors import PicSureConnectionError
+from picsure.errors import PicSureConnectionError, PicSureQueryError
 
-_QUERY_TEMPLATE_PATH = "/psama/user/me/queryTemplate/"
+_CONSENTS_PATH = "/psama/user/me/consents"
 _CONSENTS_KEY = "\\_consents\\"
+
+_CONSENTS_OPERATION = "the PSAMA consent lookup"
 
 
 def fetch_consents(client: PicSureClient) -> list[str]:
-    """Fetch the user's consent list from the PSAMA query template.
+    """Fetch the user's consent list from PSAMA.
 
-    The query template endpoint returns a JSON object whose
-    ``queryTemplate`` field is itself a JSON-encoded string.  Inside
-    that string, ``categoryFilters["\\\\_consents\\\\"]`` holds the
-    list of study-consent identifiers the user is authorized for.
-    That list is what dictionary-api calls require on authorized
-    deployments.
+    The consents endpoint returns the user's ``UserConsents`` record,
+    whose ``consents`` field maps category keys to identifier lists.
+    ``consents["\\\\_consents\\\\"]`` holds the study-consent identifiers
+    the user is authorized for, which is what dictionary-api calls
+    require on authorized deployments.
+
+    A user with no consent record yields an empty ``consents`` map, so
+    an empty list here means "no authorized studies", not a failure.
 
     Args:
         client: Authenticated HTTP client.
 
     Returns:
         The list of consent identifiers (e.g. ``["phs000007.c1", ...]``).
-        Empty list if the template, filters, or consents key is missing.
+        Empty list if the record or the consents key is missing.
 
     Raises:
-        PicSureConnectionError: If the HTTP call fails or the template
-            is not valid JSON.
+        PicSureAuthenticationError: If the token is rejected (HTTP 401).
+        PicSureAuthorizationError: If the account may not read its own
+            consents (HTTP 403).
+        PicSureConnectionError: If PSAMA could not be reached or failed,
+            and if the response body could not be read as the
+            ``UserConsents`` object, which on this route points at the
+            base URL rather than at the response. That covers a body that
+            is not JSON and a body that is JSON but not an object, a
+            top-level array for instance. Narrowing inside the ``try``
+            changed the second case, which used to raise
+            :class:`~picsure.errors.PicSureQueryError`. The two classes
+            are siblings under ``PicSureError`` and neither catches the
+            other, and ``connect()`` calls this function unguarded on a
+            consent-gated platform, so an ``except PicSureQueryError``
+            around ``picsure.connect(...)`` no longer catches an array
+            here.
     """
     try:
-        response = client.get_json(_QUERY_TEMPLATE_PATH)
+        response = json_object(client.get_json(_CONSENTS_PATH), path=_CONSENTS_PATH)
     except TransportError as exc:
+        raise translate_transport_error(exc, operation=_CONSENTS_OPERATION) from exc
+    except PicSureQueryError as exc:
         raise PicSureConnectionError(
-            "Could not fetch your consent list from PSAMA. "
-            "The server may be temporarily unavailable."
+            f"{_CONSENTS_PATH} answered with a body the consent list could not "
+            f"be read from: either it is not JSON at all, or it is JSON that "
+            f"is not the UserConsents object this route returns. This usually "
+            f"means the URL is not a PIC-SURE deployment root. The decoder "
+            f"said: {exc}"
         ) from exc
 
-    template_raw = response.get("queryTemplate")
-    if not isinstance(template_raw, str):
+    consents_map = response.get("consents")
+    if not isinstance(consents_map, dict):
         return []
 
-    try:
-        template = json.loads(template_raw)
-    except json.JSONDecodeError as exc:
-        raise PicSureConnectionError(
-            "Received a malformed query template from PSAMA. "
-            "Contact your PIC-SURE administrator if this persists."
-        ) from exc
-
-    filters = template.get("categoryFilters", {})
-    consents = filters.get(_CONSENTS_KEY, [])
+    consents = consents_map.get(_CONSENTS_KEY, [])
     if not isinstance(consents, list):
         return []
     return [str(c) for c in consents]

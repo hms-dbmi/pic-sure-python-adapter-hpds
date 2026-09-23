@@ -44,6 +44,19 @@ df.head()
 
 Returns a pandas DataFrame with repeated measurements over time.
 
+Participant and timestamp results are built by a job on the server: the
+adapter submits the query, polls until the server reports the result
+ready, then downloads it. The submit and the wait together are bounded
+by the request timeout you pass to `connect(timeout=...)`, ten minutes
+by default, and a status check that is throttled, answered with a 5xx
+or lost to a network failure is tried again inside that budget. The
+download that follows sits outside it and carries the same value as its
+own deadline, so a call can run somewhat past the timeout end to end. A
+query that is still running when the budget passes raises
+`PicSureConnectionError` naming the query id and the budget; a query the
+server fails raises `PicSureQueryError`. Raise the timeout for a cohort
+that takes longer to assemble.
+
 ### Variant Result Types
 
 Queries with genomic filters also support four variant-specific result types:
@@ -92,10 +105,17 @@ session.exportAsPFB(my_query, "my_cohort.pfb")
 ```
 
 !!! note
-    PFB export requires the optional `pypfb` dependency:
-    ```bash
-    pip install picsure[pfb]
+    Exporting needs no extra dependency. The server builds the PFB and
+    the adapter streams its Avro bytes to disk. Opening the file
+    afterwards is what needs a PFB reader, for example `fastavro`:
+    ```python
+    import pandas as pd
+    from fastavro import reader
+
+    with open("my_cohort.pfb", "rb") as handle:
+        df = pd.DataFrame(list(reader(handle)))
     ```
+    `pypfb` reads the same files if you prefer its PFB-aware API.
 
 ## Saving a Query by Name
 
@@ -132,7 +152,8 @@ Constraints (validated client-side, mirrored from the backend
 
 !!! note
     `saveQueryByName` is not supported on open-access deployments —
-    the `/dataset/named/` endpoint requires an authenticated principal.
+    the `/picsure/operations/dataset/named` endpoint requires an
+    authenticated principal.
 
 ## Simple Queries
 
@@ -154,8 +175,9 @@ If something goes wrong, you'll get a clear error message:
 ```python
 # Invalid query type
 session.runQuery(my_query, type="invalid")
-# PicSureValidationError: 'invalid' is not a valid query type.
-# Valid types: count, participant, timestamp.
+# PicSureValidationError: 'invalid' is not a valid query type. Pass a
+# QueryType member or one of: count, participant, timestamp, cross_count,
+# variant_count, variant_list, vcf_excerpt, aggregate_vcf_excerpt.
 ```
 
 Researchers don't need to write try/except blocks. The error messages

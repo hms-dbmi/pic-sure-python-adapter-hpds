@@ -8,9 +8,6 @@ class TestPlatformEnum:
     def test_bdc_authorized_and_open_share_domain(self):
         assert Platform.BDC_AUTHORIZED.url == Platform.BDC_OPEN.url
 
-    def test_bdc_authorized_and_open_differ_by_uuid(self):
-        assert Platform.BDC_AUTHORIZED.resource_uuid != Platform.BDC_OPEN.resource_uuid
-
     def test_authorized_platforms_include_consents(self):
         assert Platform.BDC_AUTHORIZED.include_consents is True
         assert Platform.BDC_DEV_AUTHORIZED.include_consents is True
@@ -39,26 +36,26 @@ class TestResolvePlatform:
         info = resolve_platform(Platform.BDC_AUTHORIZED)
         assert isinstance(info, PlatformInfo)
         assert info.url == Platform.BDC_AUTHORIZED.url
-        assert info.resource_uuid == Platform.BDC_AUTHORIZED.resource_uuid
 
     def test_known_platform_propagates_include_consents(self):
         assert resolve_platform(Platform.BDC_AUTHORIZED).include_consents is True
         assert resolve_platform(Platform.BDC_OPEN).include_consents is False
 
     def test_known_platform_include_consents_override(self):
-        info = resolve_platform(Platform.BDC_OPEN, include_consents=True)
+        """BDC_OPEN needs no auth, so consent scoping is turned on together with it."""
+        info = resolve_platform(
+            Platform.BDC_OPEN, include_consents=True, requires_auth=True
+        )
         assert info.include_consents is True
 
-    def test_bdc_open_returns_same_url_different_uuid(self):
+    def test_bdc_open_resolves_to_same_url(self):
         auth = resolve_platform(Platform.BDC_AUTHORIZED)
         open_ = resolve_platform(Platform.BDC_OPEN)
         assert auth.url == open_.url
-        assert auth.resource_uuid != open_.resource_uuid
 
     def test_custom_url_returned_as_is(self):
         info = resolve_platform("https://my-picsure.example.com")
         assert info.url == "https://my-picsure.example.com"
-        assert info.resource_uuid is None
 
     def test_custom_url_defaults_to_no_consents(self):
         info = resolve_platform("https://my-picsure.example.com")
@@ -73,7 +70,12 @@ class TestResolvePlatform:
         assert resolve_platform(Platform.BDC_OPEN).requires_auth is False
 
     def test_known_platform_requires_auth_override(self):
-        info = resolve_platform(Platform.BDC_AUTHORIZED, requires_auth=False)
+        """Dropping auth alone on BDC_AUTHORIZED is the contradiction, so both flags
+        drop.
+        """
+        info = resolve_platform(
+            Platform.BDC_AUTHORIZED, requires_auth=False, include_consents=False
+        )
         assert info.requires_auth is False
 
     def test_custom_url_defaults_to_requires_auth(self):
@@ -107,7 +109,6 @@ class TestResolvePlatform:
     def test_nhanes_open_resolves(self):
         info = resolve_platform(Platform.NHANES_OPEN)
         assert info.url.startswith("https://")
-        assert info.resource_uuid is not None
 
 
 def test_authorized_platforms_support_genomic():
@@ -144,3 +145,73 @@ def test_resolve_platform_custom_url_override_true():
 def test_resolve_platform_member_override_false():
     info = resolve_platform(Platform.BDC_AUTHORIZED, supports_genomic=False)
     assert info.supports_genomic is False
+
+
+class TestBackendIsOneValue:
+    """Routing and the connect banner read a single derived value."""
+
+    def test_authorized_platform_is_the_auth_backend(self):
+        assert resolve_platform(Platform.BDC_AUTHORIZED).backend == "auth"
+
+    def test_open_platform_is_the_open_backend(self):
+        assert resolve_platform(Platform.BDC_OPEN).backend == "open"
+
+    def test_custom_url_defaults_to_the_auth_backend(self):
+        assert resolve_platform("https://my-picsure.example.com").backend == "auth"
+
+    def test_custom_url_without_auth_is_the_open_backend(self):
+        info = resolve_platform("https://my-picsure.example.com", requires_auth=False)
+        assert info.backend == "open"
+
+    def test_consent_scoping_never_lands_on_the_open_backend(self):
+        """The combination that printed 'open access' while routing to auth is
+        unrepresentable.
+        """
+        for platform in (Platform.BDC_AUTHORIZED, "https://my-picsure.example.com"):
+            info = resolve_platform(platform, include_consents=True)
+            assert info.include_consents is True
+            assert info.backend == "auth"
+
+
+class TestContradictoryFlags:
+    """Consent scoping on an unauthenticated connection is rejected."""
+
+    def test_custom_url_consents_without_auth_raises(self):
+        with pytest.raises(PicSureValidationError, match="include_consents=True"):
+            resolve_platform(
+                "https://my-picsure.example.com",
+                include_consents=True,
+                requires_auth=False,
+            )
+
+    def test_known_platform_consents_without_auth_raises(self):
+        """The platform's own include_consents=True makes this the same
+        contradiction.
+        """
+        with pytest.raises(PicSureValidationError, match="include_consents=True"):
+            resolve_platform(Platform.BDC_AUTHORIZED, requires_auth=False)
+
+    def test_message_names_both_escape_hatches(self):
+        with pytest.raises(PicSureValidationError) as exc_info:
+            resolve_platform(Platform.BDC_AUTHORIZED, requires_auth=False)
+        message = str(exc_info.value)
+        assert "include_consents=False" in message
+        assert "Platform.BDC_OPEN" in message
+
+    def test_direct_construction_is_validated_too(self):
+        with pytest.raises(PicSureValidationError):
+            PlatformInfo(
+                url="https://my-picsure.example.com",
+                include_consents=True,
+                requires_auth=False,
+            )
+
+
+class TestCustomUrlMarker:
+    """connect() needs to know the flags were guessed, not recorded."""
+
+    def test_custom_url_is_marked(self):
+        assert resolve_platform("https://my-picsure.example.com").is_custom_url is True
+
+    def test_known_platform_is_not_marked(self):
+        assert resolve_platform(Platform.BDC_AUTHORIZED).is_custom_url is False
