@@ -144,7 +144,7 @@ class TestHierarchyThroughRunQuery:
     def _query_url(self):
         from picsure._services._hpds_paths import query_prefix
 
-        return f"{self.BASE_URL}{query_prefix('auth', v3=True)}/query/sync"
+        return f"{self.BASE_URL}{query_prefix('auth')}/query/sync"
 
     def _run(self, response):
         import respx

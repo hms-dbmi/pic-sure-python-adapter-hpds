@@ -23,9 +23,9 @@ BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
 QUERY_ID = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
 
-SUBMIT_URL = f"{BASE_URL}{query_prefix('auth', v3=True)}/query"
-STATUS_URL = f"{BASE_URL}{query_prefix('auth', v3=True)}/query/{QUERY_ID}/status"
-RESULT_URL = f"{BASE_URL}{query_prefix('auth', v3=True)}/query/{QUERY_ID}/result"
+SUBMIT_URL = f"{BASE_URL}{query_prefix('auth')}/query"
+STATUS_URL = f"{BASE_URL}{query_prefix('auth')}/query/{QUERY_ID}/status"
+RESULT_URL = f"{BASE_URL}{query_prefix('auth')}/query/{QUERY_ID}/result"
 
 SLEEP = "picsure._services.query_run.time.sleep"
 
@@ -304,7 +304,7 @@ class TestExportPFBServerSuppliedQueryId:
             export_pfb(_make_client(), _simple_clause(), output, backend="auth")
 
         assert [call.request.url.path for call in respx.calls] == [
-            query_prefix("auth", v3=True) + "/query"
+            query_prefix("auth") + "/query"
         ]
         assert not output.exists()
 

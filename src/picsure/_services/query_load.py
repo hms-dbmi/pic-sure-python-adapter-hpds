@@ -202,10 +202,9 @@ def load_query(
 ) -> Query | Clause | ClauseGroup:
     """Load a previously-saved query by ID and rebuild it as a Query.
 
-    Reads ``/picsure/hpds/{backend}/v3/query/{id}/metadata``.  The read
+    Reads ``/picsure/hpds/{backend}/query/{id}/metadata``.  The read
     itself does not depend on HPDS, since the query-service returns the
-    stored query row, but only the versioned route is mapped on the
-    current gateway, so ``/v3`` is used for every session.
+    stored query row.
 
     Args:
         client: Authenticated HTTP client.

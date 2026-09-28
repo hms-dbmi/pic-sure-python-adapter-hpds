@@ -9,7 +9,7 @@ module's whole effect.
 The answer is read off the body's shape alone. The request path and the
 HTTP method are not consulted, and are not passed in: the async PFB
 export posts the same participant-bearing query body to
-``/hpds/auth/v3/query`` and to its ``/status`` and ``/result``
+``/hpds/auth/query`` and to its ``/status`` and ``/result``
 siblings, so no path tells the calls that carry participant work apart
 from the ones that do not.
 

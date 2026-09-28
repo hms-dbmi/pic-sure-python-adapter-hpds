@@ -267,8 +267,8 @@ _CONCEPTS_URL = (
     f"{BASE_URL}{_CONCEPTS_PATH}?page_number=0&page_size={_DEFAULT_PAGE_SIZE}"
 )
 _FACETS_URL = f"{BASE_URL}{_FACETS_PATH}"
-# The versioned auth HPDS query-lifecycle base (submit/status/result/sync).
-_AUTH_QUERY_BASE = f"{BASE_URL}{query_prefix('auth', v3=True)}/query"
+# The auth HPDS query-lifecycle base (submit/status/result/sync).
+_AUTH_QUERY_BASE = f"{BASE_URL}{query_prefix('auth')}/query"
 
 _SAVED_QUERY_ID = "11111111-2222-3333-4444-555555555555"
 _JOB_ID = "6b2f4d1e-9c3a-4f5b-8d7e-1a2b3c4d5e6f"
@@ -560,7 +560,7 @@ class TestSessionExport:
         assert output.read_bytes() == b"pfb_data"
 
     def test_export_pfb_rejects_open_session(self, tmp_path):
-        # Open-access deployments don't expose the authorized v3 async
+        # Open-access deployments don't expose the authorized async
         # flow that PFB export depends on. Surface that as a clear
         # validation error instead of letting the request 401 deep in
         # the async polling loop.
@@ -683,10 +683,9 @@ class TestSessionClose:
 
 class TestSessionLoadQueryByID:
     @respx.mock
-    def test_hits_versioned_metadata_endpoint(self):
-        # Query metadata is served under the versioned (/v3) query routes, so
-        # loadQueryByID reads the /picsure/hpds/{backend}/v3/query/{id}/metadata
-        # route, never the retired non-versioned one.
+    def test_hits_unversioned_metadata_endpoint(self):
+        # loadQueryByID reads the /picsure/hpds/{backend}/query/{id}/metadata
+        # route, never the retired versioned one.
         client = _client()
         session = _session_on_backend(client)
         body = _metadata_envelope(
@@ -698,15 +697,15 @@ class TestSessionLoadQueryByID:
                 "not": False,
             },
         )
-        versioned = respx.get(_meta_url(_SAVED_QUERY_ID)).mock(
+        current = respx.get(_meta_url(_SAVED_QUERY_ID)).mock(
             return_value=httpx.Response(200, json=body)
         )
-        legacy = respx.get(
-            f"{BASE_URL}/picsure/hpds/auth/query/{_SAVED_QUERY_ID}/metadata"
+        versioned = respx.get(
+            f"{BASE_URL}/picsure/hpds/auth/v3/query/{_SAVED_QUERY_ID}/metadata"
         ).mock(return_value=httpx.Response(200, json=body))
         result = session.loadQueryByID(_SAVED_QUERY_ID)
-        assert versioned.called
-        assert not legacy.called
+        assert current.called
+        assert not versioned.called
         assert isinstance(result, Clause)
         assert result.type == PhenotypicFilterType.FILTER
 
@@ -715,7 +714,7 @@ class TestSessionRunQueryByID:
     @respx.mock
     def test_run_query_by_id_count(self):
         # runQueryByID should load the saved query from /metadata, then
-        # execute it against /v3/query/sync and return a CountResult.
+        # execute it against /query/sync and return a CountResult.
         from picsure._models.count_result import CountResult
 
         client = _client()
@@ -811,7 +810,7 @@ class TestSessionBackendIsValidated:
             )
 
         with pytest.raises(PicSureValidationError) as from_paths:
-            query_prefix("aut", v3=True)
+            query_prefix("aut")
 
         assert str(from_session.value) == str(from_paths.value)
 

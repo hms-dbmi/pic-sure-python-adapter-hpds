@@ -421,7 +421,7 @@ class Session:
 
         Not supported on open-access deployments (platforms with both
         ``requires_auth=False`` and ``include_consents=False``): the PFB
-        async flow is exposed only on the authorized v3 endpoints, which
+        async flow is exposed only on the authorized endpoints, which
         the BDC API gateway rejects without a token.
 
         The submit and the polling loop together are bounded by the

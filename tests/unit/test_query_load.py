@@ -250,8 +250,8 @@ BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
 QUERY_ID = "11111111-2222-3333-4444-555555555555"
 META_URL = f"{BASE_URL}" + query_metadata_path("auth", QUERY_ID)
-# The retired non-versioned route, used only as a negative in routing tests.
-LEGACY_META_URL = f"{BASE_URL}/picsure/hpds/auth/query/{QUERY_ID}/metadata"
+# The retired versioned route, used only as a negative in routing tests.
+VERSIONED_META_URL = f"{BASE_URL}/picsure/hpds/auth/v3/query/{QUERY_ID}/metadata"
 
 
 def _make_client() -> PicSureClient:
@@ -356,10 +356,10 @@ class TestLoadQueryHappyPath:
         assert result.includeConcepts == ("\\phs1\\out\\",)
 
     @respx.mock
-    def test_always_uses_versioned_path(self):
-        # Query metadata is served under the versioned (/v3) query routes;
-        # loadQueryByID pins reads to the versioned metadata route for every
-        # deployment, regardless of how the session was connected.
+    def test_always_uses_unversioned_path(self):
+        # loadQueryByID pins reads to the unversioned metadata route for
+        # every deployment, regardless of how the session was connected.
+        # The retired /v3 metadata route is never hit.
         body = _envelope(
             {
                 "select": [],
@@ -370,15 +370,13 @@ class TestLoadQueryHappyPath:
                 "id": None,
             }
         )
-        versioned = respx.get(META_URL).mock(
-            return_value=httpx.Response(200, json=body)
-        )
-        legacy = respx.get(LEGACY_META_URL).mock(
+        current = respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
+        versioned = respx.get(VERSIONED_META_URL).mock(
             return_value=httpx.Response(200, json=body)
         )
         load_query(_make_client(), QUERY_ID, backend="auth")
-        assert versioned.called
-        assert not legacy.called
+        assert current.called
+        assert not versioned.called
 
 
 class TestLoadQueryStrictness:

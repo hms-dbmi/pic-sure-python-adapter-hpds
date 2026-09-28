@@ -10,7 +10,7 @@ from picsure._services.query_run import run_query
 from picsure._transport.client import PicSureClient
 
 BASE_URL = "https://test.example.com"
-QUERY_URL = f"{BASE_URL}{query_prefix('auth', v3=True)}/query/sync"
+QUERY_URL = f"{BASE_URL}{query_prefix('auth')}/query/sync"
 
 
 def _client() -> PicSureClient:

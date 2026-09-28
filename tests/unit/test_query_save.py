@@ -32,7 +32,7 @@ QUERY_ID = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
 NAMED_DATASET_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
 
 LIST_URL = f"{BASE_URL}{NAMED_DATASET_COLLECTION_PATH}"
-SUBMIT_URL = f"{BASE_URL}{query_prefix('auth', v3=True)}/query"
+SUBMIT_URL = f"{BASE_URL}{query_prefix('auth')}/query"
 SAVE_URL = f"{BASE_URL}{NAMED_DATASET_COLLECTION_PATH}"
 _ITEM_URL = f"{BASE_URL}{named_dataset_item_path(NAMED_DATASET_ID)}"
 

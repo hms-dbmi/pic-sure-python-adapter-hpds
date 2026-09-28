@@ -51,7 +51,7 @@ class Clause:
 
     **Wire format.** :meth:`to_query_json` emits a v3 ``PhenotypicFilter``
     leaf (or an ``OR`` ``PhenotypicSubquery`` of leaves for multi-key
-    clauses) per the ``/picsure/hpds/{auth,open}/v3/query`` contract.
+    clauses) per the ``/picsure/hpds/{auth,open}/query`` contract.
 
     **Immutability.** The dataclass is frozen and its collection fields are
     tuples, so a clause is hashable and usable as a dict key or set member.
