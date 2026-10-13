@@ -28,7 +28,7 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import TYPE_CHECKING, Any, TypeAlias, TypedDict
 
 import httpx
 
@@ -217,13 +217,19 @@ def _tls_failure_message(host: str, reason: ssl.SSLCertVerificationError) -> str
     )
 
 
-def _should_retry(method: str, exc: httpx.TransportError) -> bool:
+def _should_retry(exc: httpx.TransportError, *, resend_after_send: bool) -> bool:
     """Whether a failed request is safe to send again.
 
-    Safe for every method when the request provably never reached the
-    server; otherwise only for idempotent GETs (the server may already
-    have processed the request).  A rejected certificate is deterministic
-    and never retried.
+    Safe for every request when it provably never reached the server;
+    otherwise only when ``resend_after_send`` allows it, since the server
+    may already have processed the request.  A rejected certificate is
+    deterministic and never retried.
+
+    Args:
+        exc: The transport failure the attempt ended in.
+        resend_after_send: Whether a request the server may already have
+            received may be sent again.  The callers pass ``True`` only
+            for a GET that has not opted out.
     """
     if _certificate_verification_failure(exc) is not None:
         return False
@@ -238,7 +244,7 @@ def _should_retry(method: str, exc: httpx.TransportError) -> bool:
     # ReadError, ReadTimeout, WriteTimeout, CloseError, truncated-body
     # RemoteProtocolError, ...: the request was fully sent and the failure
     # happened while receiving the response.
-    return method == "GET"
+    return resend_after_send
 
 
 def _connection_failure_message(exc: httpx.TransportError) -> str:
@@ -439,6 +445,7 @@ class PicSureClient:
         *,
         timeout: float | None = None,
         retry: bool = True,
+        resend_after_send: bool = True,
     ) -> JsonBody:
         """Send GET request and return the parsed JSON object or array.
 
@@ -451,6 +458,12 @@ class PicSureClient:
             retry: Whether a transport failure or 5xx may be sent once
                 more.  ``False`` caps the call at a single attempt, so a
                 caller's deadline is the whole cost of the call.
+            resend_after_send: Whether a failure the server may already
+                have seen, a 5xx or a transport failure after the request
+                was sent, may be sent once more.  ``False`` keeps the
+                resend to failures where the request provably never
+                reached the server, the policy a POST always gets, for a
+                caller that runs its own retry loop.
 
         Returns:
             The decoded body.  Callers that require an object should pass
@@ -460,7 +473,13 @@ class PicSureClient:
             PicSureQueryError: If the body is not JSON, or decodes to
                 something other than an object or an array.
         """
-        response = self._request("GET", path, retry=retry, **_timeout_kwargs(timeout))
+        response = self._request(
+            "GET",
+            path,
+            retry=retry,
+            resend_after_send=resend_after_send,
+            **_timeout_kwargs(timeout),
+        )
         return _decode_json(response, path)
 
     def get_text(
@@ -520,6 +539,75 @@ class PicSureClient:
     ) -> Iterator[httpx.Response]:
         """POST JSON body and stream the response without buffering it.
 
+        See :meth:`_raw_stream` for the contract.  Only a failure where
+        the request provably never reached the server is retried, because
+        a POST may have executed on the server otherwise.
+        """
+        with self._raw_stream(
+            "POST", path, body=body, resend_after_send=False
+        ) as response:
+            yield response
+
+    def post_raw_to_file(
+        self,
+        path: str,
+        target: Path,
+        body: RequestBody | None = None,
+    ) -> None:
+        """POST a JSON body and stream the response to ``target`` on disk.
+
+        See :meth:`_raw_to_file` for the contract.
+
+        Args:
+            path: Request path, relative to the client's base URL.
+            target: Final path to write.  Its parent must exist.
+            body: JSON request body.
+
+        Raises:
+            TransportError: Same mapping as :meth:`post_raw_stream`.
+            OSError: If the staging file cannot be written or promoted.
+        """
+        self._raw_to_file("POST", path, target, body=body, resend_after_send=False)
+
+    def get_raw_to_file(
+        self,
+        path: str,
+        target: Path,
+        *,
+        resend_after_send: bool = True,
+    ) -> None:
+        """Send a body-less GET and stream the response to ``target`` on disk.
+
+        See :meth:`_raw_to_file` for the contract.
+
+        Args:
+            path: Request path, relative to the client's base URL.
+            target: Final path to write.  Its parent must exist.
+            resend_after_send: Whether a transport failure after the
+                request was sent may be sent once more.  ``False`` keeps
+                the resend to failures where the request provably never
+                reached the server, as :meth:`post_raw_to_file` does.  A
+                4xx or 5xx is never resent on the streaming path.
+
+        Raises:
+            TransportError: Same mapping as :meth:`post_raw_stream`.
+            OSError: If the staging file cannot be written or promoted.
+        """
+        self._raw_to_file(
+            "GET", path, target, body=None, resend_after_send=resend_after_send
+        )
+
+    @contextmanager
+    def _raw_stream(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: RequestBody | None,
+        resend_after_send: bool,
+    ) -> Iterator[httpx.Response]:
+        """Send one request and stream the response without buffering it.
+
         Yields an :class:`httpx.Response` with an un-read body.  Callers
         iterate over ``response.iter_bytes()`` inside the ``with`` block;
         the response is closed on exit.
@@ -531,9 +619,10 @@ class PicSureClient:
         success-path body is left as a live stream.  A transport failure
         while the caller drains the stream is translated to
         :class:`TransportConnectionError` as well, so no raw httpx
-        exception escapes this context manager.  Only a failure where the
-        request provably never reached the server is retried, because a
-        POST may have executed on the server otherwise.
+        exception escapes this context manager.  A failure where the
+        request provably never reached the server is retried once; one
+        after the request was sent is retried only when
+        ``resend_after_send`` allows it, and a 4xx or 5xx never is.
 
         Developer-mode accounting also matches :meth:`_request`: every
         failed attempt emits an ``error`` event, a 4xx/5xx emits an
@@ -542,18 +631,28 @@ class PicSureClient:
         attempt that produced the yielded response is stored in
         ``response.extensions["picsure_retry"]`` so the caller can report
         it on the event it emits for the streamed body.
+
+        Args:
+            method: HTTP method.
+            path: Request path, relative to the client's base URL.
+            body: JSON request body, or ``None`` to send none.
+            resend_after_send: Whether a transport failure after the
+                request was sent may be sent once more.
         """
         last_exc: Exception | None = None
 
         for attempt in range(_MAX_RETRIES + 1):
             start = time.monotonic()
-            stream_cm = self._http.stream("POST", path, json=body)
+            stream_cm = self._http.stream(method, path, json=body)
             try:
                 response = stream_cm.__enter__()
             except httpx.TransportError as exc:
                 last_exc = exc
-                self._emit_error("POST", path, attempt, start, type(exc).__name__)
-                if _should_retry("POST", exc) and attempt < _MAX_RETRIES:
+                self._emit_error(method, path, attempt, start, type(exc).__name__)
+                if (
+                    _should_retry(exc, resend_after_send=resend_after_send)
+                    and attempt < _MAX_RETRIES
+                ):
                     continue
                 raise _mark_emitted(_connection_error(exc, self._host)) from exc
 
@@ -568,7 +667,7 @@ class PicSureClient:
                 finally:
                     stream_cm.__exit__(None, None, None)
                 self._emit_http(
-                    "POST",
+                    method,
                     path,
                     body,
                     response,
@@ -577,7 +676,7 @@ class PicSureClient:
                     start=start,
                 )
                 error = _status_error(status, body_text, response)
-                self._emit_error("POST", path, attempt, start, type(error).__name__)
+                self._emit_error(method, path, attempt, start, type(error).__name__)
                 raise _mark_emitted(error)
 
             response.extensions["picsure_retry"] = attempt
@@ -587,7 +686,7 @@ class PicSureClient:
                 error = TransportConnectionError(
                     f"Connection failed while streaming the response: {exc}"
                 )
-                self._emit_error("POST", path, attempt, start, type(error).__name__)
+                self._emit_error(method, path, attempt, start, type(error).__name__)
                 raise _mark_emitted(error) from exc
             finally:
                 stream_cm.__exit__(None, None, None)
@@ -595,13 +694,16 @@ class PicSureClient:
 
         raise TransportConnectionError("Request failed after retries") from last_exc
 
-    def post_raw_to_file(
+    def _raw_to_file(
         self,
+        method: str,
         path: str,
         target: Path,
-        body: RequestBody | None = None,
+        *,
+        body: RequestBody | None,
+        resend_after_send: bool,
     ) -> None:
-        """POST a JSON body and stream the response to ``target`` on disk.
+        """Send one request and stream the response to ``target`` on disk.
 
         The buffered counterpart, :meth:`post_raw`, holds the whole
         response in memory; with a ten-minute deadline a participant
@@ -612,27 +714,31 @@ class PicSureClient:
         is complete, so a failed download never leaves a truncated file
         at the real path.
 
-        Args:
-            path: Request path, relative to the client's base URL.
-            target: Final path to write.  Its parent must exist.
-            body: JSON request body.
-
         Emits the developer-mode ``http`` event for the download only
         once the file sits at ``target``, sized by the byte count written
         rather than ``len(response.content)``, which a streamed response
         does not have.  A failure anywhere, the rename included, emits an
-        ``error`` event instead, unless :meth:`post_raw_stream` already
+        ``error`` event instead, unless :meth:`_raw_stream` already
         recorded it as a transport failure.
 
+        Args:
+            method: HTTP method.
+            path: Request path, relative to the client's base URL.
+            target: Final path to write.  Its parent must exist.
+            body: JSON request body, or ``None`` to send none.
+            resend_after_send: Forwarded to :meth:`_raw_stream`.
+
         Raises:
-            TransportError: Same mapping as :meth:`post_raw_stream`.
+            TransportError: Same mapping as :meth:`_raw_stream`.
             OSError: If the staging file cannot be written or promoted.
         """
         part_path = target.with_suffix(target.suffix + ".part")
         start = time.monotonic()
         try:
             with (
-                self.post_raw_stream(path, body=body) as response,
+                self._raw_stream(
+                    method, path, body=body, resend_after_send=resend_after_send
+                ) as response,
                 open(part_path, "wb") as out,
             ):
                 written = 0
@@ -642,11 +748,11 @@ class PicSureClient:
             os.replace(part_path, target)
         except BaseException as exc:
             if not getattr(exc, "_picsure_dev_emitted", False):
-                self._emit_error("POST", path, 0, start, type(exc).__name__)
+                self._emit_error(method, path, 0, start, type(exc).__name__)
             _remove_partial(part_path)
             raise
         self._emit_http(
-            "POST",
+            method,
             path,
             body,
             response,
@@ -656,7 +762,13 @@ class PicSureClient:
         )
 
     def _request(
-        self, method: str, path: str, *, retry: bool = True, **kwargs: object
+        self,
+        method: str,
+        path: str,
+        *,
+        retry: bool = True,
+        resend_after_send: bool = True,
+        **kwargs: object,
     ) -> httpx.Response:
         """Send one request, retrying once where a resend is safe.
 
@@ -664,6 +776,9 @@ class PicSureClient:
             method: HTTP method.
             path: Request path, relative to the client's base URL.
             retry: ``False`` allows a single attempt regardless of method.
+            resend_after_send: ``False`` treats a GET like a POST: it is
+                resent only when it provably never reached the server.
+                It has no effect on any other method.
             kwargs: Forwarded to ``httpx.Client.request``.
 
         Raises:
@@ -673,6 +788,7 @@ class PicSureClient:
         raw_body = kwargs.get("json")
         body = raw_body if isinstance(raw_body, dict) else None
         max_retries = _MAX_RETRIES if retry else 0
+        resend_received = method == "GET" and resend_after_send
 
         for attempt in range(max_retries + 1):
             start = time.monotonic()
@@ -686,7 +802,10 @@ class PicSureClient:
                 # method; failures after the request was fully sent (the
                 # server may have processed it) retry for GETs only.  See
                 # _should_retry for the per-exception classification.
-                if _should_retry(method, exc) and attempt < max_retries:
+                if (
+                    _should_retry(exc, resend_after_send=resend_received)
+                    and attempt < max_retries
+                ):
                     continue
                 raise _mark_emitted(_connection_error(exc, self._host)) from exc
 
@@ -712,7 +831,12 @@ class PicSureClient:
 
             if status >= 500:
                 error = _status_error(status, response.text, response)
-                if _is_resendable_server_error(method, error) and attempt < max_retries:
+                if (
+                    _is_resendable_server_error(
+                        error, resend_after_send=resend_received
+                    )
+                    and attempt < max_retries
+                ):
                     continue
                 self._emit_error(method, path, attempt, start, type(error).__name__)
                 raise _mark_emitted(error)
@@ -876,8 +1000,8 @@ def _raise_for_status(status: int, body: str, response: httpx.Response) -> None:
 
     ``_request`` calls this for 4xx only and keeps its own 5xx branch,
     because the two have different retry policies: a 5xx on a GET is
-    re-sent once, while the streaming path re-sends nothing on a 5xx,
-    since a POST the server already saw may have executed.  A 4xx is
+    re-sent once unless the caller opted out, while the streaming path
+    re-sends nothing on a 5xx, whatever the method.  A 4xx is
     never retried on either path, which is why this half can be shared.
     That branch calls :func:`_status_error` directly and reads the retry
     decision off the exception it returns, so the mapping itself still
@@ -886,23 +1010,28 @@ def _raise_for_status(status: int, body: str, response: httpx.Response) -> None:
     raise _status_error(status, body, response)
 
 
-def _is_resendable_server_error(method: str, error: TransportError) -> bool:
+def _is_resendable_server_error(
+    error: TransportError, *, resend_after_send: bool
+) -> bool:
     """Whether a 5xx that mapped to ``error`` may be sent again.
 
     A structured consent failure is the server reporting a decision it
     could not reach, not an outage, and it maps to a class of its own
     rather than to :class:`TransportServerError`; re-sending it changes
-    nothing, so it never is.  A plain 5xx is re-sent on a GET only,
-    because a POST the server already saw may have partially executed.
+    nothing, so it never is.  A plain 5xx is re-sent only when
+    ``resend_after_send`` allows it, which is a GET that has not opted
+    out, because a POST the server already saw may have partially
+    executed.
 
     Args:
-        method: HTTP method of the request that failed.
         error: What :func:`_status_error` mapped the response to.
+        resend_after_send: Whether a request the server already received
+            may be sent again.
 
     Returns:
         ``True`` when another attempt is safe and worth making.
     """
-    return isinstance(error, TransportServerError) and method == "GET"
+    return isinstance(error, TransportServerError) and resend_after_send
 
 
 def _refusal_transport_error(status: int, body: str) -> TransportError:
@@ -960,7 +1089,13 @@ def _parse_retry_after(response: httpx.Response) -> int | None:
         return None
 
 
-def _timeout_kwargs(timeout: float | None) -> dict[str, float]:
+class _TimeoutKwargs(TypedDict, total=False):
+    """The request kwargs :func:`_timeout_kwargs` may produce."""
+
+    timeout: float
+
+
+def _timeout_kwargs(timeout: float | None) -> _TimeoutKwargs:
     """Render a per-request timeout override as request kwargs.
 
     Absent an override the key is omitted entirely, so the request keeps

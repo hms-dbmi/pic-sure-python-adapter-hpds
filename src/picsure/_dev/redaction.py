@@ -7,16 +7,20 @@ every request it records, and a ``True`` puts ``redacted:
 module's whole effect.
 
 The answer is read off the body's shape alone. The request path and the
-HTTP method are not consulted, and are not passed in: the async PFB
-export posts the same participant-bearing query body to
-``/hpds/auth/query`` and to its ``/status`` and ``/result``
-siblings, so no path tells the calls that carry participant work apart
-from the ones that do not.
+HTTP method are not consulted, and are not passed in: ``/query/sync``
+serves counts and VCF excerpts alike, and ``/hpds/{backend}/query``
+submits a participant query and a saved count query alike, so no path
+tells the calls that carry participant work apart from the ones that do
+not. A request with no body answers ``False``. In the async job flow
+that means only the submit, which carries the query, is labelled; the
+``GET`` status poll and the ``GET`` result download send no body and
+are not, even though the download's response holds the rows, because
+the label describes what the request asked for.
 
 No request body and no response body is ever serialized into a dev-mode
 event, whatever this module answers. An ``http`` event carries a path, a
 status, byte counts, a retry count and a duration, and only an ``error``
-event records the method, so the label marks which calls carried
+event records the method, so the label marks which requests asked for
 participant-scoped work rather than standing in for a body that would
 otherwise have been written down. Nothing here scrubs a secret out
 of anything, and nothing here is on the path a token takes.

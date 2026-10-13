@@ -279,10 +279,10 @@ def _mock_auth_job(content: bytes) -> None:
     respx.post(_AUTH_QUERY_BASE).mock(
         return_value=httpx.Response(200, json={"picsureResultId": _JOB_ID})
     )
-    respx.post(f"{_AUTH_QUERY_BASE}/{_JOB_ID}/status").mock(
+    respx.get(f"{_AUTH_QUERY_BASE}/{_JOB_ID}/status").mock(
         return_value=httpx.Response(200, json={"status": "AVAILABLE"})
     )
-    respx.post(f"{_AUTH_QUERY_BASE}/{_JOB_ID}/result").mock(
+    respx.get(f"{_AUTH_QUERY_BASE}/{_JOB_ID}/result").mock(
         return_value=httpx.Response(200, content=content)
     )
 
@@ -585,7 +585,7 @@ class TestSessionExport:
         # The submit endpoint must not have been hit — the guard fires
         # before any HTTP traffic.
         assert client.post_json.call_count == 0
-        assert client.post_raw_stream.call_count == 0
+        assert client.get_raw_to_file.call_count == 0
         assert not output.exists()
 
     def test_save_query_by_name_forwards_to_service(self, monkeypatch):
