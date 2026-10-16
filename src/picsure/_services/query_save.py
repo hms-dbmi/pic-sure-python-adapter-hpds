@@ -291,7 +291,7 @@ def _submit_and_extract_id(
 
     Args:
         client: Authenticated HTTP client.
-        submit_path: The versioned HPDS submit path.
+        submit_path: The HPDS submit path.
         body: The query envelope to post.
 
     Returns:

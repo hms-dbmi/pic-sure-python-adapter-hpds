@@ -189,14 +189,14 @@ def test_no_events_when_dev_config_is_none():
 
 @respx.mock
 def test_participant_query_body_not_logged():
-    respx.post(f"{BASE_URL}/picsure/v3/query/sync").mock(
+    respx.post(f"{BASE_URL}/picsure/query/sync").mock(
         return_value=httpx.Response(200, content=b"patient_id,sex\nP1,M\n")
     )
     cfg = DevConfig(enabled=True, max_events=10)
     client = PicSureClient(base_url=BASE_URL, token=TOKEN, dev_config=cfg)
 
     client.post_raw(
-        "/picsure/v3/query/sync",
+        "/picsure/query/sync",
         body={"query": {"expectedResultType": "DATAFRAME", "fields": []}},
     )
 

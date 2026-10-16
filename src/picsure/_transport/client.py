@@ -393,7 +393,7 @@ class PicSureClient:
 
         # BDC's API gateway routes auth based on a "request-source" header:
         # "Authorized" when a bearer token is present, "Open" otherwise.
-        # Without it, authorized endpoints (e.g. /hpds/auth/v3/query/sync) can
+        # Without it, authorized endpoints (e.g. /hpds/auth/query/sync) can
         # reject tokens that are otherwise valid on PSAMA or the data-dictionary.
         headers = {
             "Content-Type": "application/json",

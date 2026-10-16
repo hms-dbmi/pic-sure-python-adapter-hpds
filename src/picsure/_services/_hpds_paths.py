@@ -9,12 +9,13 @@ stay as literals in the service modules that send them.
 The PIC-SURE gateway routes HPDS traffic by URL path, not by a resource
 UUID in the request body: ``/picsure/hpds/auth/**`` reaches the authorized
 (non-obfuscated) HPDS and ``/picsure/hpds/open/**`` the open
-(aggregate/obfuscated) one.  The backend is a path segment; the version is a
-``/v3`` sub-prefix.  The gateway routes ``/hpds/**`` verbatim (no prefix
-strip), so the client must include the ``/picsure`` context prefix.
+(aggregate/obfuscated) one. The backend is the only path segment that
+selects an HPDS instance; the query routes carry no version prefix. The
+gateway routes ``/hpds/**`` verbatim (no prefix strip), so the client must
+include the ``/picsure`` context prefix.
 
-Both backends use the versioned (/v3) query routes. The path selects the
-backend independently of whether the request carries a token.
+The path selects the backend independently of whether the request
+carries a token.
 
 The query-lifecycle routes carry an identifier the server chose, and the
 named-dataset item route carries one the operations service chose, so
@@ -65,17 +66,15 @@ def check_backend(backend: str) -> None:
         )
 
 
-def query_prefix(backend: str, *, v3: bool) -> str:
+def query_prefix(backend: str) -> str:
     """Return the HPDS query-lifecycle path prefix for a backend.
 
     Args:
         backend: ``"auth"`` or ``"open"``, selecting the HPDS instance by
             path (replaces the legacy resource-UUID selection).
-        v3: When ``True``, target the ``/v3`` query routes; otherwise the
-            v1 (non-versioned) routes.
 
     Returns:
-        A path prefix such as ``"/picsure/hpds/auth/v3"`` or
+        A path prefix such as ``"/picsure/hpds/auth"`` or
         ``"/picsure/hpds/open"``, to which a ``/query`` suffix is appended
         by the caller. The ``/picsure`` context prefix is part of the
         returned path: the gateway routes ``/hpds/**`` verbatim without
@@ -86,7 +85,7 @@ def query_prefix(backend: str, *, v3: bool) -> str:
             :data:`BACKENDS`.
     """
     check_backend(backend)
-    return f"/picsure/hpds/{backend}/v3" if v3 else f"/picsure/hpds/{backend}"
+    return f"/picsure/hpds/{backend}"
 
 
 def search_values_path(backend: str) -> str:
@@ -113,14 +112,13 @@ def query_submit_path(backend: str) -> str:
         backend: ``"auth"`` or ``"open"``.
 
     Returns:
-        The versioned submit path, such as
-        ``"/picsure/hpds/auth/v3/query"``.
+        The submit path, such as ``"/picsure/hpds/auth/query"``.
 
     Raises:
         PicSureValidationError: If ``backend`` is not one of
             :data:`BACKENDS`.
     """
-    return f"{query_prefix(backend, v3=True)}/query"
+    return f"{query_prefix(backend)}/query"
 
 
 def query_status_path(backend: str, query_id: str) -> str:
@@ -132,7 +130,7 @@ def query_status_path(backend: str, query_id: str) -> str:
             single path segment.
 
     Returns:
-        ``"/picsure/hpds/{backend}/v3/query/{id}/status"``.
+        ``"/picsure/hpds/{backend}/query/{id}/status"``.
     """
     return f"{query_submit_path(backend)}/{_segment(query_id)}/status"
 
@@ -146,7 +144,7 @@ def query_result_path(backend: str, query_id: str) -> str:
             single path segment.
 
     Returns:
-        ``"/picsure/hpds/{backend}/v3/query/{id}/result"``.
+        ``"/picsure/hpds/{backend}/query/{id}/result"``.
     """
     return f"{query_submit_path(backend)}/{_segment(query_id)}/result"
 
@@ -154,10 +152,8 @@ def query_result_path(backend: str, query_id: str) -> str:
 def query_metadata_path(backend: str, query_id: str) -> str:
     """Return the metadata path for a saved query.
 
-    Query metadata is served under the versioned (/v3) query routes; the
-    non-versioned route 404s on the current gateway. The ``backend``
-    segment is required for routing, but the read does not depend on
-    which backend is named.
+    The ``backend`` segment is required for routing, but the read does
+    not depend on which backend is named.
 
     Args:
         backend: ``"auth"`` or ``"open"``.
@@ -165,7 +161,7 @@ def query_metadata_path(backend: str, query_id: str) -> str:
             single path segment.
 
     Returns:
-        ``"/picsure/hpds/{backend}/v3/query/{id}/metadata"``.
+        ``"/picsure/hpds/{backend}/query/{id}/metadata"``.
     """
     return f"{query_submit_path(backend)}/{_segment(query_id)}/metadata"
 

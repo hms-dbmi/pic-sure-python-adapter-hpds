@@ -105,7 +105,8 @@ def run_query(
             or one of the strings ``"count"``, ``"participant"``,
             ``"timestamp"``, ``"cross_count"``.
         backend: ``"auth"`` or ``"open"`` selects the HPDS backend by
-            URL path. Both backends use their versioned v3 query route.
+            URL path. Both backends share the same (unversioned) query
+            route shape.
 
     Returns:
         - ``count``        → :class:`CountResult`
@@ -139,7 +140,7 @@ def run_query(
     if resolved_type in _DATAFRAME_RESULT_TYPES:
         return _run_dataframe_query(client, backend, body)
 
-    path = query_prefix(backend, v3=True) + "/query/sync"
+    path = query_prefix(backend) + "/query/sync"
     try:
         raw = client.post_raw(path, body=body)
     except TransportError as exc:
@@ -558,7 +559,7 @@ def build_query_body(
     query: Query | Clause | ClauseGroup,
     expected_result_type: str,
 ) -> dict[str, object]:
-    """Assemble the ``/picsure/hpds/{auth,open}/v3/query`` request body.
+    """Assemble the ``/picsure/hpds/{auth,open}/query`` request body.
 
     Normalizes the query into a phenotypic filter tree and a list of
     ``includeConcepts``; the tree becomes ``phenotypicClause`` and the

@@ -97,8 +97,8 @@ class TestServerSuppliedIdIsRefused:
 
 
 class TestQueryLifecyclePaths:
-    def test_submit_path_is_the_versioned_query_route(self):
-        assert query_submit_path("auth") == "/picsure/hpds/auth/v3/query"
+    def test_submit_path_is_the_unversioned_query_route(self):
+        assert query_submit_path("auth") == "/picsure/hpds/auth/query"
 
     @pytest.mark.parametrize(
         ("builder", "suffix"),
@@ -110,7 +110,7 @@ class TestQueryLifecyclePaths:
     )
     def test_a_uuid_reaches_the_path_unchanged(self, builder, suffix):
         assert builder("auth", QUERY_ID) == (
-            f"/picsure/hpds/auth/v3/query/{QUERY_ID}/{suffix}"
+            f"/picsure/hpds/auth/query/{QUERY_ID}/{suffix}"
         )
 
     @pytest.mark.parametrize(
@@ -154,7 +154,7 @@ class TestTheCanonicalIdIsNotAPathSegment:
         validated = canonical_server_id(QUERY_ID, description="The query id")
 
         assert builder("auth", validated) == (
-            f"/picsure/hpds/auth/v3/query/{QUERY_ID}/{suffix}"
+            f"/picsure/hpds/auth/query/{QUERY_ID}/{suffix}"
         )
         assert "%25" not in builder("auth", validated)
 
@@ -181,7 +181,7 @@ class TestBackendIsCheckedBeforeItIsInterpolated:
     @pytest.mark.parametrize("backend", ["", "AUTH", "auth/../open", "authorized"])
     def test_query_prefix_refuses_it(self, backend):
         with pytest.raises(PicSureValidationError, match="backend must be one of"):
-            query_prefix(backend, v3=True)
+            query_prefix(backend)
 
     @pytest.mark.parametrize("backend", ["", "AUTH", "auth/../open", "authorized"])
     def test_search_values_path_refuses_it(self, backend):
@@ -202,5 +202,5 @@ class TestBackendIsCheckedBeforeItIsInterpolated:
 
     @pytest.mark.parametrize("backend", ["auth", "open"])
     def test_both_real_backends_are_accepted(self, backend):
-        assert query_submit_path(backend) == f"/picsure/hpds/{backend}/v3/query"
+        assert query_submit_path(backend) == f"/picsure/hpds/{backend}/query"
         assert search_values_path(backend) == (f"/picsure/hpds/{backend}/search/values")

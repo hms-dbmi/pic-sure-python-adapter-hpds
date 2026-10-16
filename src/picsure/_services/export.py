@@ -30,7 +30,7 @@ def export_pfb(
     Runs the server's job flow through
     :func:`picsure._services.query_run.run_async_query_to_file`, the
     same loop a participant or timestamp query uses, on the authorized
-    v3 routes: ``POST /picsure/hpds/auth/v3/query`` submits the query,
+    routes: ``POST /picsure/hpds/auth/query`` submits the query,
     ``POST .../query/{id}/status`` is polled straight away and then
     after sleeps of 1s, 2s, 4s, 8s and 10s from there on until the
     server reports ``AVAILABLE``, and ``POST .../query/{id}/result``

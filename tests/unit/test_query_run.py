@@ -38,14 +38,14 @@ from picsure.errors import (
 
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"
-QUERY_URL = f"{BASE_URL}{query_prefix('auth', v3=True)}/query/sync"
-OPEN_QUERY_URL = f"{BASE_URL}{query_prefix('open', v3=True)}/query/sync"
+QUERY_URL = f"{BASE_URL}{query_prefix('auth')}/query/sync"
+OPEN_QUERY_URL = f"{BASE_URL}{query_prefix('open')}/query/sync"
 QUERY_ID = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
 
 
 def _async_urls(backend: str) -> tuple[str, str, str]:
     """Return the submit, status and result URLs of the async query flow."""
-    prefix = f"{BASE_URL}{query_prefix(backend, v3=True)}/query"
+    prefix = f"{BASE_URL}{query_prefix(backend)}/query"
     return prefix, f"{prefix}/{QUERY_ID}/status", f"{prefix}/{QUERY_ID}/result"
 
 
@@ -376,9 +376,9 @@ class TestRunAsyncQueryToFile:
         )
 
         assert [call.request.url.path for call in respx.calls] == [
-            "/picsure/hpds/open/v3/query",
-            f"/picsure/hpds/open/v3/query/{QUERY_ID}/status",
-            f"/picsure/hpds/open/v3/query/{QUERY_ID}/result",
+            "/picsure/hpds/open/query",
+            f"/picsure/hpds/open/query/{QUERY_ID}/status",
+            f"/picsure/hpds/open/query/{QUERY_ID}/result",
         ]
         assert auth_submit.call_count == 0
 
@@ -1552,7 +1552,7 @@ class TestSessionRunQueryWithMember:
 
 class TestRunQueryBackendRouting:
     @respx.mock
-    def test_auth_backend_uses_auth_v3_path(self):
+    def test_auth_backend_uses_auth_path(self):
         auth = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"1"),
         )
@@ -1570,7 +1570,7 @@ class TestRunQueryBackendRouting:
 
     @respx.mock
     def test_open_backend_routes_to_open_path(self):
-        # BDC's API gateway 401s open-access requests on the auth v3 sync
+        # BDC's API gateway 401s open-access requests on the auth sync
         # endpoint.  Open-only deployments must use the open path.
         auth = respx.post(QUERY_URL).mock(
             return_value=httpx.Response(401, text="Unauthorized"),
@@ -1592,7 +1592,7 @@ class TestRunQueryBackendRouting:
     def test_open_path_preserves_body_shape(self):
         # The open endpoint accepts the same body shape as auth; we should
         # not start emitting a different shape just because we're routing
-        # to /picsure/hpds/open/v3/query/sync.
+        # to /picsure/hpds/open/query/sync.
         route = respx.post(OPEN_QUERY_URL).mock(
             return_value=httpx.Response(200, content=b"7"),
         )
@@ -1642,9 +1642,9 @@ class TestRunQueryBackendRouting:
         assert len(df) == 1
         assert auth_submit.call_count == 0
         assert [call.request.url.path for call in respx.calls] == [
-            "/picsure/hpds/open/v3/query",
-            f"/picsure/hpds/open/v3/query/{QUERY_ID}/status",
-            f"/picsure/hpds/open/v3/query/{QUERY_ID}/result",
+            "/picsure/hpds/open/query",
+            f"/picsure/hpds/open/query/{QUERY_ID}/status",
+            f"/picsure/hpds/open/query/{QUERY_ID}/result",
         ]
 
     @respx.mock
