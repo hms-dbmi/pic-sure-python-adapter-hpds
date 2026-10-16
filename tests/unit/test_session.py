@@ -585,6 +585,7 @@ class TestSessionExport:
         # The submit endpoint must not have been hit — the guard fires
         # before any HTTP traffic.
         assert client.post_json.call_count == 0
+        assert client.get_json.call_count == 0
         assert client.get_raw_to_file.call_count == 0
         assert not output.exists()
 

@@ -797,11 +797,6 @@ class PicSureClient:
             except httpx.TransportError as exc:
                 last_exc = exc
                 self._emit_error(method, path, attempt, start, type(exc).__name__)
-                # Retry only when re-sending cannot double-execute: failures
-                # where the request never reached the server retry for every
-                # method; failures after the request was fully sent (the
-                # server may have processed it) retry for GETs only.  See
-                # _should_retry for the per-exception classification.
                 if (
                     _should_retry(exc, resend_after_send=resend_received)
                     and attempt < max_retries

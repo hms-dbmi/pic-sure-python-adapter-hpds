@@ -363,6 +363,26 @@ class TestRunAsyncQueryToFile:
         assert not (tmp_path / "out.csv.part").exists()
 
     @respx.mock
+    def test_a_read_timeout_on_the_result_is_not_resent(self, tmp_path):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        respx.get(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+        result = respx.get(RESULT_URL).mock(
+            side_effect=[
+                httpx.ReadTimeout("timed out"),
+                httpx.Response(200, content=b"patient_id\nP001\n"),
+            ]
+        )
+        target = tmp_path / "out.csv"
+
+        with pytest.raises(PicSureConnectionError):
+            run_async_query_to_file(
+                _make_client(), "auth", _simple_body(), target, operation="the query"
+            )
+
+        assert result.call_count == 1
+        assert not target.exists()
+
+    @respx.mock
     def test_the_open_backend_uses_the_open_routes(self, tmp_path):
         submit, status, result = _mock_async_result(b"x", backend="open")
         auth_submit = respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
