@@ -233,9 +233,10 @@ def run_async_query_to_file(
 
     1. ``POST {prefix}/query`` submits ``body`` and answers with the
        query id.
-    2. ``POST {prefix}/query/{id}/status`` is polled, first straight
-       after the submit and then after sleeps of 1s, 2s, 4s, 8s and
-       10s from there on, until the server reports ``AVAILABLE``. Any
+    2. ``GET {prefix}/query/{id}/status``, with no body, is polled,
+       first straight after the submit and then after sleeps of 1s, 2s,
+       4s, 8s and 10s from there on, until the server reports
+       ``AVAILABLE``. Any
        status other than ``AVAILABLE`` and ``ERROR`` means the job is
        still running. A poll that is throttled, answered with a 5xx or
        lost to a network failure (a timeout, a refused connection, a
@@ -243,10 +244,16 @@ def run_async_query_to_file(
        after the ``Retry-After`` the server gave when that is longer;
        a 401, 403, 404, a validation error, a rejected certificate or
        an answer carrying no body raises at once.
-    3. ``POST {prefix}/query/{id}/result`` streams the bytes into
-       ``target`` through :meth:`PicSureClient.post_raw_to_file`, which
-       stages them at ``<target>.part`` and promotes the file only once
-       the body is complete.
+    3. ``GET {prefix}/query/{id}/result``, with no body, streams the
+       bytes into ``target`` through
+       :meth:`PicSureClient.get_raw_to_file`, which stages them at
+       ``<target>.part`` and promotes the file only once the body is
+       complete.
+
+    The transport resends the status poll and the download only when
+    the request provably never reached the server, the rule the submit
+    gets as well, so a 5xx or a failure after sending reaches the poll
+    loop on the first attempt.
 
     The submit and the polls together, failed polls included, are
     bounded by :attr:`PicSureClient.timeout`, measured from just before
@@ -259,9 +266,9 @@ def run_async_query_to_file(
     Args:
         client: Authenticated HTTP client.
         backend: ``"auth"`` or ``"open"``.
-        body: The request body, resent unchanged on every step. It
-            carries the ``expectedResultType`` the server keys the job
-            on.
+        body: The request body, sent with the submit only. It carries
+            the ``expectedResultType`` the server keys the job on; the
+            status and result routes find the job by its id.
         target: Where the result bytes are written. Its parent must
             exist.
         operation: Noun phrase naming what is being run, read as the
@@ -293,9 +300,9 @@ def run_async_query_to_file(
     started = time.monotonic()
     query_id = _submit_query(client, backend, body, operation=operation)
     _wait_until_available(
-        client, backend, query_id, body, started=started, operation=operation
+        client, backend, query_id, started=started, operation=operation
     )
-    _download_result(client, backend, query_id, body, target, operation=operation)
+    _download_result(client, backend, query_id, target, operation=operation)
 
 
 def _submit_query(
@@ -320,7 +327,6 @@ def _wait_until_available(
     client: PicSureClient,
     backend: str,
     query_id: str,
-    body: dict[str, object],
     *,
     started: float,
     operation: str,
@@ -331,7 +337,6 @@ def _wait_until_available(
         client: Authenticated HTTP client.
         backend: ``"auth"`` or ``"open"``.
         query_id: The canonical query id.
-        body: The request body, resent on every poll.
         started: The ``time.monotonic()`` reading the budget counts from.
         operation: Noun phrase for the error messages.
 
@@ -349,7 +354,7 @@ def _wait_until_available(
     failure: TransportError | None = None
     while True:
         try:
-            status = _poll_status(client, status_path, body, operation=operation)
+            status = _poll_status(client, status_path, operation=operation)
         except EmptyBodyError as exc:
             raise _bodiless_poll_error(exc, operation=operation) from exc
         except TransportError as exc:
@@ -484,11 +489,14 @@ def _bodiless_poll_error(exc: EmptyBodyError, *, operation: str) -> PicSureQuery
 def _poll_status(
     client: PicSureClient,
     status_path: str,
-    body: dict[str, object],
     *,
     operation: str,
 ) -> str:
-    """Send one status poll and return the status it reports.
+    """Send one body-less status GET and return the status it reports.
+
+    The transport resends it only when it provably never reached the
+    server, so a 5xx or a failure after sending reaches the poll loop on
+    the first attempt and is retried there, after a sleep.
 
     Raises:
         TransportError: Untranslated, so the caller can decide whether
@@ -497,7 +505,7 @@ def _poll_status(
             turns into a message that fits the status it arrived with.
         PicSureQueryError: If the answer carries no status field.
     """
-    payload = client.post_json(status_path, body=body)
+    payload = client.get_json(status_path, resend_after_send=False)
     return _extract_status(json_object(payload, path=status_path), operation=operation)
 
 
@@ -524,12 +532,11 @@ def _download_result(
     client: PicSureClient,
     backend: str,
     query_id: str,
-    body: dict[str, object],
     target: Path,
     *,
     operation: str,
 ) -> None:
-    """Stream the finished result into ``target``.
+    """Stream the finished result into ``target`` with a body-less GET.
 
     A transport failure is translated by status; an ``OSError`` from the
     staging file or the rename is left to the caller, which knows what
@@ -537,7 +544,7 @@ def _download_result(
     """
     result_path = query_result_path(backend, query_id)
     try:
-        client.post_raw_to_file(result_path, target, body=body)
+        client.get_raw_to_file(result_path, target, resend_after_send=False)
     except TransportError as exc:
         raise translate_transport_error(exc, operation=f"{operation} download") from exc
 
@@ -547,7 +554,7 @@ def _download_target() -> Iterator[Path]:
     """Yield a path to stream a download into, removed on the way out.
 
     The enclosing directory is what gets cleaned up, so the ``.part``
-    staging file :meth:`PicSureClient.post_raw_to_file` writes goes with
+    staging file :meth:`PicSureClient.get_raw_to_file` writes goes with
     it whether the download succeeded, failed part-way, or the parse
     afterwards raised.
     """

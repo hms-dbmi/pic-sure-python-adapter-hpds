@@ -194,8 +194,9 @@ def query_id_from_submit_response(
 
     The gateway populates ``picsureResultId`` and mirrors it into
     ``resourceResultId``; ``queryId`` is read last. ``picsureResultId`` is
-    preferred because it is the path parameter the ``/query/{id}/status``
-    and ``/query/{id}/result`` routes match on.
+    preferred because it is the path parameter the body-less
+    ``GET /query/{id}/status`` and ``GET /query/{id}/result`` routes
+    match on.
 
     The id is the server's, so an id that is not a UUID is a malformed
     response rather than a caller mistake, and it raises

@@ -31,12 +31,13 @@ def export_pfb(
     :func:`picsure._services.query_run.run_async_query_to_file`, the
     same loop a participant or timestamp query uses, on the authorized
     routes: ``POST /picsure/hpds/auth/query`` submits the query,
-    ``POST .../query/{id}/status`` is polled straight away and then
+    ``GET .../query/{id}/status`` is polled straight away and then
     after sleeps of 1s, 2s, 4s, 8s and 10s from there on until the
-    server reports ``AVAILABLE``, and ``POST .../query/{id}/result``
-    streams the Avro-binary PFB bytes straight to disk. Every route is
-    built by :mod:`picsure._services._hpds_paths`, which checks that
-    the query id the server chose is a UUID and escapes it into a
+    server reports ``AVAILABLE``, and ``GET .../query/{id}/result``
+    streams the Avro-binary PFB bytes straight to disk. Only the submit
+    sends the query; the status and result GETs carry no body. Every
+    route is built by :mod:`picsure._services._hpds_paths`, which checks
+    that the query id the server chose is a UUID and escapes it into a
     single path segment.
 
     The submit and the polls together are bounded by the client's
@@ -49,7 +50,7 @@ def export_pfb(
     deadline, so the call as a whole can still run past it.
 
     The output file is written atomically by
-    :meth:`PicSureClient.post_raw_to_file`: bytes land at ``<path>.part``,
+    :meth:`PicSureClient.get_raw_to_file`: bytes land at ``<path>.part``,
     then :func:`os.replace` promotes that to ``path`` on success, and a
     failure at any point removes the partial file before re-raising.
 

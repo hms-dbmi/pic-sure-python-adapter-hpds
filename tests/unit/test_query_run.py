@@ -83,11 +83,11 @@ def _mock_async_result(
     """
     submit_url, status_url, result_url = _async_urls(backend)
     submit = respx.post(submit_url).mock(return_value=_submit_ok())
-    status = respx.post(status_url).mock(
+    status = respx.get(status_url).mock(
         side_effect=[_status(value) for value in statuses[:-1]]
         + [_status(statuses[-1])] * 50
     )
-    result = respx.post(result_url).mock(
+    result = respx.get(result_url).mock(
         return_value=httpx.Response(200, content=content)
     )
     return submit, status, result
@@ -263,7 +263,7 @@ class TestRunAsyncQueryToFile:
     @respx.mock
     def test_a_poll_without_a_status_field_raises_query_error(self, tmp_path):
         respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
-        respx.post(STATUS_URL).mock(return_value=httpx.Response(200, json={}))
+        respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json={}))
 
         with pytest.raises(PicSureQueryError, match="status field"):
             run_async_query_to_file(
@@ -277,10 +277,10 @@ class TestRunAsyncQueryToFile:
     @respx.mock
     def test_resource_status_is_read_when_status_is_absent(self, tmp_path):
         respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
-        respx.post(STATUS_URL).mock(
+        respx.get(STATUS_URL).mock(
             return_value=httpx.Response(200, json={"resourceStatus": "available"})
         )
-        respx.post(RESULT_URL).mock(return_value=httpx.Response(200, content=b"x"))
+        respx.get(RESULT_URL).mock(return_value=httpx.Response(200, content=b"x"))
         target = tmp_path / "out.csv"
 
         run_async_query_to_file(
@@ -294,7 +294,7 @@ class TestRunAsyncQueryToFile:
         respx.post(SUBMIT_URL).mock(
             return_value=httpx.Response(200, json={"picsureResultId": "abc-123"})
         )
-        status = respx.post(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+        status = respx.get(STATUS_URL).mock(return_value=_status("AVAILABLE"))
 
         with pytest.raises(PicSureQueryError, match="not a UUID"):
             run_async_query_to_file(
@@ -336,7 +336,7 @@ class TestRunAsyncQueryToFile:
     @respx.mock
     def test_a_404_on_the_status_is_a_query_error(self, tmp_path):
         respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
-        respx.post(STATUS_URL).mock(return_value=httpx.Response(404, text=""))
+        respx.get(STATUS_URL).mock(return_value=httpx.Response(404, text=""))
 
         with pytest.raises(PicSureQueryError, match="HTTP 404"):
             run_async_query_to_file(
@@ -350,8 +350,8 @@ class TestRunAsyncQueryToFile:
     @respx.mock
     def test_a_404_on_the_result_is_a_query_error(self, tmp_path):
         respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
-        respx.post(STATUS_URL).mock(return_value=_status("AVAILABLE"))
-        respx.post(RESULT_URL).mock(return_value=httpx.Response(404, text=""))
+        respx.get(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+        respx.get(RESULT_URL).mock(return_value=httpx.Response(404, text=""))
         target = tmp_path / "out.csv"
 
         with pytest.raises(PicSureQueryError, match="HTTP 404"):
@@ -361,6 +361,26 @@ class TestRunAsyncQueryToFile:
 
         assert not target.exists()
         assert not (tmp_path / "out.csv.part").exists()
+
+    @respx.mock
+    def test_a_read_timeout_on_the_result_is_not_resent(self, tmp_path):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        respx.get(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+        result = respx.get(RESULT_URL).mock(
+            side_effect=[
+                httpx.ReadTimeout("timed out"),
+                httpx.Response(200, content=b"patient_id\nP001\n"),
+            ]
+        )
+        target = tmp_path / "out.csv"
+
+        with pytest.raises(PicSureConnectionError):
+            run_async_query_to_file(
+                _make_client(), "auth", _simple_body(), target, operation="the query"
+            )
+
+        assert result.call_count == 1
+        assert not target.exists()
 
     @respx.mock
     def test_the_open_backend_uses_the_open_routes(self, tmp_path):
@@ -383,7 +403,7 @@ class TestRunAsyncQueryToFile:
         assert auth_submit.call_count == 0
 
     @respx.mock
-    def test_every_step_resends_the_body(self, tmp_path):
+    def test_only_the_submit_carries_the_body(self, tmp_path):
         submit, status, result = _mock_async_result(
             b"x", statuses=("PENDING", "AVAILABLE")
         )
@@ -398,10 +418,13 @@ class TestRunAsyncQueryToFile:
                 operation="the query",
             )
 
-        for route in (submit, status, result):
-            assert route.called
-            for sent in _request_bodies(route):
-                assert sent["query"]["expectedResultType"] == "DATAFRAME_TIMESERIES"
+        assert [sent["query"] for sent in _request_bodies(submit)] == [body["query"]]
+        assert status.call_count == 2
+        assert result.call_count == 1
+        for route in (status, result):
+            for call in route.calls:
+                assert call.request.method == "GET"
+                assert call.request.content == b""
 
     @respx.mock
     def test_a_local_write_failure_leaves_no_partial_file(self, tmp_path):
@@ -690,7 +713,7 @@ class TestTransientPollFailures:
     @respx.mock
     def test_a_429_poll_waits_the_retry_after_it_carries(self, tmp_path):
         _mock_async_result(b"x")
-        respx.post(STATUS_URL).mock(
+        respx.get(STATUS_URL).mock(
             side_effect=[
                 httpx.Response(429, headers={"Retry-After": "7"}),
                 _status("AVAILABLE"),
@@ -707,7 +730,7 @@ class TestTransientPollFailures:
     @respx.mock
     def test_a_429_poll_without_retry_after_waits_the_current_interval(self, tmp_path):
         _mock_async_result(b"x")
-        respx.post(STATUS_URL).mock(
+        respx.get(STATUS_URL).mock(
             side_effect=[
                 _status("PENDING"),
                 httpx.Response(429),
@@ -726,7 +749,7 @@ class TestTransientPollFailures:
         self, retry_after, tmp_path
     ):
         _mock_async_result(b"x")
-        respx.post(STATUS_URL).mock(
+        respx.get(STATUS_URL).mock(
             side_effect=[
                 _status("PENDING"),
                 httpx.Response(429, headers={"Retry-After": retry_after}),
@@ -744,7 +767,7 @@ class TestTransientPollFailures:
     @respx.mock
     def test_a_consent_lookup_502_poll_is_polled_again(self, tmp_path):
         _mock_async_result(b"x")
-        respx.post(STATUS_URL).mock(
+        respx.get(STATUS_URL).mock(
             side_effect=[_consent_lookup_failed(), _status("AVAILABLE")]
         )
         target = tmp_path / "out.csv"
@@ -760,7 +783,7 @@ class TestTransientPollFailures:
         self, tmp_path, clock
     ):
         _mock_async_result(b"x")
-        respx.post(STATUS_URL).mock(return_value=_consent_lookup_failed())
+        respx.get(STATUS_URL).mock(return_value=_consent_lookup_failed())
         client = PicSureClient(base_url=BASE_URL, token=TOKEN, timeout=5.0)
 
         with pytest.raises(PicSureConsentLookupError) as info:
@@ -777,7 +800,7 @@ class TestTransientPollFailures:
     @respx.mock
     def test_a_502_poll_is_polled_again(self, tmp_path):
         _mock_async_result(b"x")
-        respx.post(STATUS_URL).mock(
+        respx.get(STATUS_URL).mock(
             side_effect=[httpx.Response(502, text="bad gateway"), _status("AVAILABLE")]
         )
         target = tmp_path / "out.csv"
@@ -791,7 +814,7 @@ class TestTransientPollFailures:
     @respx.mock
     def test_a_read_timeout_on_a_poll_is_polled_again(self, tmp_path):
         _mock_async_result(b"x")
-        respx.post(STATUS_URL).mock(
+        respx.get(STATUS_URL).mock(
             side_effect=[httpx.ReadTimeout("timed out"), _status("AVAILABLE")]
         )
         target = tmp_path / "out.csv"
@@ -807,7 +830,7 @@ class TestTransientPollFailures:
         """The client resends a refused connection once itself, so two refusals
         are what it takes for the failure to reach the loop."""
         _mock_async_result(b"x")
-        respx.post(STATUS_URL).mock(
+        respx.get(STATUS_URL).mock(
             side_effect=[
                 httpx.ConnectError("refused"),
                 httpx.ConnectError("refused"),
@@ -827,9 +850,7 @@ class TestTransientPollFailures:
         self, tmp_path, clock
     ):
         _mock_async_result(b"x")
-        respx.post(STATUS_URL).mock(
-            return_value=httpx.Response(502, text="bad gateway")
-        )
+        respx.get(STATUS_URL).mock(return_value=httpx.Response(502, text="bad gateway"))
         client = PicSureClient(base_url=BASE_URL, token=TOKEN, timeout=5.0)
 
         with pytest.raises(PicSureServerError) as info:
@@ -848,7 +869,7 @@ class TestTransientPollFailures:
         self, tmp_path, clock
     ):
         _mock_async_result(b"x")
-        respx.post(STATUS_URL).mock(
+        respx.get(STATUS_URL).mock(
             side_effect=[httpx.Response(502, text="bad gateway")]
             + [_status("PENDING")] * 20
         )
@@ -871,7 +892,7 @@ class TestTransientPollFailures:
     )
     def test_a_refusal_on_a_poll_raises_at_once(self, status, expected, tmp_path):
         _mock_async_result(b"x")
-        poll = respx.post(STATUS_URL).mock(
+        poll = respx.get(STATUS_URL).mock(
             side_effect=[httpx.Response(status, text=""), _status("AVAILABLE")]
         )
 
@@ -896,7 +917,7 @@ class TestTransientPollFailures:
     def test_a_bodiless_success_poll_raises_at_once(self, tmp_path):
         """An answered poll that cannot be read is a protocol break, not a wait."""
         _mock_async_result(b"x")
-        poll = respx.post(STATUS_URL).mock(
+        poll = respx.get(STATUS_URL).mock(
             side_effect=[httpx.Response(200, content=b""), _status("AVAILABLE")]
         )
 
@@ -913,7 +934,7 @@ class TestTransientPollFailures:
     @respx.mock
     def test_a_bodiless_redirect_poll_names_the_gateway_session(self, tmp_path):
         _mock_async_result(b"x")
-        respx.post(STATUS_URL).mock(
+        respx.get(STATUS_URL).mock(
             return_value=httpx.Response(302, headers={"Location": "/sso/login"})
         )
 
@@ -938,8 +959,8 @@ class TestTransientPollFailures:
     @respx.mock
     def test_a_502_on_the_download_still_raises_at_once(self, tmp_path):
         respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
-        respx.post(STATUS_URL).mock(return_value=_status("AVAILABLE"))
-        result = respx.post(RESULT_URL).mock(
+        respx.get(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+        result = respx.get(RESULT_URL).mock(
             return_value=httpx.Response(502, text="bad")
         )
 
@@ -974,15 +995,17 @@ class TestRunQueryParticipant:
         assert sync.call_count == 0
 
     @respx.mock
-    def test_sends_participant_result_type_on_every_step(self):
+    def test_sends_participant_result_type_with_the_submit(self):
         submit, status, result = _mock_async_result(b"id\n1\n")
         client = _make_client()
         run_query(client, _simple_clause(), "participant", backend="auth")
 
-        for route in (submit, status, result):
+        assert _request_bodies(submit)[0]["query"]["expectedResultType"] == (
+            "DATAFRAME"
+        )
+        for route in (status, result):
             assert route.call_count == 1
-            body = _request_bodies(route)[0]
-            assert body["query"]["expectedResultType"] == "DATAFRAME"
+            assert route.calls[0].request.content == b""
 
     @respx.mock
     def test_waits_for_a_pending_query(self):
@@ -1021,15 +1044,17 @@ class TestRunQueryParticipant:
 
 class TestRunQueryTimestamp:
     @respx.mock
-    def test_sends_timestamp_result_type_on_every_step(self):
+    def test_sends_timestamp_result_type_with_the_submit(self):
         submit, status, result = _mock_async_result(b"id,date,val\n1,2024-01-01,120\n")
         client = _make_client()
         run_query(client, _simple_clause(), "timestamp", backend="auth")
 
-        for route in (submit, status, result):
+        assert _request_bodies(submit)[0]["query"]["expectedResultType"] == (
+            "DATAFRAME_TIMESERIES"
+        )
+        for route in (status, result):
             assert route.call_count == 1
-            body = _request_bodies(route)[0]
-            assert body["query"]["expectedResultType"] == "DATAFRAME_TIMESERIES"
+            assert route.calls[0].request.content == b""
 
     @respx.mock
     def test_returns_dataframe(self):
@@ -2254,13 +2279,13 @@ class TestDataframeQueriesStreamToDisk:
     def _spy_on_streaming(monkeypatch) -> list[Path]:
         """Record the target each streamed download is written to."""
         targets: list[Path] = []
-        real = PicSureClient.post_raw_to_file
+        real = PicSureClient.get_raw_to_file
 
-        def spy(self, path, target, body=None):
+        def spy(self, path, target, **kwargs):
             targets.append(Path(target))
-            return real(self, path, target, body=body)
+            return real(self, path, target, **kwargs)
 
-        monkeypatch.setattr(PicSureClient, "post_raw_to_file", spy)
+        monkeypatch.setattr(PicSureClient, "get_raw_to_file", spy)
         return targets
 
     @staticmethod
@@ -2308,8 +2333,8 @@ class TestDataframeQueriesStreamToDisk:
     @respx.mock
     def test_the_temporary_file_is_removed_when_the_download_fails(self, monkeypatch):
         respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
-        respx.post(STATUS_URL).mock(return_value=_status("AVAILABLE"))
-        respx.post(RESULT_URL).mock(return_value=httpx.Response(500, text="boom"))
+        respx.get(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+        respx.get(RESULT_URL).mock(return_value=httpx.Response(500, text="boom"))
         targets = self._spy_on_streaming(monkeypatch)
 
         with pytest.raises(PicSureServerError):
@@ -2329,11 +2354,16 @@ class TestDataframeQueriesStreamToDisk:
         assert not targets[0].parent.exists()
 
     @respx.mock
-    @pytest.mark.parametrize("failing_url", [SUBMIT_URL, STATUS_URL, RESULT_URL])
-    def test_a_transport_failure_is_still_translated(self, failing_url, clock):
+    @pytest.mark.parametrize(
+        ("method", "failing_url"),
+        [("POST", SUBMIT_URL), ("GET", STATUS_URL), ("GET", RESULT_URL)],
+    )
+    def test_a_transport_failure_is_still_translated(self, method, failing_url, clock):
         """A refused poll is retried until the budget passes, so the clock is faked."""
         _mock_async_result(b"patient_id\nP001\n")
-        respx.post(failing_url).mock(side_effect=httpx.ConnectError("refused"))
+        respx.route(method=method, url=failing_url).mock(
+            side_effect=httpx.ConnectError("refused")
+        )
 
         with pytest.raises(PicSureConnectionError, match="refused"):
             run_query(_make_client(), _simple_clause(), "participant", backend="auth")
@@ -2343,10 +2373,10 @@ class TestDataframeQueriesStreamToDisk:
         csv = b"patient_id,age\nP001,42\n"
         _mock_async_result(csv)
 
-        def full_disk(self, path, target, body=None):
+        def full_disk(self, path, target, **kwargs):
             raise OSError(28, "No space left on device")
 
-        monkeypatch.setattr(PicSureClient, "post_raw_to_file", full_disk)
+        monkeypatch.setattr(PicSureClient, "get_raw_to_file", full_disk)
 
         with pytest.raises(PicSureConnectionError, match="No space left") as info:
             run_query(_make_client(), _simple_clause(), "participant", backend="auth")
@@ -2371,10 +2401,10 @@ class TestDataframeQueriesStreamToDisk:
         csv = b"patient_id,age\nP001,42\n"
         _mock_async_result(csv)
 
-        def full_disk(self, path, target, body=None):
+        def full_disk(self, path, target, **kwargs):
             raise OSError(28, "No space left on device")
 
-        monkeypatch.setattr(PicSureClient, "post_raw_to_file", full_disk)
+        monkeypatch.setattr(PicSureClient, "get_raw_to_file", full_disk)
 
         with pytest.raises(PicSureError):
             run_query(_make_client(), _simple_clause(), "participant", backend="auth")
