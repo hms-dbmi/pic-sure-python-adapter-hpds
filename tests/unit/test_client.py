@@ -1453,3 +1453,159 @@ class TestPostRawToFile:
         assert route.calls[0].request.headers["authorization"] == (
             "Bearer secret-token"
         )
+
+
+class TestGetRawToFile:
+    """The body-less GET counterpart of ``post_raw_to_file``."""
+
+    @respx.mock
+    def test_sends_a_get_with_no_body_and_writes_the_target(self, tmp_path):
+        route = respx.get(f"{BASE_URL}/download").mock(
+            return_value=httpx.Response(200, content=b"col_a,col_b\n1,2\n")
+        )
+        target = tmp_path / "out.csv"
+        client = PicSureClient(base_url=BASE_URL, token="secret-token")
+
+        client.get_raw_to_file("/download", target)
+
+        assert target.read_bytes() == b"col_a,col_b\n1,2\n"
+        assert list(p.name for p in tmp_path.iterdir()) == ["out.csv"]
+        request = route.calls[0].request
+        assert request.method == "GET"
+        assert request.content == b""
+        assert request.headers["authorization"] == "Bearer secret-token"
+
+    @respx.mock
+    def test_a_status_failure_leaves_nothing_behind(self, tmp_path):
+        route = respx.get(f"{BASE_URL}/download").mock(
+            return_value=httpx.Response(404, text="gone")
+        )
+        client = PicSureClient(base_url=BASE_URL, token="t")
+
+        with pytest.raises(TransportNotFoundError):
+            client.get_raw_to_file("/download", tmp_path / "out.csv")
+
+        assert list(tmp_path.iterdir()) == []
+        assert route.call_count == 1
+
+    @respx.mock
+    def test_a_5xx_is_not_resent(self, tmp_path):
+        route = respx.get(f"{BASE_URL}/download").mock(
+            return_value=httpx.Response(500, text="boom")
+        )
+        client = PicSureClient(base_url=BASE_URL, token="t")
+
+        with pytest.raises(TransportServerError):
+            client.get_raw_to_file("/download", tmp_path / "out.csv")
+
+        assert list(tmp_path.iterdir()) == []
+        assert route.call_count == 1
+
+    @respx.mock
+    def test_a_mid_stream_failure_cleans_up(self, tmp_path):
+        respx.get(f"{BASE_URL}/download").mock(
+            return_value=httpx.Response(200, stream=_FailsMidStream())
+        )
+        client = PicSureClient(base_url=BASE_URL, token="t")
+
+        with pytest.raises(TransportConnectionError):
+            client.get_raw_to_file("/download", tmp_path / "out.csv")
+
+        assert list(tmp_path.iterdir()) == []
+
+    @respx.mock
+    @pytest.mark.parametrize("resend_after_send", [True, False])
+    def test_a_refused_connection_is_resent_once(self, resend_after_send, tmp_path):
+        route = respx.get(f"{BASE_URL}/download").mock(
+            side_effect=[
+                httpx.ConnectError("refused"),
+                httpx.Response(200, content=b"data"),
+            ]
+        )
+        target = tmp_path / "out.csv"
+        client = PicSureClient(base_url=BASE_URL, token="t")
+
+        client.get_raw_to_file("/download", target, resend_after_send=resend_after_send)
+
+        assert target.read_bytes() == b"data"
+        assert route.call_count == 2
+
+    @respx.mock
+    def test_a_failure_after_sending_is_resent_by_default(self, tmp_path):
+        route = respx.get(f"{BASE_URL}/download").mock(
+            side_effect=[
+                httpx.ReadTimeout("timed out"),
+                httpx.Response(200, content=b"data"),
+            ]
+        )
+        target = tmp_path / "out.csv"
+        client = PicSureClient(base_url=BASE_URL, token="t")
+
+        client.get_raw_to_file("/download", target)
+
+        assert target.read_bytes() == b"data"
+        assert route.call_count == 2
+
+    @respx.mock
+    def test_a_failure_after_sending_is_not_resent_when_opted_out(self, tmp_path):
+        route = respx.get(f"{BASE_URL}/download").mock(
+            side_effect=[
+                httpx.ReadTimeout("timed out"),
+                httpx.Response(200, content=b"data"),
+            ]
+        )
+        client = PicSureClient(base_url=BASE_URL, token="t")
+
+        with pytest.raises(TransportConnectionError, match="timed out"):
+            client.get_raw_to_file(
+                "/download", tmp_path / "out.csv", resend_after_send=False
+            )
+
+        assert list(tmp_path.iterdir()) == []
+        assert route.call_count == 1
+
+
+class TestGetJsonResendAfterSend:
+    """``resend_after_send=False`` gives a GET the resend rule of a POST."""
+
+    @respx.mock
+    def test_a_5xx_is_not_resent(self):
+        route = respx.get(f"{BASE_URL}/status").mock(
+            return_value=httpx.Response(502, text="bad gateway")
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+
+        with pytest.raises(TransportServerError):
+            client.get_json("/status", resend_after_send=False)
+
+        assert route.call_count == 1
+
+    @respx.mock
+    def test_a_failure_after_sending_is_not_resent(self):
+        route = respx.get(f"{BASE_URL}/status").mock(
+            side_effect=[
+                httpx.ReadTimeout("timed out"),
+                httpx.Response(200, json={"status": "AVAILABLE"}),
+            ]
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+
+        with pytest.raises(TransportConnectionError):
+            client.get_json("/status", resend_after_send=False)
+
+        assert route.call_count == 1
+
+    @respx.mock
+    def test_a_refused_connection_is_still_resent_once(self):
+        route = respx.get(f"{BASE_URL}/status").mock(
+            side_effect=[
+                httpx.ConnectError("refused"),
+                httpx.Response(200, json={"status": "AVAILABLE"}),
+            ]
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN)
+
+        assert client.get_json("/status", resend_after_send=False) == {
+            "status": "AVAILABLE"
+        }
+        assert route.call_count == 2

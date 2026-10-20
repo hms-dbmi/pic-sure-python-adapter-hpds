@@ -52,10 +52,10 @@ class TestExportPFBHappyPath:
     @respx.mock
     def test_writes_bytes_to_file_after_polling(self, tmp_path):
         respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
-        respx.post(STATUS_URL).mock(
+        respx.get(STATUS_URL).mock(
             side_effect=[_status("PENDING"), _status("AVAILABLE")]
         )
-        respx.post(RESULT_URL).mock(
+        respx.get(RESULT_URL).mock(
             return_value=httpx.Response(200, content=b"pfb_content")
         )
 
@@ -75,10 +75,10 @@ class TestExportPFBHappyPath:
         # "STARTED" is a legitimate in-flight HPDS status that is not in the
         # old hardcoded set; it must not abort the export.
         respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
-        respx.post(STATUS_URL).mock(
+        respx.get(STATUS_URL).mock(
             side_effect=[_status("STARTED"), _status("AVAILABLE")]
         )
-        respx.post(RESULT_URL).mock(
+        respx.get(RESULT_URL).mock(
             return_value=httpx.Response(200, content=b"pfb_content")
         )
 
@@ -95,8 +95,8 @@ class TestExportPFBHappyPath:
         import json
 
         submit_route = respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
-        respx.post(STATUS_URL).mock(return_value=_status("AVAILABLE"))
-        respx.post(RESULT_URL).mock(return_value=httpx.Response(200, content=b"pfb"))
+        respx.get(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+        respx.get(RESULT_URL).mock(return_value=httpx.Response(200, content=b"pfb"))
 
         with patch(SLEEP):
             export_pfb(
@@ -118,7 +118,7 @@ class TestExportPFBBackoff:
     def test_exponential_backoff_sequence(self, tmp_path):
         respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
         # 6 PENDING responses, then AVAILABLE.
-        respx.post(STATUS_URL).mock(
+        respx.get(STATUS_URL).mock(
             side_effect=[
                 _status("PENDING"),
                 _status("PENDING"),
@@ -129,7 +129,7 @@ class TestExportPFBBackoff:
                 _status("AVAILABLE"),
             ]
         )
-        respx.post(RESULT_URL).mock(return_value=httpx.Response(200, content=b"x"))
+        respx.get(RESULT_URL).mock(return_value=httpx.Response(200, content=b"x"))
 
         with patch(SLEEP) as sleep_mock:
             export_pfb(
@@ -145,10 +145,10 @@ class TestExportPFBBackoff:
     @respx.mock
     def test_backoff_caps_at_ten_seconds(self, tmp_path):
         respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
-        respx.post(STATUS_URL).mock(
+        respx.get(STATUS_URL).mock(
             side_effect=[_status("PENDING")] * 10 + [_status("AVAILABLE")]
         )
-        respx.post(RESULT_URL).mock(return_value=httpx.Response(200, content=b"x"))
+        respx.get(RESULT_URL).mock(return_value=httpx.Response(200, content=b"x"))
 
         with patch(SLEEP) as sleep_mock:
             export_pfb(
@@ -168,7 +168,7 @@ class TestExportPFBErrorStatus:
     @respx.mock
     def test_error_status_raises_query_error(self, tmp_path):
         respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
-        respx.post(STATUS_URL).mock(side_effect=[_status("STARTED"), _status("ERROR")])
+        respx.get(STATUS_URL).mock(side_effect=[_status("STARTED"), _status("ERROR")])
 
         output = tmp_path / "out.pfb"
         with (
@@ -185,7 +185,7 @@ class TestExportPFBTimeout:
     @respx.mock
     def test_the_budget_is_the_client_timeout(self, tmp_path, clock):
         respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
-        respx.post(STATUS_URL).mock(return_value=_status("PENDING"))
+        respx.get(STATUS_URL).mock(return_value=_status("PENDING"))
         client = PicSureClient(base_url=BASE_URL, token=TOKEN, timeout=20.0)
 
         with pytest.raises(PicSureConnectionError) as info:
@@ -204,8 +204,8 @@ class TestExportPFB4xx:
     @respx.mock
     def test_result_consent_denied_raises_typed_error_without_output(self, tmp_path):
         respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
-        respx.post(STATUS_URL).mock(return_value=_status("AVAILABLE"))
-        respx.post(RESULT_URL).mock(
+        respx.get(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+        respx.get(RESULT_URL).mock(
             return_value=httpx.Response(
                 403,
                 json={
@@ -242,7 +242,7 @@ class TestExportPFB4xx:
     @respx.mock
     def test_status_404_raises_query_error(self, tmp_path):
         respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
-        respx.post(STATUS_URL).mock(return_value=httpx.Response(404, text=""))
+        respx.get(STATUS_URL).mock(return_value=httpx.Response(404, text=""))
 
         output = tmp_path / "out.pfb"
         with (
@@ -257,8 +257,8 @@ class TestExportPFB4xx:
     @respx.mock
     def test_result_422_raises_validation_error(self, tmp_path):
         respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
-        respx.post(STATUS_URL).mock(return_value=_status("AVAILABLE"))
-        respx.post(RESULT_URL).mock(
+        respx.get(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+        respx.get(RESULT_URL).mock(
             return_value=httpx.Response(422, json={"error": "bad state"})
         )
 
@@ -322,8 +322,8 @@ class TestExportPFBServerSuppliedQueryId:
     @respx.mock
     def test_a_uuid_id_still_reaches_the_status_and_result_routes(self, tmp_path):
         respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
-        status = respx.post(STATUS_URL).mock(return_value=_status("AVAILABLE"))
-        result = respx.post(RESULT_URL).mock(
+        status = respx.get(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+        result = respx.get(RESULT_URL).mock(
             return_value=httpx.Response(200, content=b"pfb_content")
         )
 
@@ -339,8 +339,8 @@ class TestExportPFBAtomicWrite:
     @respx.mock
     def test_disk_write_failure_removes_partial(self, tmp_path):
         respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
-        respx.post(STATUS_URL).mock(return_value=_status("AVAILABLE"))
-        respx.post(RESULT_URL).mock(
+        respx.get(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+        respx.get(RESULT_URL).mock(
             return_value=httpx.Response(200, content=b"pfb_content")
         )
 
@@ -365,8 +365,8 @@ class TestExportPFBAtomicWrite:
     @respx.mock
     def test_stream_write_failure_removes_partial(self, tmp_path):
         respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
-        respx.post(STATUS_URL).mock(return_value=_status("AVAILABLE"))
-        respx.post(RESULT_URL).mock(
+        respx.get(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+        respx.get(RESULT_URL).mock(
             return_value=httpx.Response(200, content=b"pfb_content")
         )
 

@@ -232,10 +232,10 @@ def _mock_job(result: httpx.Response) -> None:
     respx.post(f"{BASE_URL}{submit_path}").mock(
         return_value=httpx.Response(200, json={"picsureResultId": _QUERY_ID})
     )
-    respx.post(f"{BASE_URL}{status_path}").mock(
+    respx.get(f"{BASE_URL}{status_path}").mock(
         return_value=httpx.Response(200, json={"status": "AVAILABLE"})
     )
-    respx.post(f"{BASE_URL}{result_path}").mock(return_value=result)
+    respx.get(f"{BASE_URL}{result_path}").mock(return_value=result)
 
 
 class TestStreamedDownloadEvents:
@@ -293,20 +293,23 @@ class TestStreamedDownloadEvents:
         assert download[0].bytes_received == len(content)
 
     @respx.mock
-    def test_a_streamed_participant_body_is_still_marked_redacted(self):
-        """The buffered path marked these.
+    def test_only_the_submit_carrying_the_participant_body_is_marked_redacted(self):
+        """The mark follows the request body, and only the submit sends one.
 
-        Without the mark a participant-bearing body looks safe to log.
-        Every step resends the participant-bearing body, so every step's
-        event carries the mark.
+        Without the mark a participant-bearing body looks safe to log. The
+        status poll and the download are body-less GETs, so there is no
+        body for their events to mark.
         """
         cfg = DevConfig(enabled=True, max_events=10)
 
         self._run("participant", b"patient_id,age\nP1,42\n", cfg)
 
         http_events = [e for e in cfg.buffer.snapshot() if e.kind == "http"]
-        assert len(http_events) == 3
-        assert all(e.metadata.get("redacted") == "participant" for e in http_events)
+        assert [e.metadata.get("redacted") for e in http_events] == [
+            "participant",
+            None,
+            None,
+        ]
 
     @respx.mock
     def test_a_failed_download_emits_an_error_event(self):
@@ -440,3 +443,36 @@ class TestStreamedFailureEvents:
         events = cfg.buffer.snapshot()
         assert [(e.kind, e.status, e.retry) for e in events] == [("http", 200, 0)]
         assert target.read_bytes() == b"data"
+
+
+class TestStreamedGetEvents:
+    """A body-less streamed GET is accounted for like the POST download."""
+
+    URL = f"{BASE_URL}/download"
+
+    @respx.mock
+    def test_a_completed_download_emits_one_unmarked_http_event(self, tmp_path):
+        respx.get(self.URL).mock(return_value=httpx.Response(200, content=b"data"))
+        cfg = DevConfig(enabled=True, max_events=10)
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN, dev_config=cfg)
+
+        client.get_raw_to_file("/download", tmp_path / "out")
+
+        events = cfg.buffer.snapshot()
+        assert [(e.kind, e.status, e.retry) for e in events] == [("http", 200, 0)]
+        assert events[0].bytes_sent == 0
+        assert events[0].bytes_received == len(b"data")
+        assert "redacted" not in events[0].metadata
+
+    @respx.mock
+    def test_a_status_failure_records_the_get_method(self, tmp_path):
+        respx.get(self.URL).mock(return_value=httpx.Response(500, text="boom"))
+        cfg = DevConfig(enabled=True, max_events=10)
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN, dev_config=cfg)
+
+        with pytest.raises(TransportError):
+            client.get_raw_to_file("/download", tmp_path / "out")
+
+        events = cfg.buffer.snapshot()
+        assert [e.kind for e in events] == ["http", "error"]
+        assert events[1].metadata == {"method": "GET"}
