@@ -136,6 +136,15 @@ restored = session.loadQueryByID(qid)
 df = session.runQueryByID(qid, type="participant")
 ```
 
+Without a `type`, `runQueryByID` runs the query as the type it was
+saved as. `saveQueryByName` saves queries as counts, so name the type
+you want for those. A dataset saved for export in the PIC-SURE UI comes
+back as participant (or timestamp) rows with just its ID:
+
+```python
+df = session.runQueryByID("22222222-3333-4444-5555-666666666666")
+```
+
 By default, saving a second time with the same name raises
 `PicSureValidationError`. To repoint the existing record at a freshly
 built query, pass `overwrite=True`:

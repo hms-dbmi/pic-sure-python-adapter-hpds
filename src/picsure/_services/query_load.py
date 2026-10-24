@@ -194,13 +194,13 @@ def _validate_query_id(query_id: str) -> str:
         ) from exc
 
 
-def load_query(
+def load_saved_query(
     client: PicSureClient,
     query_id: str,
     *,
     backend: str,
-) -> Query | Clause | ClauseGroup:
-    """Load a previously-saved query by ID and rebuild it as a Query.
+) -> tuple[Query | Clause | ClauseGroup, object]:
+    """Load a previously-saved query by ID, with the result type it was saved as.
 
     Reads ``/picsure/hpds/{backend}/query/{id}/metadata``.  The read
     itself does not depend on HPDS, since the query-service returns the
@@ -214,11 +214,13 @@ def load_query(
             the metadata route (does not affect the metadata read itself).
 
     Returns:
-        A :class:`Query` when the saved row carries output concepts or
-        genomic filters, otherwise the bare :class:`Clause` or
-        :class:`ClauseGroup` it reduces to.  Any of the three can be
-        passed directly to :meth:`Session.runQuery`,
-        :meth:`Session.exportAsPFB`, or composed with :func:`buildQuery`.
+        The rebuilt query and the saved ``expectedResultType`` (``None``
+        when the row has none).  The query is a :class:`Query` when the
+        saved row carries output concepts or genomic filters, otherwise
+        the bare :class:`Clause` or :class:`ClauseGroup` it reduces to.
+        Any of the three can be passed directly to
+        :meth:`Session.runQuery`, :meth:`Session.exportAsPFB`, or composed
+        with :func:`buildQuery`.
 
     Raises:
         PicSureValidationError: If the ID is blank or not a UUID, the
@@ -249,10 +251,12 @@ def load_query(
     except TransportError as exc:
         raise translate_transport_error(exc, operation=_LOAD_OPERATION) from exc
 
-    return _build_query_from_response(response)
+    return _build_saved_query_from_response(response)
 
 
-def _build_query_from_response(response: object) -> Query | Clause | ClauseGroup:
+def _build_saved_query_from_response(
+    response: object,
+) -> tuple[Query | Clause | ClauseGroup, object]:
     if not isinstance(response, dict):
         raise PicSureQueryError(
             f"Expected a JSON object from the metadata endpoint, got "
@@ -285,4 +289,5 @@ def _build_query_from_response(response: object) -> Query | Clause | ClauseGroup
         [str(p) for p in raw_select] if isinstance(raw_select, list) else []
     )
     phenotypic_node = inner.get("phenotypicClause")
-    return _to_query(select_paths, phenotypic_node, genomic_filters)
+    query = _to_query(select_paths, phenotypic_node, genomic_filters)
+    return query, inner.get("expectedResultType")
