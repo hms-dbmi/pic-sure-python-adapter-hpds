@@ -646,6 +646,35 @@ def _resolve_query_type(query_type: QueryType | str) -> str:
     return _VALID_QUERY_TYPES[key]
 
 
+def query_type_for_saved_result(result_type: object) -> str:
+    """Return the :func:`run_query` type that reruns a saved query as saved.
+
+    Args:
+        result_type: The saved query's ``expectedResultType``.  ``None``
+            means COUNT, the backend's default.
+
+    Raises:
+        PicSureValidationError: If the saved type has no :func:`run_query`
+            equivalent.
+    """
+    if result_type is None:
+        return "count"
+    for key, wire_type in _VALID_QUERY_TYPES.items():
+        if wire_type == result_type:
+            return key
+    if result_type == "DATAFRAME_PFB":
+        raise PicSureValidationError(
+            "This query was saved as a PFB export, which runQueryByID cannot "
+            "return. Export it with exportAsPFB(loadQueryByID(query_id), path), "
+            "or pass a type to runQueryByID."
+        )
+    valid = ", ".join(_VALID_QUERY_TYPES.keys())
+    raise PicSureValidationError(
+        f"This query was saved with result type {result_type!r}, which "
+        f"runQueryByID cannot run. Pass a type, one of: {valid}."
+    )
+
+
 def _parse_count_string(s: str) -> CountResult:
     """Parse a single PIC-SURE count string into a :class:`CountResult`.
 

@@ -566,7 +566,7 @@ class Session:
     def runQueryByID(  # noqa: N802
         self,
         query_id: str,
-        type: QueryType | str = "count",  # noqa: A002
+        type: QueryType | str | None = None,  # noqa: A002
     ) -> CountResult | dict[str, CountResult] | pd.DataFrame | list[str]:
         """Load a saved query by ID and execute it in one call.
 
@@ -575,10 +575,12 @@ class Session:
         Args:
             query_id: The UUID string of a previous PIC-SURE query.
             type: Result type, as accepted by :meth:`runQuery` —
-                ``"count"`` (default), ``"cross_count"``, ``"participant"``,
+                ``"count"``, ``"cross_count"``, ``"participant"``,
                 ``"timestamp"``, ``"variant_count"``, ``"variant_list"``,
                 ``"vcf_excerpt"``, or ``"aggregate_vcf_excerpt"`` (or the
-                equivalent :class:`QueryType` member).
+                equivalent :class:`QueryType` member).  Defaults to the
+                type the query was saved as, so a dataset saved for export
+                from the PIC-SURE UI comes back as participant rows.
 
         Returns:
             A :class:`CountResult`, ``dict[str, CountResult]``,
@@ -587,7 +589,9 @@ class Session:
 
         Raises:
             PicSureValidationError: If the ID is blank, the saved query
-                cannot be loaded, or the query type is invalid.
+                cannot be loaded, the query type is invalid, or no type
+                was passed and the saved type has no :meth:`runQuery`
+                equivalent (such as a PFB export).
             PicSureAuthenticationError: If the token is rejected (HTTP 401).
             PicSureAuthorizationError: If the account may not load or run
                 the query (HTTP 403), including a consent denial.
@@ -596,17 +600,18 @@ class Session:
             PicSureQueryError: If a response cannot be parsed.
 
         Example:
+            >>> df = session.runQueryByID("22222222-3333-4444-5555-666666666666")
             >>> count = session.runQueryByID(
-            ...     "11111111-2222-3333-4444-555555555555", type="count"
-            ... )
-            >>> df = session.runQueryByID(
-            ...     "22222222-3333-4444-5555-666666666666", type="participant"
+            ...     "22222222-3333-4444-5555-666666666666", type="count"
             ... )
         """
-        query = self.loadQueryByID(query_id)
+        from picsure._services.query_run import query_type_for_saved_result
+
+        query, saved_type = self._load_saved_query(query_id)
+        if type is None:
+            return self.runQuery(query, query_type_for_saved_result(saved_type))
         return self.runQuery(query, type)
 
-    @timed("session.loadQueryByID")
     def loadQueryByID(  # noqa: N802
         self, query_id: str
     ) -> Query | Clause | ClauseGroup:
@@ -635,9 +640,15 @@ class Session:
             >>> previous = session.loadQueryByID("11111111-2222-3333-4444-555555555555")
             >>> count = session.runQuery(previous, type="count")
         """
-        from picsure._services.query_load import load_query
+        return self._load_saved_query(query_id)[0]
 
-        return load_query(self._client, query_id, backend=self._backend)
+    @timed("session.loadQueryByID")
+    def _load_saved_query(
+        self, query_id: str
+    ) -> tuple[Query | Clause | ClauseGroup, object]:
+        from picsure._services.query_load import load_saved_query
+
+        return load_saved_query(self._client, query_id, backend=self._backend)
 
     def close(self) -> None:
         """Close the underlying HTTP client and release its connection pool.

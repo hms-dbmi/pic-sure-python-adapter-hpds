@@ -1,3 +1,4 @@
+import json
 from unittest.mock import MagicMock
 
 import httpx
@@ -237,8 +238,9 @@ def _metadata_envelope(
     *,
     select: list[str],
     phenotypic: dict | None,
+    result_type: str | None = "COUNT",
 ) -> dict:  # type: ignore[type-arg]
-    return {
+    envelope = {
         "status": "COMPLETED",
         "resourceID": "resource-uuid-aaaa",
         "picsureResultId": "abc-123",
@@ -261,6 +263,13 @@ def _metadata_envelope(
             "queryResultMetadata": "",
         },
     }
+    if result_type is None:
+        del envelope["resultMetadata"]["queryJson"]["query"]["expectedResultType"]
+    else:
+        envelope["resultMetadata"]["queryJson"]["query"]["expectedResultType"] = (
+            result_type
+        )
+    return envelope
 
 
 _CONCEPTS_URL = (
@@ -274,9 +283,12 @@ _SAVED_QUERY_ID = "11111111-2222-3333-4444-555555555555"
 _JOB_ID = "6b2f4d1e-9c3a-4f5b-8d7e-1a2b3c4d5e6f"
 
 
-def _mock_auth_job(content: bytes) -> None:
-    """Mock the submit, status and result routes of one finished query."""
-    respx.post(_AUTH_QUERY_BASE).mock(
+def _mock_auth_job(content: bytes) -> respx.Route:
+    """Mock the submit, status and result routes of one finished query.
+
+    Returns the submit route, whose request body carries the result type.
+    """
+    submit = respx.post(_AUTH_QUERY_BASE).mock(
         return_value=httpx.Response(200, json={"picsureResultId": _JOB_ID})
     )
     respx.get(f"{_AUTH_QUERY_BASE}/{_JOB_ID}/status").mock(
@@ -285,6 +297,7 @@ def _mock_auth_job(content: bytes) -> None:
     respx.get(f"{_AUTH_QUERY_BASE}/{_JOB_ID}/result").mock(
         return_value=httpx.Response(200, content=content)
     )
+    return submit
 
 
 def _meta_url(query_id: str, backend: str = "auth") -> str:
@@ -765,6 +778,109 @@ class TestSessionRunQueryByID:
 
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 5
+
+    @respx.mock
+    @pytest.mark.parametrize("saved_type", ["DATAFRAME", "DATAFRAME_TIMESERIES"])
+    def test_run_query_by_id_without_a_type_reruns_the_saved_type(
+        self, participant_response, saved_type
+    ):
+        session = _session_on_backend(_client())
+        respx.get(_meta_url(_SAVED_QUERY_ID)).mock(
+            return_value=httpx.Response(
+                200,
+                json=_metadata_envelope(
+                    select=["\\phs1\\age\\"],
+                    phenotypic=None,
+                    result_type=saved_type,
+                ),
+            )
+        )
+        submit = _mock_auth_job(participant_response)
+
+        df = session.runQueryByID(_SAVED_QUERY_ID)
+
+        assert isinstance(df, pd.DataFrame)
+        body = json.loads(submit.calls.last.request.content)
+        assert body["query"]["expectedResultType"] == saved_type
+
+    @respx.mock
+    @pytest.mark.parametrize("saved_type", ["COUNT", None])
+    def test_run_query_by_id_without_a_type_counts_a_saved_count(self, saved_type):
+        from picsure._models.count_result import CountResult
+
+        session = _session_on_backend(_client())
+        respx.get(_meta_url(_SAVED_QUERY_ID)).mock(
+            return_value=httpx.Response(
+                200,
+                json=_metadata_envelope(
+                    select=[],
+                    phenotypic={
+                        "phenotypicFilterType": "FILTER",
+                        "conceptPath": "\\phs1\\sex\\",
+                        "values": ["Male"],
+                        "not": False,
+                    },
+                    result_type=saved_type,
+                ),
+            )
+        )
+        respx.post(f"{_AUTH_QUERY_BASE}/sync").mock(
+            return_value=httpx.Response(200, content=b"42")
+        )
+
+        result = session.runQueryByID(_SAVED_QUERY_ID)
+
+        assert isinstance(result, CountResult)
+        assert result.value == 42
+
+    @respx.mock
+    def test_run_query_by_id_type_overrides_the_saved_type(self):
+        from picsure._models.count_result import CountResult
+
+        session = _session_on_backend(_client())
+        respx.get(_meta_url(_SAVED_QUERY_ID)).mock(
+            return_value=httpx.Response(
+                200,
+                json=_metadata_envelope(
+                    select=["\\phs1\\age\\"],
+                    phenotypic=None,
+                    result_type="DATAFRAME",
+                ),
+            )
+        )
+        respx.post(f"{_AUTH_QUERY_BASE}/sync").mock(
+            return_value=httpx.Response(200, content=b"42")
+        )
+
+        result = session.runQueryByID(_SAVED_QUERY_ID, type="count")
+
+        assert isinstance(result, CountResult)
+
+    @respx.mock
+    @pytest.mark.parametrize(
+        ("saved_type", "message"),
+        [
+            ("DATAFRAME_PFB", "exportAsPFB"),
+            ("INFO_COLUMN_LISTING", "'INFO_COLUMN_LISTING'"),
+        ],
+    )
+    def test_run_query_by_id_without_a_type_rejects_a_saved_type_it_cannot_run(
+        self, saved_type, message
+    ):
+        session = _session_on_backend(_client())
+        respx.get(_meta_url(_SAVED_QUERY_ID)).mock(
+            return_value=httpx.Response(
+                200,
+                json=_metadata_envelope(
+                    select=["\\phs1\\age\\"],
+                    phenotypic=None,
+                    result_type=saved_type,
+                ),
+            )
+        )
+
+        with pytest.raises(PicSureValidationError, match=message):
+            session.runQueryByID(_SAVED_QUERY_ID)
 
     def test_run_query_by_id_rejects_blank_id(self):
         from picsure.errors import PicSureValidationError
