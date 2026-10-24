@@ -194,20 +194,6 @@ def _validate_query_id(query_id: str) -> str:
         ) from exc
 
 
-def load_query(
-    client: PicSureClient,
-    query_id: str,
-    *,
-    backend: str,
-) -> Query | Clause | ClauseGroup:
-    """Load a previously-saved query by ID and rebuild it as a Query.
-
-    The query part of :func:`load_saved_query`; see it for arguments and
-    errors.
-    """
-    return load_saved_query(client, query_id, backend=backend)[0]
-
-
 def load_saved_query(
     client: PicSureClient,
     query_id: str,

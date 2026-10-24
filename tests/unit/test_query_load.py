@@ -237,7 +237,7 @@ import httpx
 import respx
 
 from picsure._services._hpds_paths import query_metadata_path
-from picsure._services.query_load import load_query
+from picsure._services.query_load import load_saved_query
 from picsure._transport.client import PicSureClient
 from picsure.errors import (
     PicSureAuthError,
@@ -245,6 +245,11 @@ from picsure.errors import (
     PicSureConsentDeniedError,
     PicSureConsentLookupError,
 )
+
+
+def load_query(client, query_id, *, backend):
+    return load_saved_query(client, query_id, backend=backend)[0]
+
 
 BASE_URL = "https://test.example.com"
 TOKEN = "test-token"

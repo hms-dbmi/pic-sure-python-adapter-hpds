@@ -665,7 +665,8 @@ def query_type_for_saved_result(result_type: object) -> str:
     if result_type == "DATAFRAME_PFB":
         raise PicSureValidationError(
             "This query was saved as a PFB export, which runQueryByID cannot "
-            "return. Export it with exportAsPFB(loadQueryByID(query_id), path), "
+            "return. Export it with "
+            "session.exportAsPFB(session.loadQueryByID(query_id), path), "
             "or pass a type to runQueryByID."
         )
     valid = ", ".join(_VALID_QUERY_TYPES.keys())

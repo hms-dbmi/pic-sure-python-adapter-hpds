@@ -580,12 +580,13 @@ class Session:
                 ``"vcf_excerpt"``, or ``"aggregate_vcf_excerpt"`` (or the
                 equivalent :class:`QueryType` member).  Defaults to the
                 type the query was saved as, so a dataset saved for export
-                from the PIC-SURE UI comes back as participant rows.
+                from the PIC-SURE UI comes back as participant (or
+                timestamp) rows.
 
         Returns:
             A :class:`CountResult`, ``dict[str, CountResult]``,
             :class:`pandas.DataFrame`, or ``list[str]`` depending
-            on ``type``.
+            on ``type``, or on the saved type when no ``type`` is passed.
 
         Raises:
             PicSureValidationError: If the ID is blank, the saved query
