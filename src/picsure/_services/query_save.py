@@ -49,7 +49,7 @@ def save_query_by_name(
     """Submit a query, then save it to the user's profile under ``name``.
 
     Returns the PIC-SURE-generated query ID in canonical UUID form, the
-    same id that :func:`load_query` can re-fetch.
+    same id that :func:`load_saved_query` can re-fetch.
 
     If a NamedDataset already exists for this user with ``name``:
         * ``overwrite=False`` (default) → raise :class:`PicSureValidationError`.
