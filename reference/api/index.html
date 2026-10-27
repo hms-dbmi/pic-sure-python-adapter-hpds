@@ -8567,7 +8567,7 @@ df = session.runQuery(my_query, type="participant")</p>
 
 <a href="#picsure.Session.runQueryByID" class="headerlink" title="Permanent link">&para;</a></h3>
 <div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">runQueryByID</span><span class="p">(</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">query_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="nb">type</span><span class="p">:</span> <span class="n">QueryType</span> <span class="o">|</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;count&quot;</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">query_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="nb">type</span><span class="p">:</span> <span class="n">QueryType</span> <span class="o">|</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">(</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">CountResult</span>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="o">|</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">CountResult</span><span class="p">]</span>
@@ -8614,19 +8614,22 @@ df = session.runQuery(my_query, type="participant")</p>
                 <code>type</code>
             </td>
             <td>
-                  <code><a class="autorefs autorefs-internal" title="QueryType (picsure._models.query_type.QueryType)" href="#picsure.QueryType">QueryType</a> | <span title="str">str</span></code>
+                  <code><a class="autorefs autorefs-internal" title="QueryType (picsure._models.query_type.QueryType)" href="#picsure.QueryType">QueryType</a> | <span title="str">str</span> | None</code>
             </td>
             <td>
               <div class="doc-md-description">
                 <p>Result type, as accepted by :meth:<code>runQuery</code> —
-<code>"count"</code> (default), <code>"cross_count"</code>, <code>"participant"</code>,
+<code>"count"</code>, <code>"cross_count"</code>, <code>"participant"</code>,
 <code>"timestamp"</code>, <code>"variant_count"</code>, <code>"variant_list"</code>,
 <code>"vcf_excerpt"</code>, or <code>"aggregate_vcf_excerpt"</code> (or the
-equivalent :class:<code>QueryType</code> member).</p>
+equivalent :class:<code>QueryType</code> member).  Defaults to the
+type the query was saved as, so a dataset saved for export
+from the PIC-SURE UI comes back as participant (or
+timestamp) rows.</p>
               </div>
             </td>
             <td>
-                  <code>&#39;count&#39;</code>
+                  <code>None</code>
             </td>
           </tr>
       </tbody>
@@ -8698,7 +8701,7 @@ equivalent :class:<code>QueryType</code> member).</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>on <code>type</code>.</p>
+                <p>on <code>type</code>, or on the saved type when no <code>type</code> is passed.</p>
               </div>
             </td>
           </tr>
@@ -8722,7 +8725,9 @@ equivalent :class:<code>QueryType</code> member).</p>
             <td>
               <div class="doc-md-description">
                 <p>If the ID is blank, the saved query
-cannot be loaded, or the query type is invalid.</p>
+cannot be loaded, the query type is invalid, or no type
+was passed and the saved type has no :meth:<code>runQuery</code>
+equivalent (such as a PFB export).</p>
               </div>
             </td>
           </tr>
@@ -8777,11 +8782,9 @@ the query (HTTP 403), including a consent denial.</p>
   <blockquote>
 <blockquote>
 <blockquote>
-<p>count = session.runQueryByID(
-...     "11111111-2222-3333-4444-555555555555", type="count"
-... )
-df = session.runQueryByID(
-...     "22222222-3333-4444-5555-666666666666", type="participant"
+<p>df = session.runQueryByID("22222222-3333-4444-5555-666666666666")
+count = session.runQueryByID(
+...     "22222222-3333-4444-5555-666666666666", type="count"
 ... )</p>
 </blockquote>
 </blockquote>
