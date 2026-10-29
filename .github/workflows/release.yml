@@ -69,6 +69,8 @@ jobs:
           version: "latest"
 
       - name: Build sdist + wheel
+        env:
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ github.ref_name }}
         run: uv build
 
       - name: Check distribution metadata
