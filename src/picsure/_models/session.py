@@ -622,7 +622,8 @@ class Session:
             query_id: The UUID string of a previous query.
 
         Returns:
-            A Query (when the saved query selects output concepts) or a bare
+            A Query (when the saved query selects output concepts, has
+            genomic filters, or was saved as a sample) or a bare
             Clause/ClauseGroup, suitable for runQuery, exportAsPFB, or — for a
             bare filter — composing with buildClauseGroup.
 

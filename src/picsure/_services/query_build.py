@@ -174,6 +174,7 @@ def buildQuery(  # noqa: N802
     phenotypicFilter: Clause | ClauseGroup | None = None,  # noqa: N803
     includeConcepts: str | list[str] | tuple[str, ...] = (),  # noqa: N803
     genomicFilters: GenomicFilter | Sequence[GenomicFilter] | None = None,  # noqa: N803
+    sample: bool = False,
 ) -> Query:
     """Assemble a complete query from a filter tree and/or output concepts.
 
@@ -189,6 +190,13 @@ def buildQuery(  # noqa: N802
             ``buildGenomicFilter()``), a sequence of them, or ``None``.
             Applied as a flat conjunctive list alongside the phenotypic
             filter.
+        sample: ``True`` to ask the server for a small sample of the
+            export instead of the whole dataset. Only the dataframe result
+            types take it: ``runQuery`` with ``"participant"`` or
+            ``"timestamp"``, and ``exportAsPFB``. The server refuses a
+            sample query on any other type, which surfaces as
+            ``PicSureValidationError``. A sample may not represent the
+            whole dataset, and its cells can be empty.
 
     Returns:
         A Query suitable for ``Session.runQuery()``, ``Session.exportAsPFB()``,
@@ -197,7 +205,8 @@ def buildQuery(  # noqa: N802
     Raises:
         PicSureValidationError: If ``phenotypicFilter`` is not a Clause /
             ClauseGroup / None, if ``genomicFilters`` contains a non-filter,
-            or if all arguments are empty.
+            if ``sample`` is not a bool, or if ``phenotypicFilter``,
+            ``includeConcepts`` and ``genomicFilters`` are all empty.
 
     Example:
         >>> from picsure import buildClause, buildQuery, PhenotypicFilterType
@@ -231,6 +240,11 @@ def buildQuery(  # noqa: N802
             "buildGenomicFilter()), a single one, or None."
         )
 
+    if not isinstance(sample, bool):
+        raise PicSureValidationError(
+            f"sample must be True or False, got {type(sample).__name__}."
+        )
+
     if phenotypicFilter is None and not cols and not genomic:
         raise PicSureValidationError(
             "buildQuery requires a phenotypicFilter, includeConcepts, or "
@@ -242,6 +256,7 @@ def buildQuery(  # noqa: N802
         phenotypicFilter=phenotypicFilter,
         includeConcepts=tuple(dict.fromkeys(cols)),
         genomicFilters=genomic,
+        sample=sample,
     )
 
 

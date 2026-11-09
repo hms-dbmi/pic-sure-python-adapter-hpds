@@ -581,19 +581,25 @@ def build_query_body(
         PSAMA populates it server-side from the user's token; sending a
         client-asserted list (especially with a long-term token) is
         treated as tampering and can be rejected with a 401.
+
+        ``sample`` is written, as ``true``, only for a :class:`Query` whose
+        ``sample`` is ``True``. Every other body leaves the key out, so it
+        is unchanged for a server that predates the field and rejects
+        members it does not know.
     """
     filter_tree, select_paths, genomic = _split(query)
     phenotypic = filter_tree.to_query_json() if filter_tree is not None else None
-    return {
-        "query": {
-            "select": select_paths,
-            "phenotypicClause": phenotypic,
-            "genomicFilters": [g.to_query_json() for g in genomic],
-            "expectedResultType": expected_result_type,
-            "picsureId": None,
-            "id": None,
-        },
+    inner: dict[str, object] = {
+        "select": select_paths,
+        "phenotypicClause": phenotypic,
+        "genomicFilters": [g.to_query_json() for g in genomic],
+        "expectedResultType": expected_result_type,
+        "picsureId": None,
+        "id": None,
     }
+    if isinstance(query, Query) and query.sample is True:
+        inner["sample"] = True
+    return {"query": inner}
 
 
 def _split(

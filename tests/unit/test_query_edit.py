@@ -236,6 +236,20 @@ class TestReplaceClause:
 
 
 class TestEditQueryContainer:
+    def test_edits_preserve_sample(self):
+        a = _clause("\\a\\", "x")
+        b = _clause("\\b\\", "y")
+        group = buildClauseGroup([a, b], operator=GroupOperator.AND)
+        query = buildQuery(phenotypicFilter=group, sample=True)
+
+        pruned = removeSubQuery(query, a)
+        replaced = replaceClause(query, a, _clause("\\c\\", "z"))
+
+        assert isinstance(pruned, Query)
+        assert pruned.sample is True
+        assert isinstance(replaced, Query)
+        assert replaced.sample is True
+
     def test_remove_unwraps_and_preserves_include_concepts(self):
         a = _clause("\\a\\", "x")
         b = _clause("\\b\\", "y")

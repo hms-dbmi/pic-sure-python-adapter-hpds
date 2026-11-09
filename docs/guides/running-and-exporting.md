@@ -117,6 +117,27 @@ session.exportAsPFB(my_query, "my_cohort.pfb")
     ```
     `pypfb` reads the same files if you prefer its PFB-aware API.
 
+### Sampling an Export
+
+Pass `sample=True` to `buildQuery` to ask the server for a small sample of
+the export instead of the whole dataset. It is a quick way to check column
+names and value formats before you pull everything:
+
+```python
+preview = picsure.buildQuery(phenotypicFilter=my_filter, sample=True)
+df = session.runQuery(preview, type="participant")
+session.exportAsPFB(preview, "my_cohort_sample.pfb")
+```
+
+A sample works with `"participant"`, `"timestamp"` and `exportAsPFB`. The
+server refuses it for counts and every other result type, which raises
+`PicSureValidationError`. Cells in a sample can be empty, and a sample may
+not represent the whole dataset, so do not draw conclusions about the cohort
+from it. The option needs a PIC-SURE server that supports sampling, and an
+older server rejects the request. A query saved as a sample keeps the flag
+when you load it with `loadQueryByID`, where it always comes back as a
+`Query` with `sample` set to `True`.
+
 ## Saving a Query by Name
 
 On authorized deployments, you can persist a query to your user

@@ -1725,6 +1725,55 @@ class TestBuildQueryBodyGenomic:
         assert body["query"]["select"] == ["\\bmi\\"]
 
 
+class TestBuildQueryBodySample:
+    def test_body_includes_sample_when_set(self):
+        from picsure._services.query_build import buildQuery
+        from picsure._services.query_run import build_query_body
+
+        q = buildQuery(includeConcepts=["\\bmi\\"], sample=True)
+        body = build_query_body(q, "DATAFRAME")
+        assert body["query"]["sample"] is True
+
+    def test_body_omits_sample_by_default(self):
+        from picsure._services.query_build import buildClause, buildQuery
+        from picsure._services.query_run import build_query_body
+
+        clause = buildClause(
+            "\\path\\", type=PhenotypicFilterType.FILTER, categories="X"
+        )
+        expected = (
+            '{"query": {"select": ["\\\\path\\\\"], "phenotypicClause": '
+            '{"phenotypicFilterType": "FILTER", "conceptPath": "\\\\path\\\\", '
+            '"not": false, "values": ["X"]}, "genomicFilters": [], '
+            '"expectedResultType": "DATAFRAME", "picsureId": null, "id": null}}'
+        )
+        for query in (clause, buildQuery(phenotypicFilter=clause)):
+            body = build_query_body(query, "DATAFRAME")
+            assert "sample" not in body["query"]
+            assert json.dumps(body) == expected
+
+    @respx.mock
+    def test_run_query_sends_sample(self):
+        from picsure._services.query_build import buildQuery
+
+        submit = respx.post(SUBMIT_URL).mock(
+            return_value=httpx.Response(200, json={"picsureResultId": QUERY_ID})
+        )
+        respx.get(STATUS_URL).mock(
+            return_value=httpx.Response(200, json={"status": "AVAILABLE"})
+        )
+        respx.get(RESULT_URL).mock(
+            return_value=httpx.Response(200, content=b"Patient ID,bmi\n1,20\n")
+        )
+
+        q = buildQuery(includeConcepts=["\\bmi\\"], sample=True)
+        with patch(SLEEP):
+            run_query(_make_client(), q, "participant", backend="auth")
+
+        sent = json.loads(submit.calls[0].request.content)
+        assert sent["query"]["sample"] is True
+
+
 class TestVariantResultParsing:
     def test_resolve_new_query_types(self):
         from picsure._services.query_run import _resolve_query_type

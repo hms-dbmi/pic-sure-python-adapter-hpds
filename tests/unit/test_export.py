@@ -8,6 +8,7 @@ import respx
 
 from picsure._models.clause import Clause, PhenotypicFilterType
 from picsure._models.count_result import CountResult
+from picsure._models.query import Query
 from picsure._services._hpds_paths import query_prefix
 from picsure._services.export import export_csv, export_pfb, export_tsv
 from picsure._transport.client import PicSureClient
@@ -111,6 +112,44 @@ class TestExportPFBHappyPath:
         # The filter variable is returned as a PFB column without being
         # repeated in includeConcepts.
         assert body["query"]["select"] == ["\\phs1\\sex\\"]
+
+    @respx.mock
+    def test_export_pfb_sends_sample(self, tmp_path):
+        import json
+
+        submit_route = respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        respx.get(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+        respx.get(RESULT_URL).mock(return_value=httpx.Response(200, content=b"pfb"))
+
+        with patch(SLEEP):
+            export_pfb(
+                _make_client(),
+                Query(phenotypicFilter=_simple_clause(), sample=True),
+                tmp_path / "out.pfb",
+                backend="auth",
+            )
+
+        body = json.loads(submit_route.calls[0].request.content)
+        assert body["query"]["sample"] is True
+
+    @respx.mock
+    def test_export_pfb_omits_sample_by_default(self, tmp_path):
+        import json
+
+        submit_route = respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        respx.get(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+        respx.get(RESULT_URL).mock(return_value=httpx.Response(200, content=b"pfb"))
+
+        with patch(SLEEP):
+            export_pfb(
+                _make_client(),
+                Query(phenotypicFilter=_simple_clause()),
+                tmp_path / "out.pfb",
+                backend="auth",
+            )
+
+        body = json.loads(submit_route.calls[0].request.content)
+        assert "sample" not in body["query"]
 
 
 class TestExportPFBBackoff:
