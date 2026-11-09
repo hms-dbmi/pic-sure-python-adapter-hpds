@@ -312,13 +312,20 @@ def run_async_query_to_file(
     query_id = _submit_query(client, backend, body, operation=operation)
     budget = client.timeout
     interval = _INITIAL_POLL_INTERVAL_SECONDS
+    download_was_not_ready = False
     while True:
         _wait_until_available(
-            client, backend, query_id, started=started, operation=operation
+            client,
+            backend,
+            query_id,
+            started=started,
+            operation=operation,
+            download_was_not_ready=download_was_not_ready,
         )
         try:
             _download_result(client, backend, query_id, target, operation=operation)
         except TransportResultNotReadyError as not_ready:
+            download_was_not_ready = True
             remaining = budget - (time.monotonic() - started)
             if remaining <= 0:
                 raise _budget_exceeded(
@@ -355,6 +362,7 @@ def _wait_until_available(
     *,
     started: float,
     operation: str,
+    download_was_not_ready: bool = False,
 ) -> None:
     """Poll the status route until the job finishes or the budget passes.
 
@@ -364,6 +372,10 @@ def _wait_until_available(
         query_id: The canonical query id.
         started: The ``time.monotonic()`` reading the budget counts from.
         operation: Noun phrase for the error messages.
+        download_was_not_ready: Whether this wait follows a download the
+            server answered as not ready. The status had reported the
+            result available before that download, so the budget error
+            says the result did not become ready again.
 
     Raises:
         PicSureQueryError: If a poll carries no body or no status field,
@@ -399,7 +411,13 @@ def _wait_until_available(
                 )
         remaining = budget - (time.monotonic() - started)
         if remaining <= 0:
-            raise _budget_exceeded(operation, query_id, budget, failure)
+            raise _budget_exceeded(
+                operation,
+                query_id,
+                budget,
+                failure,
+                download_was_not_ready=download_was_not_ready,
+            )
         time.sleep(min(_pause_after(failure, interval), remaining))
         interval = min(interval * 2, _MAX_POLL_INTERVAL_SECONDS)
 
@@ -451,6 +469,8 @@ def _budget_exceeded(
     query_id: str,
     budget: float,
     failure: TransportError | None,
+    *,
+    download_was_not_ready: bool = False,
 ) -> PicSureError:
     """Build the error for a job still unfinished when the budget passes.
 
@@ -465,13 +485,28 @@ def _budget_exceeded(
     operation, the query id and the budget are folded into the phrase
     the message templates read as their object, and the transport
     failure is chained as the cause.
+
+    When the last poll answered, the message depends on
+    ``download_was_not_ready``. A wait that follows a download the
+    server answered as not ready says the result did not become ready
+    again, because the status had reported it available once. Any other
+    wait says the server never reported the result available.
     """
     waited = f"{operation} (query {query_id}) within its budget of {budget:g} seconds"
+    budget_source = (
+        "That budget is the session's request timeout, set by "
+        "picsure.connect(timeout=...)."
+    )
+    if failure is None and download_was_not_ready:
+        return PicSureConnectionError(
+            f"The server had not finished {waited}. It reported that the "
+            f"result was not ready when it was downloaded, and the result "
+            f"did not become ready again in that time. {budget_source}"
+        )
     if failure is None:
         return PicSureConnectionError(
             f"The server had not finished {waited}, and never reported the "
-            f"result available. That budget is the session's request timeout, "
-            f"set by picsure.connect(timeout=...)."
+            f"result available. {budget_source}"
         )
     error = translate_transport_error(failure, operation=waited)
     error.__cause__ = failure

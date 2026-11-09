@@ -23,8 +23,9 @@ class Query:
     columns beyond those. ``genomicFilters`` is a flat, conjunctive list of
     :class:`GenomicFilter` records applied alongside the phenotypic filter.
 
-    ``sample`` asks the server for a small sample of the export instead of
-    the whole dataset. It applies to the dataframe result types only
+    ``sample`` asks the server for a small sample of the export, at least
+    100 participants by default. A cohort at or below that size comes back
+    whole. It applies to the dataframe result types only
     (``"participant"``, ``"timestamp"`` and the PFB export), and the server
     refuses it on every other type. A sample may not represent the whole
     dataset, and its cells can be empty.
@@ -52,5 +53,17 @@ class Query:
         """
         if not isinstance(self.sample, bool):
             raise PicSureValidationError(
-                f"sample must be True or False, got {type(self.sample).__name__}."
+                f"sample must be True or False, got {_type_label(self.sample)}."
             )
+
+
+def _type_label(value: object) -> str:
+    """Name the type of ``value`` for an error message.
+
+    A builtin type is named bare, such as ``int``. Any other type carries
+    its module, so a ``numpy.bool`` is not reported as a plain ``bool``.
+    """
+    kind = type(value)
+    if kind.__module__ == "builtins":
+        return kind.__qualname__
+    return f"{kind.__module__}.{kind.__qualname__}"

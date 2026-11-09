@@ -191,7 +191,8 @@ def buildQuery(  # noqa: N802
             Applied as a flat conjunctive list alongside the phenotypic
             filter.
         sample: ``True`` to ask the server for a small sample of the
-            export instead of the whole dataset. Only the dataframe result
+            export, at least 100 participants by default. A cohort at or
+            below that size comes back whole. Only the dataframe result
             types take it: ``runQuery`` with ``"participant"`` or
             ``"timestamp"``, and ``exportAsPFB``. The server refuses a
             sample query on any other type, which surfaces as

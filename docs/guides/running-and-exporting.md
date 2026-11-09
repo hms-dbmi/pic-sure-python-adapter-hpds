@@ -136,11 +136,11 @@ below that size comes back whole, so a sample of a small cohort is the cohort.
 Cells in a sample can be empty, and a sample may not represent the whole
 dataset, so do not draw conclusions about the cohort from it.
 
-A sample works with `"participant"`, `"timestamp"` and `exportAsPFB`.
-Open-access sessions cannot sample. When the server refuses a sample query it
-answers HTTP 400, which raises `PicSureValidationError`. That can mean one of
-three things:
+A sample works with `"participant"`, `"timestamp"` and `exportAsPFB`. When
+the server refuses a sample query it answers HTTP 400, which raises
+`PicSureValidationError`. That can mean one of four things:
 
+- The session is open access. Open-access sessions cannot sample.
 - The server predates the option and does not know `sample`.
 - The server has sampling switched off. The error type in the response is
   `sample_disabled`, and the message says sample datasets are not available

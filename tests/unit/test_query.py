@@ -130,6 +130,22 @@ def test_query_rejects_a_sample_that_is_not_a_bool(not_a_bool):
         Query(phenotypicFilter=_clause(), sample=not_a_bool)
 
 
+def test_query_names_the_module_of_a_sample_type_that_is_not_builtin():
+    numpy_bool = type("bool", (), {"__module__": "numpy"})
+
+    with pytest.raises(PicSureValidationError) as info:
+        Query(phenotypicFilter=_clause(), sample=numpy_bool())
+
+    assert str(info.value) == "sample must be True or False, got numpy.bool."
+
+
+def test_query_names_a_builtin_sample_type_without_its_module():
+    with pytest.raises(PicSureValidationError) as info:
+        Query(phenotypicFilter=_clause(), sample=1)
+
+    assert str(info.value) == "sample must be True or False, got int."
+
+
 def test_query_accepts_a_bool_sample():
     assert Query(phenotypicFilter=_clause(), sample=True).sample is True
     assert Query(phenotypicFilter=_clause(), sample=False).sample is False

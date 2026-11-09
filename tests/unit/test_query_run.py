@@ -187,6 +187,8 @@ class TestRunAsyncQueryToFile:
         assert "the query" in message
         assert QUERY_ID in message
         assert "5 seconds" in message
+        assert "never reported the result available" in message
+        assert "did not become ready again" not in message
         assert clock.sleeps == [1.0, 2.0, 2.0]
         assert not target.exists()
 
@@ -1092,6 +1094,73 @@ class TestResultNotReady:
             self._run(_make_client(), tmp_path / "out.csv")
 
         assert result.call_count == 1
+
+    @respx.mock
+    def test_status_409_until_budget_raises_connection_error(self, tmp_path, clock):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        status = respx.get(STATUS_URL).mock(return_value=_result_not_ready())
+        result = respx.get(RESULT_URL).mock(
+            return_value=httpx.Response(200, content=b"x")
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN, timeout=5.0)
+        target = tmp_path / "out.csv"
+
+        with pytest.raises(PicSureConnectionError) as info:
+            self._run(client, target)
+
+        message = str(info.value)
+        assert type(info.value) is PicSureConnectionError
+        assert isinstance(info.value.__cause__, TransportResultNotReadyError)
+        assert QUERY_ID in message
+        assert "5 seconds" in message
+        assert clock.sleeps == [1.0, 2.0, 2.0]
+        assert status.call_count == 4
+        assert result.call_count == 0
+        assert not target.exists()
+
+    @respx.mock
+    def test_a_404_status_after_a_download_409_raises_query_error_at_once(
+        self, tmp_path
+    ):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        status = respx.get(STATUS_URL).mock(
+            side_effect=[_status("AVAILABLE"), httpx.Response(404)]
+        )
+        result = respx.get(RESULT_URL).mock(return_value=_result_not_ready())
+
+        with patch(SLEEP) as sleep_mock, pytest.raises(PicSureQueryError):
+            self._run(_make_client(), tmp_path / "out.csv")
+
+        assert status.call_count == 2
+        assert result.call_count == 1
+        assert [call.args[0] for call in sleep_mock.call_args_list] == [1.0]
+
+    @respx.mock
+    def test_budget_after_a_download_409_says_the_result_was_not_ready_again(
+        self, tmp_path, clock
+    ):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        respx.get(STATUS_URL).mock(
+            side_effect=lambda request: _status(
+                "AVAILABLE" if result.call_count == 0 else "PENDING"
+            )
+        )
+        result = respx.get(RESULT_URL).mock(return_value=_result_not_ready())
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN, timeout=5.0)
+        target = tmp_path / "out.csv"
+
+        with pytest.raises(PicSureConnectionError) as info:
+            self._run(client, target)
+
+        message = str(info.value)
+        assert type(info.value) is PicSureConnectionError
+        assert QUERY_ID in message
+        assert "5 seconds" in message
+        assert "was not ready when it was downloaded" in message
+        assert "did not become ready again" in message
+        assert "never reported the result available" not in message
+        assert result.call_count == 1
+        assert not target.exists()
 
 
 class TestRunQueryParticipant:
