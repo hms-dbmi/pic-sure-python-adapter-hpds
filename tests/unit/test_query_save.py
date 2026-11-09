@@ -7,6 +7,7 @@ import pytest
 import respx
 
 from picsure._models.clause import Clause, PhenotypicFilterType
+from picsure._models.query import Query
 from picsure._services._hpds_paths import (
     NAMED_DATASET_COLLECTION_PATH,
     named_dataset_item_path,
@@ -670,6 +671,36 @@ class TestSaveQueryByNameTransportErrors:
                 "fun",
                 backend="auth",
             )
+
+    @respx.mock
+    def test_sample_query_is_sent_as_a_count_and_the_refusal_saves_nothing(self):
+        respx.get(LIST_URL).mock(return_value=httpx.Response(200, json=[]))
+        submit = respx.post(SUBMIT_URL).mock(
+            return_value=httpx.Response(
+                400,
+                json={
+                    "errorType": "validation_failed",
+                    "message": "sample is not supported for COUNT",
+                },
+            )
+        )
+        create = respx.post(SAVE_URL).mock(return_value=httpx.Response(201))
+        update = respx.put(_ITEM_URL).mock(return_value=httpx.Response(204))
+
+        with pytest.raises(PicSureValidationError, match="submit"):
+            save_query_by_name(
+                _client(),
+                Query(phenotypicFilter=_clause(), sample=True),
+                "fun",
+                backend="auth",
+            )
+
+        submitted = json.loads(submit.calls.last.request.content)["query"]
+        assert submitted["sample"] is True
+        assert submitted["expectedResultType"] == "COUNT"
+        assert submit.call_count == 1
+        assert not create.called
+        assert not update.called
 
     @respx.mock
     def test_save_500_raises_connection_error(self):

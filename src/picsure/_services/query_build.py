@@ -205,8 +205,9 @@ def buildQuery(  # noqa: N802
     Raises:
         PicSureValidationError: If ``phenotypicFilter`` is not a Clause /
             ClauseGroup / None, if ``genomicFilters`` contains a non-filter,
-            if ``sample`` is not a bool, or if ``phenotypicFilter``,
-            ``includeConcepts`` and ``genomicFilters`` are all empty.
+            if ``sample`` is not a bool (checked by :class:`Query`
+            itself), or if ``phenotypicFilter``, ``includeConcepts`` and
+            ``genomicFilters`` are all empty.
 
     Example:
         >>> from picsure import buildClause, buildQuery, PhenotypicFilterType
@@ -238,11 +239,6 @@ def buildQuery(  # noqa: N802
         raise PicSureValidationError(
             "genomicFilters must be GenomicFilter objects (from "
             "buildGenomicFilter()), a single one, or None."
-        )
-
-    if not isinstance(sample, bool):
-        raise PicSureValidationError(
-            f"sample must be True or False, got {type(sample).__name__}."
         )
 
     if phenotypicFilter is None and not cols and not genomic:

@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from picsure._models.clause import Clause
 from picsure._models.clause_group import ClauseGroup
 from picsure._models.genomic_filter import GenomicFilter
+from picsure.errors import PicSureValidationError
 
 
 @dataclass(frozen=True)
@@ -27,9 +28,29 @@ class Query:
     (``"participant"``, ``"timestamp"`` and the PFB export), and the server
     refuses it on every other type. A sample may not represent the whole
     dataset, and its cells can be empty.
+
+    Raises:
+        PicSureValidationError: If ``sample`` is not a bool. Only ``True``
+            is sent to the server, so any other value would otherwise run
+            a full export without saying so.
     """
 
     phenotypicFilter: Clause | ClauseGroup | None = None  # noqa: N815
     includeConcepts: tuple[str, ...] = field(default_factory=tuple)  # noqa: N815
     genomicFilters: tuple[GenomicFilter, ...] = field(default_factory=tuple)  # noqa: N815
     sample: bool = False
+
+    def __post_init__(self) -> None:
+        """Refuse a ``sample`` that is not a bool.
+
+        ``buildQuery`` relies on this check instead of repeating it, so a
+        ``Query`` built directly and one built through ``buildQuery`` fail
+        the same way.
+
+        Raises:
+            PicSureValidationError: If ``sample`` is not a bool.
+        """
+        if not isinstance(self.sample, bool):
+            raise PicSureValidationError(
+                f"sample must be True or False, got {type(self.sample).__name__}."
+            )

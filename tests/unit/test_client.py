@@ -517,6 +517,35 @@ class TestPicSureClient4xxMapping:
         with pytest.raises(TransportAuthenticationError):
             PicSureClient(base_url=BASE_URL, token=TOKEN).get_json("/result")
 
+    @respx.mock
+    def test_400_result_not_ready_stays_validation_error(self):
+        respx.get(f"{BASE_URL}/result").mock(
+            return_value=httpx.Response(
+                400,
+                json={"errorType": "result_not_ready", "message": "not yet"},
+            )
+        )
+
+        with pytest.raises(TransportValidationError) as exc_info:
+            PicSureClient(base_url=BASE_URL, token=TOKEN).get_json("/result")
+
+        assert not isinstance(exc_info.value, TransportResultNotReadyError)
+        assert exc_info.value.status_code == 400
+
+    @respx.mock
+    def test_500_result_not_ready_stays_server_error(self):
+        respx.post(f"{BASE_URL}/result").mock(
+            return_value=httpx.Response(
+                500,
+                json={"errorType": "result_not_ready", "message": "not yet"},
+            )
+        )
+
+        with pytest.raises(TransportServerError) as exc_info:
+            PicSureClient(base_url=BASE_URL, token=TOKEN).post_json("/result", body={})
+
+        assert exc_info.value.status_code == 500
+
 
 class TestPicSureClientRetryScoping:
     @respx.mock

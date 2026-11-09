@@ -119,9 +119,9 @@ session.exportAsPFB(my_query, "my_cohort.pfb")
 
 ### Sampling an Export
 
-Pass `sample=True` to `buildQuery` to ask the server for a small sample of
-the export instead of the whole dataset. It is a quick way to check column
-names and value formats before you pull everything:
+Pass `sample=True` to `buildQuery` to ask the server for a sample of the
+export. It is a quick way to check column names and value formats before you
+pull everything:
 
 ```python
 preview = picsure.buildQuery(phenotypicFilter=my_filter, sample=True)
@@ -129,14 +129,58 @@ df = session.runQuery(preview, type="participant")
 session.exportAsPFB(preview, "my_cohort_sample.pfb")
 ```
 
-A sample works with `"participant"`, `"timestamp"` and `exportAsPFB`. The
-server refuses it for counts and every other result type, which raises
-`PicSureValidationError`. Cells in a sample can be empty, and a sample may
-not represent the whole dataset, so do not draw conclusions about the cohort
-from it. The option needs a PIC-SURE server that supports sampling, and an
-older server rejects the request. A query saved as a sample keeps the flag
-when you load it with `loadQueryByID`, where it always comes back as a
-`Query` with `sample` set to `True`.
+A sample holds at least 100 participants by default. The server sets that
+number, not the adapter, and a deployment can configure a different one. The
+participants are taken in turn from each study you can access. A cohort at or
+below that size comes back whole, so a sample of a small cohort is the cohort.
+Cells in a sample can be empty, and a sample may not represent the whole
+dataset, so do not draw conclusions about the cohort from it.
+
+A sample works with `"participant"`, `"timestamp"` and `exportAsPFB`.
+Open-access sessions cannot sample. When the server refuses a sample query it
+answers HTTP 400, which raises `PicSureValidationError`. That can mean one of
+three things:
+
+- The server predates the option and does not know `sample`.
+- The server has sampling switched off. The error type in the response is
+  `sample_disabled`, and the message says sample datasets are not available
+  at this time.
+- The result type is not a dataframe type. Counts and every other result
+  type refuse a sample.
+
+The download waits when the server reports that the result is not ready, for
+example because the export is being run again after a change to your access.
+The adapter goes back to polling status and downloads again once the result
+is available. That wait counts against the same time budget as the rest of
+the export, the `timeout` given to `connect()`.
+
+A sample query cannot be saved with `saveQueryByName`. That call saves
+queries as counts, and the server refuses a sample count, so it raises
+`PicSureValidationError` and saves nothing. Save the query without `sample`,
+then pass `sample=True` when you build the query you export:
+
+```python
+qid = session.saveQueryByName(
+    picsure.buildQuery(phenotypicFilter=my_filter), "Cohort 2026-Q2"
+)
+preview = picsure.buildQuery(phenotypicFilter=my_filter, sample=True)
+df = session.runQuery(preview, type="participant")
+```
+
+A sample query that the PIC-SURE web UI created does keep the flag when you
+load it with `loadQueryByID`. It always comes back as a `Query` with `sample`
+set to `True`. If you rebuild a query by hand from the loaded query's
+`.phenotypicFilter`, `buildQuery` starts from `sample=False`, so pass
+`sample=True` again:
+
+```python
+loaded = session.loadQueryByID(qid_from_the_ui)
+rebuilt = picsure.buildQuery(
+    phenotypicFilter=loaded.phenotypicFilter,
+    includeConcepts=[extra_path],
+    sample=True,
+)
+```
 
 ## Saving a Query by Name
 

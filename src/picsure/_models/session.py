@@ -493,6 +493,9 @@ class Session:
 
         Not supported on open-access deployments. The returned ID can be
         passed to :meth:`loadQueryByID` or :meth:`runQueryByID` later.
+        A query built with ``sample=True`` is refused by the server,
+        because queries are saved as counts and a count cannot be sampled,
+        and that refusal raises ``PicSureValidationError``.
 
         Args:
             query: A Query, Clause, or ClauseGroup.
