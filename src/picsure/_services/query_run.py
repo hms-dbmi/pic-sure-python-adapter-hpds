@@ -36,6 +36,7 @@ from picsure._transport.errors import (
     TransportConsentLookupError,
     TransportError,
     TransportRateLimitError,
+    TransportResultNotReadyError,
     TransportServerError,
     TransportTLSError,
 )
@@ -248,7 +249,14 @@ def run_async_query_to_file(
        bytes into ``target`` through
        :meth:`PicSureClient.get_raw_to_file`, which stages them at
        ``<target>.part`` and promotes the file only once the body is
-       complete.
+       complete. When the server answers that download with a 409
+       carrying ``result_not_ready``, the result was lost to a server
+       restart, is being run again after the caller's access changed,
+       or is not finished after all. The server has a run in flight in
+       each case, so after a sleep on the same 1s, 2s, 4s, 8s, 10s
+       schedule the flow returns to step 2 and downloads again once
+       the status is ``AVAILABLE``. A status poll answered with that
+       same 409 counts as still running.
 
     The transport resends the status poll and the download only when
     the request provably never reached the server, the rule the submit
@@ -261,7 +269,9 @@ def run_async_query_to_file(
     clamped to what is left of it, so the final poll is sent at the
     budget rather than after it. That poll and the download that
     follows each carry the same value as their own per-request
-    deadline, so the call as a whole can still run past it.
+    deadline, so the call as a whole can still run past it. Polling
+    again after a download that was not ready draws on the same budget
+    rather than a fresh one.
 
     Args:
         client: Authenticated HTTP client.
@@ -281,8 +291,9 @@ def run_async_query_to_file(
             poll carries no body or no status field, or the server
             finishes the job with status ``ERROR``.
         PicSureConnectionError: If the budget passes with the job still
-            unfinished; when the last poll failed rather than answered,
-            that failure decides the message and the class, so the
+            unfinished or its result still not ready to download; when
+            the last poll failed rather than answered, that failure
+            decides the message and the class, so the
             narrower :class:`~picsure.errors.PicSureServerError` or
             :class:`~picsure.errors.PicSureConsentLookupError` is
             raised, and it is chained as the cause. Also if the submit
@@ -299,10 +310,24 @@ def run_async_query_to_file(
     """
     started = time.monotonic()
     query_id = _submit_query(client, backend, body, operation=operation)
-    _wait_until_available(
-        client, backend, query_id, started=started, operation=operation
-    )
-    _download_result(client, backend, query_id, target, operation=operation)
+    budget = client.timeout
+    interval = _INITIAL_POLL_INTERVAL_SECONDS
+    while True:
+        _wait_until_available(
+            client, backend, query_id, started=started, operation=operation
+        )
+        try:
+            _download_result(client, backend, query_id, target, operation=operation)
+        except TransportResultNotReadyError as not_ready:
+            remaining = budget - (time.monotonic() - started)
+            if remaining <= 0:
+                raise _budget_exceeded(
+                    operation, query_id, budget, not_ready
+                ) from not_ready
+            time.sleep(min(interval, remaining))
+            interval = min(interval * 2, _MAX_POLL_INTERVAL_SECONDS)
+        else:
+            return
 
 
 def _submit_query(
@@ -388,9 +413,11 @@ def _is_transient(exc: TransportError) -> bool:
     the bare 5xx rather than a subclass, the job keeps running
     server-side while the gateway cannot resolve the caller's consents,
     and the failure is inside PIC-SURE rather than in the caller's
-    token. A rejected certificate cannot clear on its own, and neither
-    can a refusal by status, a 404 or a validation error, so those are
-    not retried.
+    token. A 409 carrying ``result_not_ready`` means the server is
+    running the job again, which is the same as still running. A
+    rejected certificate cannot clear on its own, and neither can a
+    refusal by status, a 404 or a validation error, a 409 without that
+    error type included, so those are not retried.
     """
     if isinstance(exc, TransportTLSError):
         return False
@@ -400,6 +427,7 @@ def _is_transient(exc: TransportError) -> bool:
             TransportRateLimitError,
             TransportServerError,
             TransportConsentLookupError,
+            TransportResultNotReadyError,
             TransportConnectionError,
         ),
     )
@@ -541,10 +569,17 @@ def _download_result(
     A transport failure is translated by status; an ``OSError`` from the
     staging file or the rename is left to the caller, which knows what
     the file is for.
+
+    Raises:
+        TransportResultNotReadyError: Untranslated, when the server
+            answers that the result is not ready, so the caller can go
+            back to polling status.
     """
     result_path = query_result_path(backend, query_id)
     try:
         client.get_raw_to_file(result_path, target, resend_after_send=False)
+    except TransportResultNotReadyError:
+        raise
     except TransportError as exc:
         raise translate_transport_error(exc, operation=f"{operation} download") from exc
 

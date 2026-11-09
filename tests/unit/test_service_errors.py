@@ -20,6 +20,7 @@ from picsure._transport.errors import (
     TransportConsentLookupError,
     TransportNotFoundError,
     TransportRateLimitError,
+    TransportResultNotReadyError,
     TransportServerError,
     TransportTLSError,
     TransportValidationError,
@@ -276,6 +277,21 @@ class TestRemainingStatuses:
         )
         assert str(result) == (
             "Rate limited on the dictionary search. Please wait and try again."
+        )
+
+    def test_result_not_ready_raises_connection_error(self):
+        result = translate_transport_error(
+            TransportResultNotReadyError(
+                409, "{}", "result_not_ready", "The result is being prepared again"
+            ),
+            operation=OPERATION,
+        )
+        assert type(result) is PicSureConnectionError
+        assert str(result) == (
+            "The server did not have a result ready for the dictionary search "
+            "(HTTP 409). It is still being prepared, or is being run again after "
+            "a server restart or a change to your access. Try again shortly. The "
+            "server said: The result is being prepared again"
         )
 
     def test_unclassified_transport_error_falls_back_to_connection_error(self):

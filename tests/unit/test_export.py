@@ -322,6 +322,37 @@ class TestExportPFB4xx:
         assert not output.exists()
 
 
+class TestExportPFBResultNotReady:
+    @respx.mock
+    def test_export_pfb_repolls_after_result_not_ready(self, tmp_path):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        status = respx.get(STATUS_URL).mock(
+            side_effect=[_status("AVAILABLE"), _status("PENDING"), _status("AVAILABLE")]
+        )
+        result = respx.get(RESULT_URL).mock(
+            side_effect=[
+                httpx.Response(
+                    409,
+                    json={
+                        "errorType": "result_not_ready",
+                        "message": "The result is being prepared again",
+                        "requestId": "req-1",
+                    },
+                ),
+                httpx.Response(200, content=b"pfb_content"),
+            ]
+        )
+        output = tmp_path / "out.pfb"
+
+        with patch(SLEEP):
+            export_pfb(_make_client(), _simple_clause(), output, backend="auth")
+
+        assert output.read_bytes() == b"pfb_content"
+        assert status.call_count == 3
+        assert result.call_count == 2
+        assert not (tmp_path / "out.pfb.part").exists()
+
+
 class TestExportPFBServerSuppliedQueryId:
     """The id the submit response carries is the server's, so it is checked.
 

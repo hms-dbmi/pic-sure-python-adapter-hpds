@@ -16,6 +16,7 @@ from picsure._transport.errors import (
     TransportError,
     TransportNotFoundError,
     TransportRateLimitError,
+    TransportResultNotReadyError,
     TransportServerError,
     TransportTLSError,
     TransportValidationError,
@@ -120,7 +121,10 @@ def translate_transport_error(
         :class:`PicSureAuthorizationError` (or
         :class:`PicSureConsentDeniedError`), an unreachable server
         :class:`PicSureConnectionError`, and a 5xx
-        :class:`PicSureServerError`.
+        :class:`PicSureServerError`. A result the server reports as not
+        ready becomes :class:`PicSureConnectionError` too, because the
+        job flow polls through it and only one that outlived the wait
+        gets this far.
     """
     if isinstance(exc, TransportConsentDeniedError):
         return PicSureConsentDeniedError(
@@ -144,6 +148,14 @@ def translate_transport_error(
             f"PIC-SURE, not a problem with your token or your approvals; try "
             f"again shortly. The server said: "
             f"{redact_credentials(exc.server_message)}",
+        )
+    if isinstance(exc, TransportResultNotReadyError):
+        return PicSureConnectionError(
+            f"The server did not have a result ready for {operation} (HTTP "
+            f"{exc.status_code}). It is still being prepared, or is being run "
+            f"again after a server restart or a change to your access. Try "
+            f"again shortly. The server said: "
+            f"{redact_credentials(exc.server_message)}"
         )
     if isinstance(exc, TransportAuthenticationError):
         return _refusal_error(exc, operation)
