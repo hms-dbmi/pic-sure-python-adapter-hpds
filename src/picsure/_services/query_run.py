@@ -36,6 +36,7 @@ from picsure._transport.errors import (
     TransportConsentLookupError,
     TransportError,
     TransportRateLimitError,
+    TransportResultNotReadyError,
     TransportServerError,
     TransportTLSError,
 )
@@ -74,6 +75,9 @@ _VARIANT_RESULT_TYPES = frozenset(
 )
 
 _DATAFRAME_RESULT_TYPES = frozenset({"DATAFRAME", "DATAFRAME_TIMESERIES"})
+
+_PFB_SAVE_TYPE = "pfb"
+_PFB_RESULT_TYPE = "DATAFRAME_PFB"
 
 _STATUS_AVAILABLE = "AVAILABLE"
 _STATUS_ERROR = "ERROR"
@@ -248,7 +252,14 @@ def run_async_query_to_file(
        bytes into ``target`` through
        :meth:`PicSureClient.get_raw_to_file`, which stages them at
        ``<target>.part`` and promotes the file only once the body is
-       complete.
+       complete. When the server answers that download with a 409
+       carrying ``result_not_ready``, the result was lost to a server
+       restart, is being run again after the caller's access changed,
+       or is not finished after all. The server has a run in flight in
+       each case, so after a sleep on the same 1s, 2s, 4s, 8s, 10s
+       schedule the flow returns to step 2 and downloads again once
+       the status is ``AVAILABLE``. A status poll answered with that
+       same 409 counts as still running.
 
     The transport resends the status poll and the download only when
     the request provably never reached the server, the rule the submit
@@ -261,7 +272,9 @@ def run_async_query_to_file(
     clamped to what is left of it, so the final poll is sent at the
     budget rather than after it. That poll and the download that
     follows each carry the same value as their own per-request
-    deadline, so the call as a whole can still run past it.
+    deadline, so the call as a whole can still run past it. Polling
+    again after a download that was not ready draws on the same budget
+    rather than a fresh one.
 
     Args:
         client: Authenticated HTTP client.
@@ -281,8 +294,9 @@ def run_async_query_to_file(
             poll carries no body or no status field, or the server
             finishes the job with status ``ERROR``.
         PicSureConnectionError: If the budget passes with the job still
-            unfinished; when the last poll failed rather than answered,
-            that failure decides the message and the class, so the
+            unfinished or its result still not ready to download; when
+            the last poll failed rather than answered, that failure
+            decides the message and the class, so the
             narrower :class:`~picsure.errors.PicSureServerError` or
             :class:`~picsure.errors.PicSureConsentLookupError` is
             raised, and it is chained as the cause. Also if the submit
@@ -299,10 +313,31 @@ def run_async_query_to_file(
     """
     started = time.monotonic()
     query_id = _submit_query(client, backend, body, operation=operation)
-    _wait_until_available(
-        client, backend, query_id, started=started, operation=operation
-    )
-    _download_result(client, backend, query_id, target, operation=operation)
+    budget = client.timeout
+    interval = _INITIAL_POLL_INTERVAL_SECONDS
+    download_was_not_ready = False
+    while True:
+        _wait_until_available(
+            client,
+            backend,
+            query_id,
+            started=started,
+            operation=operation,
+            download_was_not_ready=download_was_not_ready,
+        )
+        try:
+            _download_result(client, backend, query_id, target, operation=operation)
+        except TransportResultNotReadyError as not_ready:
+            download_was_not_ready = True
+            remaining = budget - (time.monotonic() - started)
+            if remaining <= 0:
+                raise _budget_exceeded(
+                    operation, query_id, budget, not_ready
+                ) from not_ready
+            time.sleep(min(interval, remaining))
+            interval = min(interval * 2, _MAX_POLL_INTERVAL_SECONDS)
+        else:
+            return
 
 
 def _submit_query(
@@ -330,6 +365,7 @@ def _wait_until_available(
     *,
     started: float,
     operation: str,
+    download_was_not_ready: bool = False,
 ) -> None:
     """Poll the status route until the job finishes or the budget passes.
 
@@ -339,6 +375,10 @@ def _wait_until_available(
         query_id: The canonical query id.
         started: The ``time.monotonic()`` reading the budget counts from.
         operation: Noun phrase for the error messages.
+        download_was_not_ready: Whether this wait follows a download the
+            server answered as not ready. The status had reported the
+            result available before that download, so the budget error
+            says the result did not become ready again.
 
     Raises:
         PicSureQueryError: If a poll carries no body or no status field,
@@ -374,7 +414,13 @@ def _wait_until_available(
                 )
         remaining = budget - (time.monotonic() - started)
         if remaining <= 0:
-            raise _budget_exceeded(operation, query_id, budget, failure)
+            raise _budget_exceeded(
+                operation,
+                query_id,
+                budget,
+                failure,
+                download_was_not_ready=download_was_not_ready,
+            )
         time.sleep(min(_pause_after(failure, interval), remaining))
         interval = min(interval * 2, _MAX_POLL_INTERVAL_SECONDS)
 
@@ -388,9 +434,11 @@ def _is_transient(exc: TransportError) -> bool:
     the bare 5xx rather than a subclass, the job keeps running
     server-side while the gateway cannot resolve the caller's consents,
     and the failure is inside PIC-SURE rather than in the caller's
-    token. A rejected certificate cannot clear on its own, and neither
-    can a refusal by status, a 404 or a validation error, so those are
-    not retried.
+    token. A 409 carrying ``result_not_ready`` means the server is
+    running the job again, which is the same as still running. A
+    rejected certificate cannot clear on its own, and neither can a
+    refusal by status, a 404 or a validation error, a 409 without that
+    error type included, so those are not retried.
     """
     if isinstance(exc, TransportTLSError):
         return False
@@ -400,6 +448,7 @@ def _is_transient(exc: TransportError) -> bool:
             TransportRateLimitError,
             TransportServerError,
             TransportConsentLookupError,
+            TransportResultNotReadyError,
             TransportConnectionError,
         ),
     )
@@ -423,6 +472,8 @@ def _budget_exceeded(
     query_id: str,
     budget: float,
     failure: TransportError | None,
+    *,
+    download_was_not_ready: bool = False,
 ) -> PicSureError:
     """Build the error for a job still unfinished when the budget passes.
 
@@ -437,13 +488,28 @@ def _budget_exceeded(
     operation, the query id and the budget are folded into the phrase
     the message templates read as their object, and the transport
     failure is chained as the cause.
+
+    When the last poll answered, the message depends on
+    ``download_was_not_ready``. A wait that follows a download the
+    server answered as not ready says the result did not become ready
+    again, because the status had reported it available once. Any other
+    wait says the server never reported the result available.
     """
     waited = f"{operation} (query {query_id}) within its budget of {budget:g} seconds"
+    budget_source = (
+        "That budget is the session's request timeout, set by "
+        "picsure.connect(timeout=...)."
+    )
+    if failure is None and download_was_not_ready:
+        return PicSureConnectionError(
+            f"The server had not finished {waited}. It reported that the "
+            f"result was not ready when it was downloaded, and the result "
+            f"did not become ready again in that time. {budget_source}"
+        )
     if failure is None:
         return PicSureConnectionError(
             f"The server had not finished {waited}, and never reported the "
-            f"result available. That budget is the session's request timeout, "
-            f"set by picsure.connect(timeout=...)."
+            f"result available. {budget_source}"
         )
     error = translate_transport_error(failure, operation=waited)
     error.__cause__ = failure
@@ -541,10 +607,17 @@ def _download_result(
     A transport failure is translated by status; an ``OSError`` from the
     staging file or the rename is left to the caller, which knows what
     the file is for.
+
+    Raises:
+        TransportResultNotReadyError: Untranslated, when the server
+            answers that the result is not ready, so the caller can go
+            back to polling status.
     """
     result_path = query_result_path(backend, query_id)
     try:
         client.get_raw_to_file(result_path, target, resend_after_send=False)
+    except TransportResultNotReadyError:
+        raise
     except TransportError as exc:
         raise translate_transport_error(exc, operation=f"{operation} download") from exc
 
@@ -581,19 +654,25 @@ def build_query_body(
         PSAMA populates it server-side from the user's token; sending a
         client-asserted list (especially with a long-term token) is
         treated as tampering and can be rejected with a 401.
+
+        ``sample`` is written, as ``true``, only for a :class:`Query` whose
+        ``sample`` is ``True``. Every other body leaves the key out, so it
+        is unchanged for a server that predates the field and rejects
+        members it does not know.
     """
     filter_tree, select_paths, genomic = _split(query)
     phenotypic = filter_tree.to_query_json() if filter_tree is not None else None
-    return {
-        "query": {
-            "select": select_paths,
-            "phenotypicClause": phenotypic,
-            "genomicFilters": [g.to_query_json() for g in genomic],
-            "expectedResultType": expected_result_type,
-            "picsureId": None,
-            "id": None,
-        },
+    inner: dict[str, object] = {
+        "select": select_paths,
+        "phenotypicClause": phenotypic,
+        "genomicFilters": [g.to_query_json() for g in genomic],
+        "expectedResultType": expected_result_type,
+        "picsureId": None,
+        "id": None,
     }
+    if isinstance(query, Query) and query.sample is True:
+        inner["sample"] = True
+    return {"query": inner}
 
 
 def _split(
@@ -646,6 +725,41 @@ def _resolve_query_type(query_type: QueryType | str) -> str:
     return _VALID_QUERY_TYPES[key]
 
 
+def result_type_for_save(query_type: QueryType | str) -> str:
+    """Return the ``expectedResultType`` a query is saved as.
+
+    The vocabulary is the one :func:`run_query` takes, plus ``"pfb"`` for
+    the export :func:`~picsure._services.export.export_pfb` runs, which
+    has no :func:`run_query` type because its result is a file.
+
+    Args:
+        query_type: A :class:`QueryType` member, one of its lowercase
+            string values, or ``"pfb"``. Case and surrounding whitespace
+            in a string are ignored.
+
+    Returns:
+        The server's result type, e.g. ``"COUNT"`` or ``"DATAFRAME_PFB"``.
+
+    Raises:
+        PicSureValidationError: If ``query_type`` is none of those.
+    """
+    if isinstance(query_type, QueryType):
+        key: object = query_type.value
+    elif isinstance(query_type, str):
+        key = query_type.lower().strip()
+    else:
+        key = None
+    if key == _PFB_SAVE_TYPE:
+        return _PFB_RESULT_TYPE
+    if isinstance(key, str) and key in _VALID_QUERY_TYPES:
+        return _VALID_QUERY_TYPES[key]
+    valid = ", ".join([*_VALID_QUERY_TYPES.keys(), _PFB_SAVE_TYPE])
+    raise PicSureValidationError(
+        f"'{query_type}' is not a type a query can be saved as. Pass a "
+        f"QueryType member or one of: {valid}."
+    )
+
+
 def query_type_for_saved_result(result_type: object) -> str:
     """Return the :func:`run_query` type that reruns a saved query as saved.
 
@@ -662,7 +776,7 @@ def query_type_for_saved_result(result_type: object) -> str:
     for key, wire_type in _VALID_QUERY_TYPES.items():
         if wire_type == result_type:
             return key
-    if result_type == "DATAFRAME_PFB":
+    if result_type == _PFB_RESULT_TYPE:
         raise PicSureValidationError(
             "This query was saved as a PFB export, which runQueryByID cannot "
             "return. Export it with "

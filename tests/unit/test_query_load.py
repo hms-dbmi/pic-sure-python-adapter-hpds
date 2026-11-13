@@ -336,6 +336,80 @@ class TestLoadQueryHappyPath:
         assert result.includeConcepts == ("\\phs1\\out\\",)
 
     @respx.mock
+    def test_load_reads_sample_true(self):
+        body = _envelope(
+            {
+                "select": ["\\phs1\\out\\"],
+                "phenotypicClause": _filter_leaf("\\phs1\\sex\\", "Male"),
+                "genomicFilters": [],
+                "expectedResultType": "DATAFRAME",
+                "picsureId": None,
+                "id": None,
+                "sample": True,
+            }
+        )
+        respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
+        result = load_query(_make_client(), QUERY_ID, backend="auth")
+        assert isinstance(result, Query)
+        assert result.sample is True
+
+    @respx.mock
+    def test_load_defaults_sample_false(self):
+        for stored in ({}, {"sample": False}, {"sample": None}, {"sample": "true"}):
+            body = _envelope(
+                {
+                    "select": ["\\phs1\\out\\"],
+                    "phenotypicClause": _filter_leaf("\\phs1\\sex\\", "Male"),
+                    "genomicFilters": [],
+                    "expectedResultType": "DATAFRAME",
+                    "picsureId": None,
+                    "id": None,
+                    **stored,
+                }
+            )
+            respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
+            result = load_query(_make_client(), QUERY_ID, backend="auth")
+            assert isinstance(result, Query)
+            assert result.sample is False
+
+    @respx.mock
+    def test_filter_only_query_without_sample_still_loads_as_clause(self):
+        body = _envelope(
+            {
+                "select": [],
+                "phenotypicClause": _filter_leaf("\\phs1\\sex\\", "Male"),
+                "genomicFilters": [],
+                "expectedResultType": "DATAFRAME",
+                "picsureId": None,
+                "id": None,
+                "sample": False,
+            }
+        )
+        respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
+        result = load_query(_make_client(), QUERY_ID, backend="auth")
+        assert isinstance(result, Clause)
+
+    @respx.mock
+    def test_sample_filter_only_query_loads_as_query(self):
+        body = _envelope(
+            {
+                "select": [],
+                "phenotypicClause": _filter_leaf("\\phs1\\sex\\", "Male"),
+                "genomicFilters": [],
+                "expectedResultType": "DATAFRAME",
+                "picsureId": None,
+                "id": None,
+                "sample": True,
+            }
+        )
+        respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
+        result = load_query(_make_client(), QUERY_ID, backend="auth")
+        assert isinstance(result, Query)
+        assert result.sample is True
+        assert result.includeConcepts == ()
+        assert isinstance(result.phenotypicFilter, Clause)
+
+    @respx.mock
     def test_inner_query_arrives_as_json_string(self):
         # The backend stores the entire QueryRequest as a JSON string and
         # only parses the outer envelope; the inner ``query`` field comes

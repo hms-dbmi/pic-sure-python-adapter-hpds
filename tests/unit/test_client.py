@@ -29,6 +29,7 @@ from picsure._transport.errors import (
     TransportError,
     TransportNotFoundError,
     TransportRateLimitError,
+    TransportResultNotReadyError,
     TransportServerError,
     TransportTLSError,
     TransportValidationError,
@@ -454,6 +455,96 @@ class TestPicSureClient4xxMapping:
         with pytest.raises(TransportRateLimitError) as exc_info:
             client.get_json("/busy")
         assert exc_info.value.retry_after is None
+
+    @respx.mock
+    def test_409_result_not_ready_maps_to_result_not_ready_error(self):
+        respx.get(f"{BASE_URL}/result").mock(
+            return_value=httpx.Response(
+                409,
+                json={
+                    "errorType": "result_not_ready",
+                    "message": "The result is not ready yet",
+                    "requestId": "req-1",
+                },
+            )
+        )
+
+        with pytest.raises(TransportResultNotReadyError) as exc_info:
+            PicSureClient(base_url=BASE_URL, token=TOKEN).get_json("/result")
+
+        exc = exc_info.value
+        assert exc.status_code == 409
+        assert exc.error_type == "result_not_ready"
+        assert exc.server_message == "The result is not ready yet"
+
+    @respx.mock
+    def test_409_result_not_ready_maps_the_same_on_a_streamed_download(self, tmp_path):
+        respx.get(f"{BASE_URL}/result").mock(
+            return_value=httpx.Response(
+                409,
+                json={"errorType": "result_not_ready", "message": "not yet"},
+            )
+        )
+        target = tmp_path / "out.bin"
+
+        with pytest.raises(TransportResultNotReadyError):
+            PicSureClient(base_url=BASE_URL, token=TOKEN).get_raw_to_file(
+                "/result", target
+            )
+
+        assert not target.exists()
+
+    @respx.mock
+    def test_409_without_error_type_stays_validation_error(self):
+        respx.get(f"{BASE_URL}/result").mock(
+            return_value=httpx.Response(409, json={"message": "Conflict"})
+        )
+
+        with pytest.raises(TransportValidationError) as exc_info:
+            PicSureClient(base_url=BASE_URL, token=TOKEN).get_json("/result")
+
+        assert exc_info.value.status_code == 409
+
+    @respx.mock
+    def test_403_result_not_ready_stays_authentication_error(self):
+        respx.get(f"{BASE_URL}/result").mock(
+            return_value=httpx.Response(
+                403,
+                json={"errorType": "result_not_ready", "message": "not yet"},
+            )
+        )
+
+        with pytest.raises(TransportAuthenticationError):
+            PicSureClient(base_url=BASE_URL, token=TOKEN).get_json("/result")
+
+    @respx.mock
+    def test_400_result_not_ready_stays_validation_error(self):
+        respx.get(f"{BASE_URL}/result").mock(
+            return_value=httpx.Response(
+                400,
+                json={"errorType": "result_not_ready", "message": "not yet"},
+            )
+        )
+
+        with pytest.raises(TransportValidationError) as exc_info:
+            PicSureClient(base_url=BASE_URL, token=TOKEN).get_json("/result")
+
+        assert not isinstance(exc_info.value, TransportResultNotReadyError)
+        assert exc_info.value.status_code == 400
+
+    @respx.mock
+    def test_500_result_not_ready_stays_server_error(self):
+        respx.post(f"{BASE_URL}/result").mock(
+            return_value=httpx.Response(
+                500,
+                json={"errorType": "result_not_ready", "message": "not yet"},
+            )
+        )
+
+        with pytest.raises(TransportServerError) as exc_info:
+            PicSureClient(base_url=BASE_URL, token=TOKEN).post_json("/result", body={})
+
+        assert exc_info.value.status_code == 500
 
 
 class TestPicSureClientRetryScoping:

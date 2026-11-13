@@ -143,13 +143,16 @@ def _to_query(
     select_paths: list[str],
     phenotypic_node: object | None,
     genomic_filters: tuple[GenomicFilter, ...] = (),
+    sample: bool = False,
 ) -> Query | Clause | ClauseGroup:
     """Combine the saved include paths, phenotypic tree, and genomic filters.
 
     Returns a bare ``Clause`` / ``ClauseGroup`` when the saved query has no
-    ``select`` paths and no genomic filters, or a :class:`Query` wrapping the
-    filter tree (possibly ``None``) plus the include concepts / genomic
-    filters otherwise.
+    ``select`` paths, no genomic filters and is not a sample, or a
+    :class:`Query` wrapping the filter tree (possibly ``None``) plus the
+    include concepts / genomic filters otherwise. A sample query always
+    comes back as a :class:`Query`, because a bare clause has nowhere to
+    carry the flag and running it would ask for the whole dataset.
     """
     phenotypic: Clause | ClauseGroup | None = (
         _parse_phenotypic(phenotypic_node) if phenotypic_node is not None else None
@@ -160,12 +163,13 @@ def _to_query(
             "Server returned an empty saved query: no select paths, no "
             "phenotypic clause, and no genomic filters."
         )
-    if not select_paths and not genomic_filters:
+    if not select_paths and not genomic_filters and not sample:
         return phenotypic  # type: ignore[return-value]  # guarded non-None above
     return Query(
         phenotypicFilter=phenotypic,
         includeConcepts=tuple(select_paths),
         genomicFilters=genomic_filters,
+        sample=sample,
     )
 
 
@@ -216,7 +220,8 @@ def load_saved_query(
     Returns:
         The rebuilt query and the saved ``expectedResultType`` (``None``
         when the row has none).  The query is a :class:`Query` when the
-        saved row carries output concepts or genomic filters, otherwise
+        saved row carries output concepts or genomic filters, or was
+        saved as a sample (its ``sample`` is then ``True``), otherwise
         the bare :class:`Clause` or :class:`ClauseGroup` it reduces to.
         Any of the three can be passed directly to
         :meth:`Session.runQuery`, :meth:`Session.exportAsPFB`, or composed
@@ -289,5 +294,10 @@ def _build_saved_query_from_response(
         [str(p) for p in raw_select] if isinstance(raw_select, list) else []
     )
     phenotypic_node = inner.get("phenotypicClause")
-    query = _to_query(select_paths, phenotypic_node, genomic_filters)
+    query = _to_query(
+        select_paths,
+        phenotypic_node,
+        genomic_filters,
+        sample=inner.get("sample") is True,
+    )
     return query, inner.get("expectedResultType")

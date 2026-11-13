@@ -117,6 +117,72 @@ session.exportAsPFB(my_query, "my_cohort.pfb")
     ```
     `pypfb` reads the same files if you prefer its PFB-aware API.
 
+### Sampling an Export
+
+Pass `sample=True` to `buildQuery` to ask the server for a sample of the
+export. It is a quick way to check column names and value formats before you
+pull everything:
+
+```python
+preview = picsure.buildQuery(phenotypicFilter=my_filter, sample=True)
+df = session.runQuery(preview, type="participant")
+session.exportAsPFB(preview, "my_cohort_sample.pfb")
+```
+
+A sample holds at least 100 participants by default. The server sets that
+number, not the adapter, and a deployment can configure a different one. The
+participants are taken in turn from each study you can access. A cohort at or
+below that size comes back whole, so a sample of a small cohort is the cohort.
+Cells in a sample can be empty, and a sample may not represent the whole
+dataset, so do not draw conclusions about the cohort from it.
+
+A sample works with `"participant"`, `"timestamp"` and `exportAsPFB`. When
+the server refuses a sample query it answers HTTP 400, which raises
+`PicSureValidationError`. That can mean one of four things:
+
+- The session is open access. Open-access sessions cannot sample.
+- The server predates the option and does not know `sample`.
+- The server has sampling switched off. The error type in the response is
+  `sample_disabled`, and the message says sample datasets are not available
+  at this time.
+- The result type is not a dataframe type. Counts and every other result
+  type refuse a sample.
+
+The download waits when the server reports that the result is not ready, for
+example because the export is being run again after a change to your access.
+The adapter goes back to polling status and downloads again once the result
+is available. That wait counts against the same time budget as the rest of
+the export, the `timeout` given to `connect()`.
+
+To save a sample query with `saveQueryByName`, save it as one of the
+dataframe types by passing `type`:
+
+```python
+preview = picsure.buildQuery(phenotypicFilter=my_filter, sample=True)
+qid = session.saveQueryByName(preview, "Cohort preview", type="participant")
+```
+
+`saveQueryByName` saves a query as a count unless you pass `type`, and the
+adapter sends whatever you ask for. The server refuses a sample count, so
+saving a sample query without a dataframe `type` raises
+`PicSureValidationError` with the server's message and saves nothing.
+
+A saved sample query keeps the flag when you load it with `loadQueryByID`,
+whether the adapter or the PIC-SURE web UI saved it. It always comes back as
+a `Query` with `sample`
+set to `True`. If you rebuild a query by hand from the loaded query's
+`.phenotypicFilter`, `buildQuery` starts from `sample=False`, so pass
+`sample=True` again:
+
+```python
+loaded = session.loadQueryByID(qid_from_the_ui)
+rebuilt = picsure.buildQuery(
+    phenotypicFilter=loaded.phenotypicFilter,
+    includeConcepts=[extra_path],
+    sample=True,
+)
+```
+
 ## Saving a Query by Name
 
 On authorized deployments, you can persist a query to your user
@@ -137,13 +203,32 @@ df = session.runQueryByID(qid, type="participant")
 ```
 
 Without a `type`, `runQueryByID` runs the query as the type it was
-saved as. `saveQueryByName` saves queries as counts, so name the type
-you want for those. A dataset saved for export in the PIC-SURE UI comes
-back as participant (or timestamp) rows with just its ID:
+saved as. `saveQueryByName` saves a query as a count unless you pass it
+a `type`, so name the type you want for those. A dataset saved for export
+in the PIC-SURE UI comes back as participant (or timestamp) rows with just
+its ID:
 
 ```python
 df = session.runQueryByID("22222222-3333-4444-5555-666666666666")
 ```
+
+To save a query as another result type, pass `type` to `saveQueryByName`.
+It takes every type `runQuery` takes, and `"pfb"` for a PFB export:
+
+```python
+qid = session.saveQueryByName(my_query, "Cohort rows", type="participant")
+qid = session.saveQueryByName(my_query, "Cohort PFB", type="pfb")
+```
+
+Saving submits the query to the server, so a `"participant"`,
+`"timestamp"` or `"pfb"` save starts that export on the server.
+`saveQueryByName` returns as soon as the name is stored. It does not wait
+for the export and does not download it. Use `runQueryByID` or
+`exportAsPFB` for the data.
+
+The server decides whether a query can be saved as the type you chose.
+When it refuses, `saveQueryByName` raises `PicSureValidationError` with
+the server's message and saves nothing.
 
 By default, saving a second time with the same name raises
 `PicSureValidationError`. To repoint the existing record at a freshly

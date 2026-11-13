@@ -42,6 +42,7 @@ from picsure._transport.errors import (
     TransportError,
     TransportNotFoundError,
     TransportRateLimitError,
+    TransportResultNotReadyError,
     TransportServerError,
     TransportTLSError,
     TransportValidationError,
@@ -955,8 +956,11 @@ def _status_error(status: int, body: str, response: httpx.Response) -> Transport
       whether or not the server sent a structured payload.  A
       ``consent_denied`` payload still refines the class, through
       :func:`_refusal_transport_error`.
-    * A structured consent payload on any other status, which is how a
-      502 becomes :class:`TransportConsentLookupError`.
+    * A structured payload on any other status, which is how a 502
+      becomes :class:`TransportConsentLookupError` and a 409 becomes
+      :class:`TransportResultNotReadyError`.  ``result_not_ready`` is
+      honoured on a 409 only, so the same payload under any other status
+      falls through to the rules below.
     * 404, then 429 with its ``Retry-After`` header.
     * Any other 4xx is a validation failure.
     * Anything left, meaning 5xx, is a server error.
@@ -1047,8 +1051,22 @@ def _refusal_transport_error(status: int, body: str) -> TransportError:
 
 def _structured_transport_error(
     status: int, body: str
-) -> TransportConsentDeniedError | TransportConsentLookupError | None:
-    """Return the typed consent error encoded in an HTTP error body, if any."""
+) -> (
+    TransportConsentDeniedError
+    | TransportConsentLookupError
+    | TransportResultNotReadyError
+    | None
+):
+    """Return the typed error encoded in an HTTP error body, if any.
+
+    Three ``errorType`` values are recognised: ``consent_denied``,
+    ``consent_lookup_failed`` and ``result_not_ready``. The last one is
+    recognised only on a 409, the one status the server sends it with, so
+    a 400 or a 5xx that happens to carry it is not read as a result the
+    caller should wait for. Any other value, and a body that is not a
+    JSON object carrying a string ``errorType`` and a string ``message``,
+    yields ``None`` so the status decides.
+    """
     try:
         payload = json.loads(body)
     except json.JSONDecodeError:
@@ -1063,6 +1081,8 @@ def _structured_transport_error(
         return TransportConsentDeniedError(status, body, error_type, server_message)
     if error_type == "consent_lookup_failed":
         return TransportConsentLookupError(status, body, error_type, server_message)
+    if error_type == "result_not_ready" and status == 409:
+        return TransportResultNotReadyError(status, body, error_type, server_message)
     return None
 
 

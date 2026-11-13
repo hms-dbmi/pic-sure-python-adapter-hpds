@@ -21,7 +21,11 @@ from picsure._services.query_run import (
     run_query,
 )
 from picsure._transport.client import PicSureClient
-from picsure._transport.errors import TransportConsentLookupError, TransportServerError
+from picsure._transport.errors import (
+    TransportConsentLookupError,
+    TransportResultNotReadyError,
+    TransportServerError,
+)
 from picsure.errors import (
     PicSureAuthenticationError,
     PicSureAuthError,
@@ -183,6 +187,8 @@ class TestRunAsyncQueryToFile:
         assert "the query" in message
         assert QUERY_ID in message
         assert "5 seconds" in message
+        assert "never reported the result available" in message
+        assert "did not become ready again" not in message
         assert clock.sleeps == [1.0, 2.0, 2.0]
         assert not target.exists()
 
@@ -971,6 +977,192 @@ class TestTransientPollFailures:
         assert sleep_mock.call_count == 0
 
 
+def _result_not_ready() -> httpx.Response:
+    return httpx.Response(
+        409,
+        json={
+            "errorType": "result_not_ready",
+            "message": "The result is being prepared again",
+            "requestId": "req-1",
+        },
+    )
+
+
+class TestResultNotReady:
+    """A download the server calls not ready goes back to polling status."""
+
+    @staticmethod
+    def _run(client: PicSureClient, target: Path) -> None:
+        run_async_query_to_file(
+            client, "auth", _simple_body(), target, operation="the query"
+        )
+
+    @respx.mock
+    def test_download_409_repolls_then_downloads(self, tmp_path):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        status = respx.get(STATUS_URL).mock(
+            side_effect=[_status("AVAILABLE"), _status("PENDING"), _status("AVAILABLE")]
+        )
+        result = respx.get(RESULT_URL).mock(
+            side_effect=[_result_not_ready(), httpx.Response(200, content=b"x")]
+        )
+        target = tmp_path / "out.csv"
+
+        with patch(SLEEP) as sleep_mock:
+            self._run(_make_client(), target)
+
+        assert target.read_bytes() == b"x"
+        assert status.call_count == 3
+        assert result.call_count == 2
+        assert [call.args[0] for call in sleep_mock.call_args_list] == [1.0, 1.0]
+        assert not (tmp_path / "out.csv.part").exists()
+
+    @respx.mock
+    def test_download_409_until_budget_raises_connection_error(self, tmp_path, clock):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        respx.get(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+        result = respx.get(RESULT_URL).mock(return_value=_result_not_ready())
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN, timeout=5.0)
+        target = tmp_path / "out.csv"
+
+        with pytest.raises(PicSureConnectionError) as info:
+            self._run(client, target)
+
+        message = str(info.value)
+        assert type(info.value) is PicSureConnectionError
+        assert isinstance(info.value.__cause__, TransportResultNotReadyError)
+        assert QUERY_ID in message
+        assert "5 seconds" in message
+        assert "did not have a result ready" in message
+        assert "The result is being prepared again" in message
+        assert clock.sleeps == [1.0, 2.0, 2.0]
+        assert result.call_count == 4
+        assert not target.exists()
+
+    @respx.mock
+    def test_download_400_is_not_retried(self, tmp_path):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        status = respx.get(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+        result = respx.get(RESULT_URL).mock(
+            return_value=httpx.Response(
+                400, json={"errorType": "bad_request", "message": "Status : ERROR"}
+            )
+        )
+
+        with patch(SLEEP) as sleep_mock, pytest.raises(PicSureValidationError):
+            self._run(_make_client(), tmp_path / "out.csv")
+
+        assert status.call_count == 1
+        assert result.call_count == 1
+        assert sleep_mock.call_count == 0
+
+    @respx.mock
+    def test_download_409_without_error_type_is_not_retried(self, tmp_path):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        respx.get(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+        result = respx.get(RESULT_URL).mock(
+            return_value=httpx.Response(409, json={"message": "Conflict"})
+        )
+
+        with patch(SLEEP) as sleep_mock, pytest.raises(PicSureValidationError):
+            self._run(_make_client(), tmp_path / "out.csv")
+
+        assert result.call_count == 1
+        assert sleep_mock.call_count == 0
+
+    @respx.mock
+    def test_status_409_result_not_ready_is_polled_again(self, tmp_path):
+        _mock_async_result(b"x")
+        respx.get(STATUS_URL).mock(
+            side_effect=[_result_not_ready(), _status("AVAILABLE")]
+        )
+        target = tmp_path / "out.csv"
+
+        with patch(SLEEP) as sleep_mock:
+            self._run(_make_client(), target)
+
+        assert [call.args[0] for call in sleep_mock.call_args_list] == [1.0]
+        assert target.read_bytes() == b"x"
+
+    @respx.mock
+    def test_an_error_status_after_a_download_409_raises_query_error(self, tmp_path):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        respx.get(STATUS_URL).mock(side_effect=[_status("AVAILABLE"), _status("ERROR")])
+        result = respx.get(RESULT_URL).mock(return_value=_result_not_ready())
+
+        with patch(SLEEP), pytest.raises(PicSureQueryError, match="status=ERROR"):
+            self._run(_make_client(), tmp_path / "out.csv")
+
+        assert result.call_count == 1
+
+    @respx.mock
+    def test_status_409_until_budget_raises_connection_error(self, tmp_path, clock):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        status = respx.get(STATUS_URL).mock(return_value=_result_not_ready())
+        result = respx.get(RESULT_URL).mock(
+            return_value=httpx.Response(200, content=b"x")
+        )
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN, timeout=5.0)
+        target = tmp_path / "out.csv"
+
+        with pytest.raises(PicSureConnectionError) as info:
+            self._run(client, target)
+
+        message = str(info.value)
+        assert type(info.value) is PicSureConnectionError
+        assert isinstance(info.value.__cause__, TransportResultNotReadyError)
+        assert QUERY_ID in message
+        assert "5 seconds" in message
+        assert clock.sleeps == [1.0, 2.0, 2.0]
+        assert status.call_count == 4
+        assert result.call_count == 0
+        assert not target.exists()
+
+    @respx.mock
+    def test_a_404_status_after_a_download_409_raises_query_error_at_once(
+        self, tmp_path
+    ):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        status = respx.get(STATUS_URL).mock(
+            side_effect=[_status("AVAILABLE"), httpx.Response(404)]
+        )
+        result = respx.get(RESULT_URL).mock(return_value=_result_not_ready())
+
+        with patch(SLEEP) as sleep_mock, pytest.raises(PicSureQueryError):
+            self._run(_make_client(), tmp_path / "out.csv")
+
+        assert status.call_count == 2
+        assert result.call_count == 1
+        assert [call.args[0] for call in sleep_mock.call_args_list] == [1.0]
+
+    @respx.mock
+    def test_budget_after_a_download_409_says_the_result_was_not_ready_again(
+        self, tmp_path, clock
+    ):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        respx.get(STATUS_URL).mock(
+            side_effect=lambda request: _status(
+                "AVAILABLE" if result.call_count == 0 else "PENDING"
+            )
+        )
+        result = respx.get(RESULT_URL).mock(return_value=_result_not_ready())
+        client = PicSureClient(base_url=BASE_URL, token=TOKEN, timeout=5.0)
+        target = tmp_path / "out.csv"
+
+        with pytest.raises(PicSureConnectionError) as info:
+            self._run(client, target)
+
+        message = str(info.value)
+        assert type(info.value) is PicSureConnectionError
+        assert QUERY_ID in message
+        assert "5 seconds" in message
+        assert "was not ready when it was downloaded" in message
+        assert "did not become ready again" in message
+        assert "never reported the result available" not in message
+        assert result.call_count == 1
+        assert not target.exists()
+
+
 class TestRunQueryParticipant:
     """Participant results come from the server's job flow, not /query/sync."""
 
@@ -1723,6 +1915,55 @@ class TestBuildQueryBodyGenomic:
         q = buildQuery(genomicFilters=gf, includeConcepts=["\\bmi\\"])
         body = build_query_body(q, "DATAFRAME")
         assert body["query"]["select"] == ["\\bmi\\"]
+
+
+class TestBuildQueryBodySample:
+    def test_body_includes_sample_when_set(self):
+        from picsure._services.query_build import buildQuery
+        from picsure._services.query_run import build_query_body
+
+        q = buildQuery(includeConcepts=["\\bmi\\"], sample=True)
+        body = build_query_body(q, "DATAFRAME")
+        assert body["query"]["sample"] is True
+
+    def test_body_omits_sample_by_default(self):
+        from picsure._services.query_build import buildClause, buildQuery
+        from picsure._services.query_run import build_query_body
+
+        clause = buildClause(
+            "\\path\\", type=PhenotypicFilterType.FILTER, categories="X"
+        )
+        expected = (
+            '{"query": {"select": ["\\\\path\\\\"], "phenotypicClause": '
+            '{"phenotypicFilterType": "FILTER", "conceptPath": "\\\\path\\\\", '
+            '"not": false, "values": ["X"]}, "genomicFilters": [], '
+            '"expectedResultType": "DATAFRAME", "picsureId": null, "id": null}}'
+        )
+        for query in (clause, buildQuery(phenotypicFilter=clause)):
+            body = build_query_body(query, "DATAFRAME")
+            assert "sample" not in body["query"]
+            assert json.dumps(body) == expected
+
+    @respx.mock
+    def test_run_query_sends_sample(self):
+        from picsure._services.query_build import buildQuery
+
+        submit = respx.post(SUBMIT_URL).mock(
+            return_value=httpx.Response(200, json={"picsureResultId": QUERY_ID})
+        )
+        respx.get(STATUS_URL).mock(
+            return_value=httpx.Response(200, json={"status": "AVAILABLE"})
+        )
+        respx.get(RESULT_URL).mock(
+            return_value=httpx.Response(200, content=b"Patient ID,bmi\n1,20\n")
+        )
+
+        q = buildQuery(includeConcepts=["\\bmi\\"], sample=True)
+        with patch(SLEEP):
+            run_query(_make_client(), q, "participant", backend="auth")
+
+        sent = json.loads(submit.calls[0].request.content)
+        assert sent["query"]["sample"] is True
 
 
 class TestVariantResultParsing:

@@ -5,6 +5,7 @@ researcher reads when a call fails, so they are pinned exactly rather
 than matched loosely.
 """
 
+import json
 import traceback
 
 import pytest
@@ -20,6 +21,7 @@ from picsure._transport.errors import (
     TransportConsentLookupError,
     TransportNotFoundError,
     TransportRateLimitError,
+    TransportResultNotReadyError,
     TransportServerError,
     TransportTLSError,
     TransportValidationError,
@@ -276,6 +278,21 @@ class TestRemainingStatuses:
         )
         assert str(result) == (
             "Rate limited on the dictionary search. Please wait and try again."
+        )
+
+    def test_result_not_ready_raises_connection_error(self):
+        result = translate_transport_error(
+            TransportResultNotReadyError(
+                409, "{}", "result_not_ready", "The result is being prepared again"
+            ),
+            operation=OPERATION,
+        )
+        assert type(result) is PicSureConnectionError
+        assert str(result) == (
+            "The server did not have a result ready for the dictionary search "
+            "(HTTP 409). It is still being prepared, or is being run again after "
+            "a server restart or a change to your access. Try again shortly. The "
+            "server said: The result is being prepared again"
         )
 
     def test_unclassified_transport_error_falls_back_to_connection_error(self):
@@ -546,3 +563,224 @@ class TestTranslatorReturnsPublicErrors:
                 TransportAuthenticationError(status, "b"), operation=OPERATION
             )
             assert isinstance(result, PicSureAuthError)
+
+
+_REQUEST_ID = "0b9c4d0e-6f3a-4f5e-9d55-2f0d6c1c7a11"
+_WRONG_RESULT_TYPE_MESSAGE = (
+    "Sample datasets are only available for the result types DATAFRAME, "
+    "DATAFRAME_PFB and DATAFRAME_TIMESERIES"
+)
+
+
+def _error_body(error_type: object, message: object) -> str:
+    """Render the error body a PIC-SURE service answers a refusal with."""
+    return json.dumps(
+        {"errorType": error_type, "message": message, "requestId": _REQUEST_ID}
+    )
+
+
+class TestJsonRefusalBody:
+    """A 4xx JSON body is quoted as its message, not as raw JSON."""
+
+    SAVE = "the saveQueryByName query submit"
+
+    def test_a_sample_on_an_unsupported_type_reads_as_the_server_message(self):
+        result = translate_transport_error(
+            TransportValidationError(
+                400, _error_body("bad_request", _WRONG_RESULT_TYPE_MESSAGE)
+            ),
+            operation=self.SAVE,
+        )
+        assert type(result) is PicSureValidationError
+        assert str(result) == (
+            "The server rejected the saveQueryByName query submit (HTTP 400, "
+            "bad_request). The server said: Sample datasets are only available "
+            "for the result types DATAFRAME, DATAFRAME_PFB and "
+            "DATAFRAME_TIMESERIES"
+        )
+
+    def test_sample_disabled_reads_as_the_server_message(self):
+        result = translate_transport_error(
+            TransportValidationError(
+                400,
+                _error_body(
+                    "sample_disabled",
+                    "Sample datasets are not available at this time",
+                ),
+            ),
+            operation=self.SAVE,
+        )
+        assert str(result) == (
+            "The server rejected the saveQueryByName query submit (HTTP 400, "
+            "sample_disabled). The server said: Sample datasets are not "
+            "available at this time"
+        )
+
+    def test_the_request_id_stays_out_of_the_message(self):
+        result = translate_transport_error(
+            TransportValidationError(400, _error_body("bad_request", "No.")),
+            operation=OPERATION,
+        )
+        assert _REQUEST_ID not in str(result)
+
+    def test_a_message_without_an_error_type_names_the_status_alone(self):
+        result = translate_transport_error(
+            TransportValidationError(422, json.dumps({"message": "Name is taken."})),
+            operation=OPERATION,
+        )
+        assert str(result) == (
+            "The server rejected the dictionary search (HTTP 422). The server "
+            "said: Name is taken."
+        )
+
+    def test_a_404_names_the_error_type_and_quotes_the_message(self):
+        result = translate_transport_error(
+            TransportNotFoundError(404, _error_body("not_found", "No such query.")),
+            operation=OPERATION,
+        )
+        assert type(result) is PicSureQueryError
+        assert str(result) == (
+            "The endpoint for the dictionary search returned HTTP 404, "
+            "not_found. The server said: No such query."
+        )
+
+    def test_a_401_names_the_error_type_and_quotes_the_message(self):
+        result = translate_transport_error(
+            TransportAuthenticationError(
+                401, _error_body("unauthorized", "Token expired.")
+            ),
+            operation=OPERATION,
+        )
+        assert type(result) is PicSureAuthenticationError
+        assert "(HTTP 401, unauthorized)" in str(result)
+        assert str(result).endswith(" The server said: Token expired.")
+
+    def test_a_403_names_the_error_type_and_quotes_the_message(self):
+        result = translate_transport_error(
+            TransportAuthenticationError(403, _error_body("forbidden", "Not yours.")),
+            operation=OPERATION,
+        )
+        assert type(result) is PicSureAuthorizationError
+        assert str(result).startswith(
+            "PIC-SURE refused the dictionary search (HTTP 403, forbidden): "
+        )
+        assert str(result).endswith(" The server said: Not yours.")
+
+    def test_a_message_longer_than_200_characters_is_quoted_whole(self):
+        long_message = "word " * 150
+        result = translate_transport_error(
+            TransportValidationError(400, _error_body("bad_request", long_message)),
+            operation=OPERATION,
+        )
+        assert str(result).endswith("The server said: " + long_message.strip())
+
+    def test_a_message_is_capped_at_1000_characters(self):
+        result = translate_transport_error(
+            TransportValidationError(400, _error_body("bad_request", "x" * 5000)),
+            operation=OPERATION,
+        )
+        assert str(result).endswith("The server said: " + "x" * 1000)
+        assert "x" * 1001 not in str(result)
+
+    def test_a_token_in_the_message_is_redacted(self):
+        token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.c2lnbmF0dXJlLXZhbHVl"
+        result = translate_transport_error(
+            TransportValidationError(
+                400, _error_body("bad_request", f"Bad header: Bearer {token}")
+            ),
+            operation=OPERATION,
+        )
+        assert token not in str(result)
+
+    def test_a_token_across_the_cap_is_redacted_whole(self):
+        token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.c2lnbmF0dXJlLXZhbHVl"
+        lead = "x" * 990 + " "
+        escaped_token = "".join(f"\\u{ord(c):04x}" for c in token)
+        body = '{"errorType":"bad_request","message":"' + lead + escaped_token + '"}'
+        exc = TransportValidationError(400, body)
+        assert json.loads(exc.body)["message"] == lead + token
+
+        message = str(translate_transport_error(exc, operation=OPERATION))
+
+        quoted = message.split("The server said: ", 1)[1]
+        assert len(quoted) == 1000
+        assert quoted == (lead + "<redacted token>")[:1000]
+        assert token[:10] not in message
+
+    def test_control_characters_and_whitespace_runs_become_single_spaces(self):
+        result = translate_transport_error(
+            TransportValidationError(
+                400,
+                _error_body(
+                    "bad\n\x1b[31mrequest\x07",
+                    "First line.\r\n\tSecond\x1b[2J line.\x07\x00\x7f   End.",
+                ),
+            ),
+            operation=OPERATION,
+        )
+        assert str(result) == (
+            "The server rejected the dictionary search (HTTP 400, bad [31mrequest). "
+            "The server said: First line. Second [2J line. End."
+        )
+
+    def test_a_message_of_only_control_characters_keeps_the_raw_body(self):
+        body = json.dumps({"message": "\x1b\x07\n"})
+        result = translate_transport_error(
+            TransportValidationError(400, body), operation=OPERATION
+        )
+        assert str(result) == (
+            f"The server rejected the dictionary search (HTTP 400). The server "
+            f"said: {body}"
+        )
+
+    def test_a_body_nested_too_deeply_to_decode_keeps_the_raw_body(self):
+        body = "[" * 100_000 + "]" * 100_000
+        result = translate_transport_error(
+            TransportValidationError(400, body), operation=OPERATION
+        )
+        assert type(result) is PicSureValidationError
+        assert str(result) == (
+            "The server rejected the dictionary search (HTTP 400). The server "
+            "said: " + "[" * 200
+        )
+
+    def test_a_non_json_400_keeps_the_truncated_raw_body(self):
+        result = translate_transport_error(
+            TransportValidationError(400, "<html>" + "x" * 500),
+            operation=OPERATION,
+        )
+        assert str(result) == (
+            "The server rejected the dictionary search (HTTP 400). The server "
+            "said: " + ("<html>" + "x" * 500)[:200]
+        )
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            json.dumps({"errorType": "bad_request", "detail": "no message here"}),
+            json.dumps({"errorType": "bad_request", "message": {"nested": "x"}}),
+            json.dumps({"errorType": "bad_request", "message": "  "}),
+            json.dumps(["bad_request", "a list"]),
+            json.dumps("a bare string"),
+        ],
+    )
+    def test_json_without_a_string_message_keeps_the_raw_body(self, body):
+        result = translate_transport_error(
+            TransportValidationError(400, body), operation=OPERATION
+        )
+        assert str(result) == (
+            "The server rejected the dictionary search (HTTP 400). The server "
+            f"said: {body}"
+        )
+
+    def test_a_502_with_a_json_message_keeps_the_raw_body(self):
+        body = _error_body("bad_gateway", "HPDS did not answer.")
+        result = translate_transport_error(
+            TransportServerError(502, body), operation=OPERATION
+        )
+        assert type(result) is PicSureServerError
+        assert str(result) == (
+            "The server failed to complete the dictionary search (HTTP 502) and "
+            "may be temporarily unavailable. Try again shortly. The server said: "
+            + body[:200]
+        )

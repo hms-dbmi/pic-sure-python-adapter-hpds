@@ -7,6 +7,8 @@ import pytest
 import respx
 
 from picsure._models.clause import Clause, PhenotypicFilterType
+from picsure._models.query import Query
+from picsure._models.query_type import QueryType
 from picsure._services._hpds_paths import (
     NAMED_DATASET_COLLECTION_PATH,
     named_dataset_item_path,
@@ -739,6 +741,205 @@ class TestSaveQueryByNameTransportErrors:
                 "fun",
                 backend="auth",
             )
+
+
+_WRONG_RESULT_TYPE_MESSAGE = (
+    "Sample datasets are only available for the result types DATAFRAME, "
+    "DATAFRAME_PFB and DATAFRAME_TIMESERIES"
+)
+_SAMPLE_DISABLED_MESSAGE = "Sample datasets are not available at this time"
+_REQUEST_ID = "0b9c4d0e-6f3a-4f5e-9d55-2f0d6c1c7a11"
+
+
+def _mock_successful_save() -> respx.Route:
+    """Mock an empty listing, a submit and a create, and return the submit."""
+    respx.get(LIST_URL).mock(return_value=httpx.Response(200, json=[]))
+    respx.post(SAVE_URL).mock(return_value=httpx.Response(201))
+    return respx.post(SUBMIT_URL).mock(
+        return_value=httpx.Response(200, json={"picsureResultId": QUERY_ID})
+    )
+
+
+def _mock_refused_submit(error_type: str, message: str) -> respx.Route:
+    """Mock a submit the server refuses with its 400 error body."""
+    respx.get(LIST_URL).mock(return_value=httpx.Response(200, json=[]))
+    return respx.post(SUBMIT_URL).mock(
+        return_value=httpx.Response(
+            400,
+            json={
+                "errorType": error_type,
+                "message": message,
+                "requestId": _REQUEST_ID,
+            },
+        )
+    )
+
+
+def _submitted_query(submit: respx.Route) -> dict[str, object]:
+    """Return the ``query`` member of the last submitted body."""
+    return json.loads(submit.calls.last.request.content)["query"]
+
+
+class TestSaveQueryByNameResultType:
+    @respx.mock
+    def test_the_default_saves_a_count(self):
+        submit = _mock_successful_save()
+
+        save_query_by_name(_client(), _clause(), "fun", backend="auth")
+
+        assert _submitted_query(submit)["expectedResultType"] == "COUNT"
+
+    @pytest.mark.parametrize(
+        ("query_type", "expected_result_type"),
+        [
+            ("count", "COUNT"),
+            ("participant", "DATAFRAME"),
+            ("timestamp", "DATAFRAME_TIMESERIES"),
+            ("pfb", "DATAFRAME_PFB"),
+            ("cross_count", "CROSS_COUNT"),
+            ("variant_count", "VARIANT_COUNT_FOR_QUERY"),
+            ("variant_list", "VARIANT_LIST_FOR_QUERY"),
+            ("vcf_excerpt", "VCF_EXCERPT"),
+            ("aggregate_vcf_excerpt", "AGGREGATE_VCF_EXCERPT"),
+            (QueryType.PARTICIPANT, "DATAFRAME"),
+            (QueryType.TIMESTAMP, "DATAFRAME_TIMESERIES"),
+            (" PFB ", "DATAFRAME_PFB"),
+        ],
+    )
+    @respx.mock
+    def test_each_type_sends_its_expected_result_type(
+        self, query_type, expected_result_type
+    ):
+        submit = _mock_successful_save()
+
+        qid = save_query_by_name(
+            _client(), _clause(), "fun", backend="auth", query_type=query_type
+        )
+
+        assert qid == QUERY_ID
+        assert _submitted_query(submit)["expectedResultType"] == expected_result_type
+        assert "sample" not in _submitted_query(submit)
+
+    @pytest.mark.parametrize("query_type", ["participant", "timestamp", "pfb"])
+    @respx.mock
+    def test_saving_an_export_type_only_submits_and_stores(self, query_type):
+        submit = _mock_successful_save()
+
+        save_query_by_name(
+            _client(), _clause(), "fun", backend="auth", query_type=query_type
+        )
+
+        requests = [(c.request.method, str(c.request.url)) for c in respx.calls]
+        assert requests == [("GET", LIST_URL), ("POST", SUBMIT_URL), ("POST", SAVE_URL)]
+        assert submit.call_count == 1
+
+    @pytest.mark.parametrize("query_type", ["dataframe", "", None, 3])
+    @respx.mock
+    def test_an_unknown_type_is_refused_before_any_request(self, query_type):
+        with pytest.raises(PicSureValidationError, match="pfb"):
+            save_query_by_name(
+                _client(), _clause(), "fun", backend="auth", query_type=query_type
+            )
+
+        assert not respx.calls
+
+    @respx.mock
+    def test_overwrite_with_a_type_sends_the_same_put_shape(self):
+        _mock_overwrite_listing()
+        submit = respx.post(SUBMIT_URL).mock(
+            return_value=httpx.Response(200, json={"picsureResultId": QUERY_ID})
+        )
+        update = respx.put(_ITEM_URL).mock(return_value=httpx.Response(204))
+
+        save_query_by_name(
+            _client(),
+            _clause(),
+            "fun",
+            backend="auth",
+            overwrite=True,
+            query_type="participant",
+        )
+
+        assert _submitted_query(submit)["expectedResultType"] == "DATAFRAME"
+        assert json.loads(update.calls.last.request.content) == {
+            "queryId": QUERY_ID,
+            "name": "fun",
+            "archived": False,
+            "metadata": {},
+        }
+
+
+class TestSaveQueryByNameSample:
+    @pytest.mark.parametrize(
+        ("query_type", "expected_result_type"),
+        [
+            ("participant", "DATAFRAME"),
+            ("timestamp", "DATAFRAME_TIMESERIES"),
+            ("pfb", "DATAFRAME_PFB"),
+        ],
+    )
+    @respx.mock
+    def test_a_sample_query_saved_as_a_dataframe_type_sends_sample(
+        self, query_type, expected_result_type
+    ):
+        submit = _mock_successful_save()
+
+        qid = save_query_by_name(
+            _client(),
+            Query(phenotypicFilter=_clause(), sample=True),
+            "fun",
+            backend="auth",
+            query_type=query_type,
+        )
+
+        assert qid == QUERY_ID
+        assert _submitted_query(submit)["sample"] is True
+        assert _submitted_query(submit)["expectedResultType"] == expected_result_type
+
+    @respx.mock
+    def test_a_sample_count_is_sent_and_the_server_message_is_raised(self):
+        submit = _mock_refused_submit("bad_request", _WRONG_RESULT_TYPE_MESSAGE)
+        create = respx.post(SAVE_URL).mock(return_value=httpx.Response(201))
+        update = respx.put(_ITEM_URL).mock(return_value=httpx.Response(204))
+
+        with pytest.raises(PicSureValidationError) as raised:
+            save_query_by_name(
+                _client(),
+                Query(phenotypicFilter=_clause(), sample=True),
+                "fun",
+                backend="auth",
+            )
+
+        assert str(raised.value) == (
+            "The server rejected the saveQueryByName query submit (HTTP 400, "
+            f"bad_request). The server said: {_WRONG_RESULT_TYPE_MESSAGE}"
+        )
+        assert _submitted_query(submit)["sample"] is True
+        assert _submitted_query(submit)["expectedResultType"] == "COUNT"
+        assert submit.call_count == 1
+        assert not create.called
+        assert not update.called
+
+    @respx.mock
+    def test_sample_disabled_surfaces_the_error_type_and_message(self):
+        submit = _mock_refused_submit("sample_disabled", _SAMPLE_DISABLED_MESSAGE)
+        create = respx.post(SAVE_URL).mock(return_value=httpx.Response(201))
+
+        with pytest.raises(PicSureValidationError) as raised:
+            save_query_by_name(
+                _client(),
+                Query(phenotypicFilter=_clause(), sample=True),
+                "fun",
+                backend="auth",
+                query_type="participant",
+            )
+
+        assert str(raised.value) == (
+            "The server rejected the saveQueryByName query submit (HTTP 400, "
+            f"sample_disabled). The server said: {_SAMPLE_DISABLED_MESSAGE}"
+        )
+        assert _submitted_query(submit)["sample"] is True
+        assert not create.called
 
 
 class TestNameAllowListIsOneConstant:
