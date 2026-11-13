@@ -76,6 +76,9 @@ _VARIANT_RESULT_TYPES = frozenset(
 
 _DATAFRAME_RESULT_TYPES = frozenset({"DATAFRAME", "DATAFRAME_TIMESERIES"})
 
+_PFB_SAVE_TYPE = "pfb"
+_PFB_RESULT_TYPE = "DATAFRAME_PFB"
+
 _STATUS_AVAILABLE = "AVAILABLE"
 _STATUS_ERROR = "ERROR"
 
@@ -722,6 +725,41 @@ def _resolve_query_type(query_type: QueryType | str) -> str:
     return _VALID_QUERY_TYPES[key]
 
 
+def result_type_for_save(query_type: QueryType | str) -> str:
+    """Return the ``expectedResultType`` a query is saved as.
+
+    The vocabulary is the one :func:`run_query` takes, plus ``"pfb"`` for
+    the export :func:`~picsure._services.export.export_pfb` runs, which
+    has no :func:`run_query` type because its result is a file.
+
+    Args:
+        query_type: A :class:`QueryType` member, one of its lowercase
+            string values, or ``"pfb"``. Case and surrounding whitespace
+            in a string are ignored.
+
+    Returns:
+        The server's result type, e.g. ``"COUNT"`` or ``"DATAFRAME_PFB"``.
+
+    Raises:
+        PicSureValidationError: If ``query_type`` is none of those.
+    """
+    if isinstance(query_type, QueryType):
+        key: object = query_type.value
+    elif isinstance(query_type, str):
+        key = query_type.lower().strip()
+    else:
+        key = None
+    if key == _PFB_SAVE_TYPE:
+        return _PFB_RESULT_TYPE
+    if isinstance(key, str) and key in _VALID_QUERY_TYPES:
+        return _VALID_QUERY_TYPES[key]
+    valid = ", ".join([*_VALID_QUERY_TYPES.keys(), _PFB_SAVE_TYPE])
+    raise PicSureValidationError(
+        f"'{query_type}' is not a type a query can be saved as. Pass a "
+        f"QueryType member or one of: {valid}."
+    )
+
+
 def query_type_for_saved_result(result_type: object) -> str:
     """Return the :func:`run_query` type that reruns a saved query as saved.
 
@@ -738,7 +776,7 @@ def query_type_for_saved_result(result_type: object) -> str:
     for key, wire_type in _VALID_QUERY_TYPES.items():
         if wire_type == result_type:
             return key
-    if result_type == "DATAFRAME_PFB":
+    if result_type == _PFB_RESULT_TYPE:
         raise PicSureValidationError(
             "This query was saved as a PFB export, which runQueryByID cannot "
             "return. Export it with "

@@ -154,21 +154,22 @@ The adapter goes back to polling status and downloads again once the result
 is available. That wait counts against the same time budget as the rest of
 the export, the `timeout` given to `connect()`.
 
-A sample query cannot be saved with `saveQueryByName`. That call saves
-queries as counts, and the server refuses a sample count, so it raises
-`PicSureValidationError` and saves nothing. Save the query without `sample`,
-then pass `sample=True` when you build the query you export:
+To save a sample query with `saveQueryByName`, save it as one of the
+dataframe types by passing `type`:
 
 ```python
-qid = session.saveQueryByName(
-    picsure.buildQuery(phenotypicFilter=my_filter), "Cohort 2026-Q2"
-)
 preview = picsure.buildQuery(phenotypicFilter=my_filter, sample=True)
-df = session.runQuery(preview, type="participant")
+qid = session.saveQueryByName(preview, "Cohort preview", type="participant")
 ```
 
-A sample query that the PIC-SURE web UI created does keep the flag when you
-load it with `loadQueryByID`. It always comes back as a `Query` with `sample`
+`saveQueryByName` saves a query as a count unless you pass `type`, and the
+adapter sends whatever you ask for. The server refuses a sample count, so
+saving a sample query without a dataframe `type` raises
+`PicSureValidationError` with the server's message and saves nothing.
+
+A saved sample query keeps the flag when you load it with `loadQueryByID`,
+whether the adapter or the PIC-SURE web UI saved it. It always comes back as
+a `Query` with `sample`
 set to `True`. If you rebuild a query by hand from the loaded query's
 `.phenotypicFilter`, `buildQuery` starts from `sample=False`, so pass
 `sample=True` again:
@@ -202,13 +203,32 @@ df = session.runQueryByID(qid, type="participant")
 ```
 
 Without a `type`, `runQueryByID` runs the query as the type it was
-saved as. `saveQueryByName` saves queries as counts, so name the type
-you want for those. A dataset saved for export in the PIC-SURE UI comes
-back as participant (or timestamp) rows with just its ID:
+saved as. `saveQueryByName` saves a query as a count unless you pass it
+a `type`, so name the type you want for those. A dataset saved for export
+in the PIC-SURE UI comes back as participant (or timestamp) rows with just
+its ID:
 
 ```python
 df = session.runQueryByID("22222222-3333-4444-5555-666666666666")
 ```
+
+To save a query as another result type, pass `type` to `saveQueryByName`.
+It takes every type `runQuery` takes, and `"pfb"` for a PFB export:
+
+```python
+qid = session.saveQueryByName(my_query, "Cohort rows", type="participant")
+qid = session.saveQueryByName(my_query, "Cohort PFB", type="pfb")
+```
+
+Saving submits the query to the server, so a `"participant"`,
+`"timestamp"` or `"pfb"` save starts that export on the server.
+`saveQueryByName` returns as soon as the name is stored. It does not wait
+for the export and does not download it. Use `runQueryByID` or
+`exportAsPFB` for the data.
+
+The server decides whether a query can be saved as the type you chose.
+When it refuses, `saveQueryByName` raises `PicSureValidationError` with
+the server's message and saves nothing.
 
 By default, saving a second time with the same name raises
 `PicSureValidationError`. To repoint the existing record at a freshly

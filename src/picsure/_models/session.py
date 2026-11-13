@@ -488,14 +488,26 @@ class Session:
         name: str,
         *,
         overwrite: bool = False,
+        type: QueryType | str = "count",  # noqa: A002
     ) -> str:
         """Save a query to the user's profile and return its PIC-SURE query ID.
 
         Not supported on open-access deployments. The returned ID can be
         passed to :meth:`loadQueryByID` or :meth:`runQueryByID` later.
-        A query built with ``sample=True`` is refused by the server,
-        because queries are saved as counts and a count cannot be sampled,
-        and that refusal raises ``PicSureValidationError``.
+
+        The query is saved as a count unless ``type`` names another
+        result type. Saving submits the query to the server, so a
+        ``"participant"``, ``"timestamp"`` or ``"pfb"`` save starts that
+        export there. This call does not wait for the export and does
+        not download it. :meth:`runQueryByID` and :meth:`exportAsPFB`
+        fetch results.
+
+        The adapter does not decide which queries may be saved. The
+        server does, and when it refuses one the call raises
+        ``PicSureValidationError`` quoting the server's message, and
+        nothing is saved. A query built with ``sample=True`` is taken
+        only as ``"participant"``, ``"timestamp"`` or ``"pfb"``, and only
+        while the server has sample datasets switched on.
 
         Args:
             query: A Query, Clause, or ClauseGroup.
@@ -503,11 +515,27 @@ class Session:
             overwrite: When ``False`` (default), refuse if a named query
                 with that name already exists for this user. When ``True``,
                 repoint the existing record at the freshly-submitted query.
+            type: Result type to save the query as: any type
+                :meth:`runQuery` accepts (``"count"``, ``"cross_count"``,
+                ``"participant"``, ``"timestamp"``, ``"variant_count"``,
+                ``"variant_list"``, ``"vcf_excerpt"``,
+                ``"aggregate_vcf_excerpt"``, or the equivalent
+                :class:`QueryType` member), or ``"pfb"`` for a PFB
+                export. Defaults to ``"count"``.
+
+        Raises:
+            PicSureValidationError: If the session is open access, the
+                name or ``type`` is invalid, the name is taken and
+                ``overwrite`` is ``False``, or the server refuses the
+                query (HTTP 400).
 
         Example:
             >>> qid = session.saveQueryByName(my_query, "Cohort 2026-Q2")
             >>> qid = session.saveQueryByName(
             ...     my_query, "Cohort 2026-Q2", overwrite=True
+            ... )
+            >>> qid = session.saveQueryByName(
+            ...     sample_query, "Cohort preview", type="participant"
             ... )
             >>> later = session.loadQueryByID(qid)
         """
@@ -519,6 +547,7 @@ class Session:
             name,
             backend=self._backend,
             overwrite=overwrite,
+            query_type=type,
         )
 
     @timed("session.exportCSV")

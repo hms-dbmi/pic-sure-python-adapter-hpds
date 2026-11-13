@@ -621,7 +621,9 @@ class TestSessionExport:
             *,
             backend,
             overwrite,
+            query_type,
         ):
+            captured["query_type"] = query_type
             captured["client"] = client
             captured["query"] = query
             captured["name"] = name
@@ -643,6 +645,11 @@ class TestSessionExport:
         assert captured["name"] == "Cohort A"
         assert captured["backend"] == "auth"
         assert captured["overwrite"] is True
+        assert captured["query_type"] == "count"
+
+        session.saveQueryByName(clause, "Cohort A", type="pfb")
+        assert captured["query_type"] == "pfb"
+        assert captured["overwrite"] is False
         # Silence unused-import warning from ruff for the imported alias.
         assert session_module.Session is Session
 
