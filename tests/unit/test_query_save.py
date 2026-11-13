@@ -910,8 +910,10 @@ class TestSaveQueryByNameSample:
                 backend="auth",
             )
 
-        assert _WRONG_RESULT_TYPE_MESSAGE in str(raised.value)
-        assert "HTTP 400" in str(raised.value)
+        assert str(raised.value) == (
+            "The server rejected the saveQueryByName query submit (HTTP 400, "
+            f"bad_request). The server said: {_WRONG_RESULT_TYPE_MESSAGE}"
+        )
         assert _submitted_query(submit)["sample"] is True
         assert _submitted_query(submit)["expectedResultType"] == "COUNT"
         assert submit.call_count == 1
@@ -932,8 +934,10 @@ class TestSaveQueryByNameSample:
                 query_type="participant",
             )
 
-        assert "sample_disabled" in str(raised.value)
-        assert _SAMPLE_DISABLED_MESSAGE in str(raised.value)
+        assert str(raised.value) == (
+            "The server rejected the saveQueryByName query submit (HTTP 400, "
+            f"sample_disabled). The server said: {_SAMPLE_DISABLED_MESSAGE}"
+        )
         assert _submitted_query(submit)["sample"] is True
         assert not create.called
 

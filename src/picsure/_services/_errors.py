@@ -9,6 +9,9 @@ below read it as an object, so it must not be a bare verb.
 
 from __future__ import annotations
 
+import json
+from dataclasses import dataclass
+
 from picsure._transport.errors import (
     TransportAuthenticationError,
     TransportConsentDeniedError,
@@ -41,6 +44,71 @@ _NEW_TOKEN_ADVICE = (
     "Copy a fresh token from the PIC-SURE user interface and pass it as "
     "picsure.connect(token=...)."
 )
+
+
+_SERVER_MESSAGE_MAX_CHARS = 1000
+_ERROR_TYPE_MAX_CHARS = 100
+
+
+@dataclass(frozen=True)
+class _ServerRefusal:
+    """What a 4xx response said about itself, in the user's terms.
+
+    Attributes:
+        status_label: The status as the message templates name it,
+            ``"HTTP 400"``, or ``"HTTP 400, bad_request"`` when the body
+            carried an error type.
+        said: The trailing sentence quoting the server, with its leading
+            space, or the empty string when there is nothing to quote.
+    """
+
+    status_label: str
+    said: str
+
+
+def _server_refusal(status_code: int, body: str) -> _ServerRefusal:
+    """Read a 4xx body for the message the server meant the user to see.
+
+    PIC-SURE answers a refusal with a JSON object carrying a string
+    ``message`` and usually a string ``errorType``. When the body is
+    that, the message is quoted as plain text, whole up to
+    ``_SERVER_MESSAGE_MAX_CHARS`` characters, and the error type joins
+    the status. The body's other members, the request id among them,
+    are left out of the sentence.
+
+    Any other body, one that is not JSON, is not an object, or has no
+    non-blank string ``message``, is quoted the way :func:`_server_said`
+    quotes it, and the status stands alone.
+
+    The message and the error type are redacted here as well as in the
+    transport constructor that stored the body, for the reason
+    :func:`_server_said` gives.
+
+    Args:
+        status_code: The response status.
+        body: The response body as text.
+
+    Returns:
+        The status label and the quoting sentence for the templates.
+    """
+    plain = _ServerRefusal(f"HTTP {status_code}", _server_said(body))
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        return plain
+    if not isinstance(payload, dict):
+        return plain
+    message = payload.get("message")
+    if not isinstance(message, str) or not message.strip():
+        return plain
+    quoted = redact_credentials(message.strip()[:_SERVER_MESSAGE_MAX_CHARS])
+    error_type = payload.get("errorType")
+    if isinstance(error_type, str) and error_type.strip():
+        named = redact_credentials(error_type.strip()[:_ERROR_TYPE_MAX_CHARS])
+        status_label = f"HTTP {status_code}, {named}"
+    else:
+        status_label = plain.status_label
+    return _ServerRefusal(status_label, f" The server said: {quoted}")
 
 
 def _server_said(body: str) -> str:
@@ -160,13 +228,15 @@ def translate_transport_error(
     if isinstance(exc, TransportAuthenticationError):
         return _refusal_error(exc, operation)
     if isinstance(exc, TransportValidationError):
+        refusal = _server_refusal(exc.status_code, exc.body)
         return PicSureValidationError(
-            f"The server rejected {operation} (HTTP {exc.status_code})."
-            f"{_server_said(exc.body)}"
+            f"The server rejected {operation} ({refusal.status_label}).{refusal.said}"
         )
     if isinstance(exc, TransportNotFoundError):
+        refusal = _server_refusal(404, exc.body)
         return PicSureQueryError(
-            f"The endpoint for {operation} returned HTTP 404.{_server_said(exc.body)}"
+            f"The endpoint for {operation} returned {refusal.status_label}."
+            f"{refusal.said}"
         )
     if isinstance(exc, TransportRateLimitError):
         return PicSureConnectionError(
@@ -213,17 +283,20 @@ def _refusal_error(
     answers 403 rather than 401 for a stale token on some routes, so a
     message that promised "your token is valid" would be wrong there.
     """
+    refusal = _server_refusal(exc.status_code, exc.body)
     if exc.status_code == 401:
         return PicSureAuthenticationError(
-            f"Your PIC-SURE token was rejected on {operation} (HTTP 401). The "
+            f"Your PIC-SURE token was rejected on {operation} "
+            f"({refusal.status_label}). The "
             f"token is missing, malformed, or expired. This is not a permissions "
             f"problem and not a server outage. {_NEW_TOKEN_ADVICE}"
-            f"{_server_said(exc.body)}"
+            f"{refusal.said}"
         )
     return PicSureAuthorizationError(
-        f"PIC-SURE refused {operation} (HTTP 403): this account is not authorized "
-        f"for it. This is a permissions decision, not a server outage. Check that "
+        f"PIC-SURE refused {operation} ({refusal.status_label}): this account "
+        f"is not authorized for it. This is a permissions decision, not a "
+        f"server outage. Check that "
         f"the account holds the privilege or study approval the request needs; if "
         f"it should, the token may be stale or issued for a different environment, "
-        f"so try a fresh one.{_server_said(exc.body)}"
+        f"so try a fresh one.{refusal.said}"
     )
