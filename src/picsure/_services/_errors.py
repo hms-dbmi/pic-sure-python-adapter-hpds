@@ -10,6 +10,7 @@ below read it as an object, so it must not be a bare verb.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 
 from picsure._transport.errors import (
@@ -48,6 +49,8 @@ _NEW_TOKEN_ADVICE = (
 
 _SERVER_MESSAGE_MAX_CHARS = 1000
 _ERROR_TYPE_MAX_CHARS = 100
+_CONTROL_CHARACTER = re.compile(r"[\x00-\x1f\x7f]")
+_WHITESPACE_RUN = re.compile(r"\s+")
 
 
 @dataclass(frozen=True)
@@ -76,13 +79,17 @@ def _server_refusal(status_code: int, body: str) -> _ServerRefusal:
     the status. The body's other members, the request id among them,
     are left out of the sentence.
 
-    Any other body, one that is not JSON, is not an object, or has no
-    non-blank string ``message``, is quoted the way :func:`_server_said`
-    quotes it, and the status stands alone.
+    Any other body, one that is not JSON, is nested too deeply to
+    decode, is not an object, or has no ``message`` that
+    :func:`_printable_server_text` leaves text in, is quoted the way
+    :func:`_server_said` quotes it, and the status stands alone.
 
-    The message and the error type are redacted here as well as in the
-    transport constructor that stored the body, for the reason
-    :func:`_server_said` gives.
+    The message and the error type go through
+    :func:`_printable_server_text`, which redacts them a second time
+    after the transport constructor that stored the body. The second
+    pass is not redundant here: a credential written with JSON
+    ``\\uXXXX`` escapes is invisible to the pass over the raw body and
+    appears only once the body is decoded.
 
     Args:
         status_code: The response status.
@@ -94,21 +101,49 @@ def _server_refusal(status_code: int, body: str) -> _ServerRefusal:
     plain = _ServerRefusal(f"HTTP {status_code}", _server_said(body))
     try:
         payload = json.loads(body)
-    except ValueError:
+    except (ValueError, RecursionError):
         return plain
     if not isinstance(payload, dict):
         return plain
-    message = payload.get("message")
-    if not isinstance(message, str) or not message.strip():
+    quoted = _printable_server_text(
+        payload.get("message"), max_chars=_SERVER_MESSAGE_MAX_CHARS
+    )
+    if not quoted:
         return plain
-    quoted = redact_credentials(message.strip()[:_SERVER_MESSAGE_MAX_CHARS])
-    error_type = payload.get("errorType")
-    if isinstance(error_type, str) and error_type.strip():
-        named = redact_credentials(error_type.strip()[:_ERROR_TYPE_MAX_CHARS])
-        status_label = f"HTTP {status_code}, {named}"
-    else:
-        status_label = plain.status_label
+    named = _printable_server_text(
+        payload.get("errorType"), max_chars=_ERROR_TYPE_MAX_CHARS
+    )
+    status_label = f"HTTP {status_code}, {named}" if named else plain.status_label
     return _ServerRefusal(status_label, f" The server said: {quoted}")
+
+
+def _printable_server_text(value: object, *, max_chars: int) -> str:
+    """Make a decoded JSON string safe to put inside an error message.
+
+    Decoding turns the escapes of a JSON string into the characters they
+    stand for, so a newline, an ESC or a BEL the raw body showed as
+    ``\\n`` or ``\\u001b`` would reach a terminal or a notebook as
+    itself. Every character below U+0020, and U+007F, becomes a space,
+    and each run of whitespace collapses to one space.
+
+    Credentials are redacted before the text is cut to ``max_chars``, so
+    a token lying across the cut is replaced whole rather than left half
+    shown. The cut can therefore land inside the redaction placeholder,
+    which gives nothing away.
+
+    Args:
+        value: The member read from the error body.
+        max_chars: The longest text to return.
+
+    Returns:
+        The cleaned text, or the empty string when ``value`` is not a
+        string or holds nothing printable.
+    """
+    if not isinstance(value, str):
+        return ""
+    spaced = _CONTROL_CHARACTER.sub(" ", value)
+    collapsed = _WHITESPACE_RUN.sub(" ", spaced).strip()
+    return redact_credentials(collapsed)[:max_chars]
 
 
 def _server_said(body: str) -> str:

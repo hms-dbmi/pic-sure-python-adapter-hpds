@@ -692,6 +692,58 @@ class TestJsonRefusalBody:
         )
         assert token not in str(result)
 
+    def test_a_token_across_the_cap_is_redacted_whole(self):
+        token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.c2lnbmF0dXJlLXZhbHVl"
+        lead = "x" * 990 + " "
+        escaped_token = "".join(f"\\u{ord(c):04x}" for c in token)
+        body = '{"errorType":"bad_request","message":"' + lead + escaped_token + '"}'
+        exc = TransportValidationError(400, body)
+        assert json.loads(exc.body)["message"] == lead + token
+
+        message = str(translate_transport_error(exc, operation=OPERATION))
+
+        quoted = message.split("The server said: ", 1)[1]
+        assert len(quoted) == 1000
+        assert quoted == (lead + "<redacted token>")[:1000]
+        assert token[:10] not in message
+
+    def test_control_characters_and_whitespace_runs_become_single_spaces(self):
+        result = translate_transport_error(
+            TransportValidationError(
+                400,
+                _error_body(
+                    "bad\n\x1b[31mrequest\x07",
+                    "First line.\r\n\tSecond\x1b[2J line.\x07\x00\x7f   End.",
+                ),
+            ),
+            operation=OPERATION,
+        )
+        assert str(result) == (
+            "The server rejected the dictionary search (HTTP 400, bad [31mrequest). "
+            "The server said: First line. Second [2J line. End."
+        )
+
+    def test_a_message_of_only_control_characters_keeps_the_raw_body(self):
+        body = json.dumps({"message": "\x1b\x07\n"})
+        result = translate_transport_error(
+            TransportValidationError(400, body), operation=OPERATION
+        )
+        assert str(result) == (
+            f"The server rejected the dictionary search (HTTP 400). The server "
+            f"said: {body}"
+        )
+
+    def test_a_body_nested_too_deeply_to_decode_keeps_the_raw_body(self):
+        body = "[" * 100_000 + "]" * 100_000
+        result = translate_transport_error(
+            TransportValidationError(400, body), operation=OPERATION
+        )
+        assert type(result) is PicSureValidationError
+        assert str(result) == (
+            "The server rejected the dictionary search (HTTP 400). The server "
+            "said: " + "[" * 200
+        )
+
     def test_a_non_json_400_keeps_the_truncated_raw_body(self):
         result = translate_transport_error(
             TransportValidationError(400, "<html>" + "x" * 500),
