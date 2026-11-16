@@ -1,201 +1,260 @@
 # Releasing
 
-This page is the maintainer playbook for cutting a release. It
-covers versioning, the pre-release checklist, tagging, publishing
-to PyPI, the docs site, and post-release housekeeping.
+## Overview
 
-## Versioning policy
+A Python adapter release is a `vX.Y.Z` tag on `main`, built by CI and published to PyPI as
+`picsure`. It goes out right after every production PIC-SURE environment has been upgraded, never
+before. This guide is for the developers who cut releases and the product managers who schedule
+them.
 
-`picsure` follows [Semantic Versioning](https://semver.org/):
+The flow in one line: merge to `main`, freeze, tag a release candidate (published to TestPyPI), QA
+it, wait for the environment releases, tag the final version (published to PyPI). The R adapter
+releases after this one, because it wraps a pinned Python build. See the
+[R adapter's release guide](https://github.com/hms-dbmi/pic-sure-r-adapter-hpds/blob/main/docs/development/releasing.md).
 
-- **MAJOR** (`X.0.0`) — backward-incompatible change to anything
-  re-exported from `picsure/__init__.py`. Renamed functions, removed
-  parameters, narrowed types, dropped public errors, changed default
-  behaviour all count.
-- **MINOR** (`0.Y.0`) — new public surface, additive changes.
-  Adding a method to `Session`, a new `PhenotypicFilterType`, a new
-  `Platform` member.
-- **PATCH** (`0.0.Z`) — bug fixes that don't change the contract.
-  Tightened input validation that previously accepted invalid input
-  is a judgement call — if user code can break, it's a major bump.
+Rules that hold for every release:
 
-The "public surface" is exactly the `__all__` list in
-[`src/picsure/__init__.py`](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/blob/main/src/picsure/__init__.py). Anything
-prefixed with `_` (the `_models/`, `_services/`, `_transport/`, and
-`_dev/` subpackages) can change without a major bump.
+- **Backward compatible, or deprecated first.** Researchers and outside groups run the adapter in
+  their own notebooks and pipelines, and they upgrade when we tell them to. A change that breaks
+  their code needs a deprecation window (next section).
+- **Never ahead of the servers.** A release that calls a route production does not serve yet breaks
+  every user who upgrades. The server compatibility gate below catches this.
+- **A PyPI version is spent forever.** PyPI never accepts the same version twice, even after a
+  delete. A bad upload can be yanked, never replaced.
+- **`client_type` is allowlisted.** The adapter sends `X-Client-Type: PYTHON_ADAPTER`, and the
+  PIC-SURE gateway rejects any value outside its allowlist with HTTP 400. Changing the default, or
+  letting callers pass a new value, needs the gateway allowlist changed and deployed first.
 
-There is no version field to read or edit. `pyproject.toml` declares
-`dynamic = ["version"]` with `[tool.hatch.version] source = "vcs"`, so
-`hatch-vcs` derives the version from the git tag at build time. The
-tag is the version. Between tags it derives a dev version from the
-commit distance (see Post-release).
+## Versioning and deprecation
 
-Every workflow checks out with `fetch-depth: 0` because a shallow
-clone does not fail the build, it mislabels it. With no tag in reach,
-`hatch-vcs` warns and falls back to `0.1.devN+g<sha>`, and `uv build`
-succeeds with a `picsure-0.1.dev1+g<sha>` wheel that a publish job
-would upload. Any checkout that builds the package needs full history
-and tags: `fetch-depth: 0` in CI, and `git fetch --tags --unshallow`
-on a local clone that was made shallow.
+Versions follow [semantic versioning](https://semver.org). Pick the bump from the largest change in
+the release:
 
-## Pre-release checklist
+| Bump | When | Example |
+| --- | --- | --- |
+| Major (`5.0.0`) | Any change that breaks a caller, removes something deprecated, or needs a newer PIC-SURE server than the last release did | Removing a function, changing what a default argument returns |
+| Minor (`4.1.0`) | New features that leave existing calls working, including a new deprecation | A new keyword argument with a backward-compatible default |
+| Patch (`4.0.1`) | Bug fixes only | Fixing a wrong result type |
 
-1. **Confirm CI is green on `main`.** Both the `CI` and `Docs`
-   workflows must be passing on the commit you intend to tag.
-2. **Update `CHANGELOG.md`.** The file follows
-   [Keep a Changelog](https://keepachangelog.com/) — the current
-   `## [Unreleased]` block becomes `## [X.Y.Z] - YYYY-MM-DD`. Sections
-   already in use: `### Added`, `### Changed`, `### Removed`, `###
-   Fixed`. Keep entries user-focused; internal refactors don't need
-   a line unless they shift behaviour.
-3. **Do not add a `version` to `pyproject.toml`.** It declares the
-   version `dynamic`; a static field alongside that fails the build.
-   The tag you push in the next section sets the version.
-4. **Build the docs locally and skim.**
-   ```bash
-   uv run mkdocs build --strict
-   uv run mkdocs serve   # optional, for live preview
-   ```
-   Strict mode catches broken cross-references that the CI docs job
-   would also catch — running it locally is faster than waiting on
-   the PR.
-5. **Open a "release X.Y.Z" PR.** The CHANGELOG update lands on
-   `main` via PR like any other change. Merge once CI is green.
+The R adapter's major version follows this one: R 4.x wraps Python 4.x. R's minor and patch numbers
+move on their own.
 
-## Cutting the release
+The version comes from the git tag through `hatch-vcs`. Never add a `version` field to
+`pyproject.toml`: it declares the version `dynamic`, and a static field alongside that fails the
+build.
 
-The tag format is enforced, not a convention. `release.yml`'s
-"Classify tag" step accepts exactly two shapes and fails the workflow
-on anything else:
+### Deprecating something
 
-| Tag | Classified | Publishes to |
-|---|---|---|
-| `vX.Y.Z` (e.g. `v2.0.0`) | final release | PyPI |
-| `vX.Y.Z{a,b,rc}[N]` (e.g. `v2.0.0rc1`) | pre-release | TestPyPI |
-| anything else (e.g. `v1.0`) | error | nothing, the run fails |
+A breaking change waits out a six-month deprecation window:
 
-The two-component tags still in the repo (`v1.0`, `v1.2`) predate
-this workflow and would be rejected today. Use the full `vX.Y.Z`.
-The pre-release number is optional to the pattern (`v2.0.0rc` passes,
-and one such tag exists), but always give one: PEP 440 reads a bare
-`rc` as `rc0`, and the next candidate needs a name that sorts after
-it.
+1. Ship the replacement in a minor release. In the same release, make the old behavior warn every
+   time it runs: `warnings.warn("...", FutureWarning, stacklevel=2)`. Use `FutureWarning`, not
+   `DeprecationWarning`, because Python hides `DeprecationWarning` from library code by default,
+   and notebook users would never see it.
+2. The warning text and the CHANGELOG entry both name the replacement and the earliest release that
+   removes the old behavior.
+3. Remove it only in a major release, and only once six months have passed since the warning
+   shipped.
+
+### When the server forces a break
+
+The window above needs the server to keep the old route alive. The rule: when PIC-SURE replaces a
+route the adapter calls, the server keeps the deprecated route for six months after the replacement
+ships. The adapter moves to the new route once every production environment serves it, and the old
+route can go after that.
+
+The exception: if a server release removes a route with no overlap, the adapter ships a major
+release on the day production upgrades, with no window. The release owner records why in the
+release notes. Adapter 4.0.0 was this case: PIC-SURE 5.0.0 removed the `/v3` query routes.
+
+## Server compatibility
+
+Each adapter line works with exactly one PIC-SURE line today. Adapter 4.x needs PIC-SURE 5.0.0 or
+later, and adapter 3.x works only with PIC-SURE 4.1.x. Check this table before every release and
+update it in the release PR.
+
+| Adapter | Minimum PIC-SURE | Last PIC-SURE tested | Why |
+| --- | --- | --- | --- |
+| 4.0.x | 5.0.0 | Not recorded | Calls the unversioned `/hpds/{backend}/query` routes and polls status and result with GET. PIC-SURE 4.1.x serves neither. |
+| 3.0.x | 4.1.0 | 4.1.x | Calls `/hpds/{backend}/v3/query` with POST status and result. PIC-SURE 5.0.0 removed those routes. |
+
+### The gate
+
+Before tagging a release candidate, the release owner checks three things:
+
+1. List every server route the release calls that the previous release did not, or calls
+   differently (new method, new body, new path).
+2. Confirm BDC and NHANES production serve each of those routes, or will once their scheduled
+   upgrade lands. The PIC-SURE release notes and the environment release schedule say which version
+   each environment gets.
+3. If production cannot serve them, the release waits, or it becomes a major release that ships
+   with the upgrade (see "When the server forces a break").
+
+Record the result in this table: the minimum PIC-SURE version, and the version QA ran against in
+the "Last PIC-SURE tested" column.
+
+## Release steps
+
+Each step has an owner. Owners are not assigned yet. Until they are, the person cutting the release
+owns every step.
+
+1. **Merge the work.** Every change reaches `main` through a reviewed PR, and every user-visible
+   change adds a line under `## [Unreleased]` in `CHANGELOG.md`.
+   - Owner: to be assigned
+2. **Freeze and choose the version.** Announce the code freeze. Nothing else merges to `main` until
+   the release ships, so the commit QA tests is the commit that ships. Choose the version from the
+   versioning table.
+   - Owner: to be assigned
+3. **Pass the server gate.** Confirm every route this release calls is served by BDC and NHANES
+   production, or will be once their scheduled upgrade lands. Update the compatibility table in this
+   guide.
+   - Owner: to be assigned
+4. **Open the release PR.** Move the `[Unreleased]` entries under a `## [X.Y.Z] - YYYY-MM-DD`
+   heading and update the compatibility table. Run `uv run mkdocs build --strict` locally. Merge it
+   after review, with the `CI` and `Docs` workflows green.
+   - Owner: to be assigned
+5. **Tag the release candidate.** Create a GitHub Release for tag `vX.Y.Zrc1` on the tip of `main`,
+   marked as a prerelease. CI publishes it to TestPyPI.
+   - Owner: to be assigned
+6. **QA the release candidate.** Run the QA checklist below. If anything fails, merge the fix by PR
+   and tag `vX.Y.Zrc2`, and so on.
+   - Owner: to be assigned
+7. **Start the R release candidate.** Hand the passing rc tag to the R adapter release (its guide
+   covers the pin).
+   - Owner: to be assigned
+8. **Wait for the environment releases.** The adapter ships right after BDC and NHANES production
+   are upgraded to the PIC-SURE version it needs.
+   - Owner: to be assigned
+9. **Publish the final release.** Create a GitHub Release for tag `vX.Y.Z` on the same commit as the
+   passing rc. CI publishes it to PyPI.
+   - Owner: to be assigned
+10. **Verify and hand off.** Install the release in a clean virtualenv
+    (`pip install picsure==X.Y.Z`), check that `pip show picsure` reports it, and run the
+    quickstart. Tell the R adapter owner to cut the final R release.
+    - Owner: to be assigned
+
+## Release candidates and QA
+
+A release candidate is a tag of the form `vX.Y.ZrcN`, numbered from 1: `v4.1.0rc1`, then
+`v4.1.0rc2` after a fix. Never push a bare `v4.1.0rc`. CI publishes every rc to
+[TestPyPI](https://test.pypi.org/project/picsure/), never to PyPI.
+
+To create one, open **Releases > Draft a new release** on GitHub, type the new tag, target `main`,
+and tick **Set as a pre-release**. Publishing that draft creates the tag, and the tag push runs the
+release workflow. The prerelease tick keeps the rc from showing as the latest release.
+
+### Installing the release candidate
+
+From TestPyPI, which tests the exact package that will be uploaded:
 
 ```bash
-# from a clean main, on the merge commit you want to ship
-git checkout main
-git pull
-git tag -a vX.Y.Z -m "Release X.Y.Z"
-git push origin vX.Y.Z
-```
-
-Pushing the tag is the release. `release.yml` triggers on
-`push: tags: ["v*"]` and does the whole run itself. `lint` and `test`
-(Python 3.10/3.11/3.12) run in parallel. `build` waits for both, then
-classifies the tag, runs `uv build`, and validates the metadata with
-`uvx twine check`. One of the two publish jobs runs last. A failing
-lint or test job stops the release before anything is uploaded. The
-tag check sits inside `build`, so a malformed tag such as `v1.3` still
-costs a full lint run and test matrix before the workflow fails.
-
-## Publishing to PyPI
-
-Publishing is automated and there is **no API token to manage**. The
-`publish-pypi` and `publish-testpypi` jobs in `release.yml` use
-`pypa/gh-action-pypi-publish` with `permissions: id-token: write`,
-which is [Trusted
-Publishing](https://docs.pypi.org/trusted-publishers/). PyPI trusts
-a short-lived OIDC token minted for that workflow in that repository.
-Do not create a `PYPI_TOKEN` or set `UV_PUBLISH_TOKEN`; a long-lived
-token is the thing this setup exists to avoid.
-
-Each publish job is pinned to a GitHub
-[environment](https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/settings/environments),
-`PyPi` for final releases and `TestPyPi` for pre-releases. The
-environment is where the trusted-publisher binding and any required
-reviewers live.
-A first release from a new repository or environment needs the
-publisher registered on PyPI first, or the job fails at upload with a
-permissions error.
-
-The TestPyPI dry run is not a separate manual step: tag a pre-release
-and it routes there automatically.
-
-```bash
-git tag -a vX.Y.Zrc1 -m "Release candidate X.Y.Zrc1"
-git push origin vX.Y.Zrc1        # -> TestPyPI, via release.yml
 pip install --index-url https://test.pypi.org/simple/ \
-    --extra-index-url https://pypi.org/simple/ picsure==X.Y.Zrc1
+    --extra-index-url https://pypi.org/simple/ picsure==4.1.0rc1
 ```
 
-TestPyPI hosts the candidate and nothing it depends on: no `pandas`,
-no `httpx`, and a `fastavro` too old to satisfy the pin. The extra
-index lets pip take those from PyPI while the candidate itself still
-comes from TestPyPI, the only index that has it.
+The `--extra-index-url` lets pip find the dependencies (pandas, httpx, fastavro), which are not on
+TestPyPI.
 
-### When a release run fails
+### QA checklist
 
-There is no manual publish path. `release.yml` has no
-`workflow_dispatch` trigger, and the publish jobs authenticate only
-with the OIDC token GitHub mints for a tag-triggered run, so nothing
-run by hand can upload. Recover inside that model:
+QA runs the notebooks researchers use most: the `release_2026` branch of
+[Access-to-Data-using-PIC-SURE-API](https://github.com/hms-dbmi/Access-to-Data-using-PIC-SURE-API/tree/release_2026).
 
-**Transient failure** (runner outage, flaky test, PyPI timeout). Open
-the run in the Actions tab and re-run the failed jobs. The re-run
-keeps the same tag and reuses the `dist` artifact already built in
-that run.
+1. **Change the install cells by hand.** The Python notebooks install the adapter from `main`
+   (`pip install git+https://github.com/hms-dbmi/pic-sure-python-adapter-hpds.git@main`). Before
+   running each one, replace that line with the TestPyPI install above. Nothing in the notebooks
+   does this for you, and a notebook left on `main` tests the wrong code.
+2. **Use a server that already runs the target PIC-SURE version.** The notebooks connect to
+   `Platform.BDC_AUTHORIZED`, which is production. If production has not been upgraded yet, point
+   them at an environment that has.
+3. **Run every Python notebook end to end** and note any failure or changed output.
+4. **Try each change in the CHANGELOG entry** for this version, including every deprecation warning
+   it adds.
+5. **Record the result** on the rc's GitHub Release: pass or fail, the PIC-SURE version tested
+   against, and who ran it.
 
-**Wrong tag, or the workflow file itself needs a change.** The run
-executes the `release.yml` at the tagged commit, so land the fix on
-`main`, then move the tag to the new commit and push it again.
-Nothing was uploaded, so the version is still free.
+If QA fails, merge the fix to `main` by PR, tag the next rc and repeat.
 
-```bash
-git tag -d vX.Y.Z
-git push origin :refs/tags/vX.Y.Z
-git tag -a vX.Y.Z -m "Release X.Y.Z"
-git push origin vX.Y.Z
+## Publishing the final release
+
+Open **Releases > Draft a new release**, type the tag `vX.Y.Z`, and target the commit the passing rc
+was tagged on. During a code freeze that is still the tip of `main`. Leave **Set as a pre-release**
+unticked and tick **Set as the latest release**. Write the notes (next section), then publish.
+
+### What the tag push does
+
+`.github/workflows/release.yml` runs on every pushed tag that matches `v*`:
+
+1. Lint (ruff, mypy) and unit tests on Python 3.10, 3.11 and 3.12, with an 80% coverage floor. Any
+   failure stops the release before anything is uploaded.
+2. Classify the tag. `vX.Y.Z` goes to PyPI. `vX.Y.Z` followed by `a`, `b` or `rc` and a number goes
+   to TestPyPI. Any other tag fails the run.
+3. Build the package. The version comes from the tag itself, so tag `v4.1.0` builds
+   `picsure-4.1.0`.
+4. Upload through [trusted publishing](https://docs.pypi.org/trusted-publishers/), from the `PyPi`
+   or `TestPyPi` GitHub environment. No API tokens are stored in the repo. Do not create a
+   `PYPI_TOKEN`.
+
+Two things to know:
+
+- **Only tag commits that contain the current workflow.** A tag runs the `release.yml` of the
+  commit it points at. Before 4.0.0 the workflow took the version from the nearest older tag, which
+  is how `picsure 3.0.4rc0` reached production PyPI. An old commit would bring that behavior back.
+- **Only members of the developers team can push `v*` tags.** A tag ruleset enforces this.
+  *Pending: the ruleset does not exist yet.*
+
+### If something goes wrong
+
+- **The workflow failed before upload:** open the run in the Actions tab and re-run the failed
+  jobs. If the fix needs a new commit, land it on `main`, then move the tag and push it again.
+  Nothing was uploaded, so the version is still free:
+
+  ```bash
+  git tag -d vX.Y.Z
+  git push origin :refs/tags/vX.Y.Z
+  git tag -a vX.Y.Z -m "Release X.Y.Z"
+  git push origin vX.Y.Z
+  ```
+
+- **A wrong build reached PyPI:** yank that version on PyPI (Manage > Releases > Options > Yank) and
+  release the next patch version. The yanked number can never be reused.
+
+## Changelog and release notes
+
+`CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com). Changes collect under
+`## [Unreleased]` as they merge. The release PR moves them under `## [X.Y.Z] - YYYY-MM-DD`, using
+the planned release date, and leaves an empty `[Unreleased]` above it.
+
+The GitHub Release body starts with three fixed sections, then GitHub's generated PR list
+(**Generate release notes**). Write "None" in a section rather than dropping it, so readers can tell
+nothing was missed.
+
+```markdown
+## Breaking changes
+None.
+
+## Requires
+PIC-SURE 5.0.0 or later.
+
+## Deprecations
+- `oldName()` warns from this release. Use `newName()`. Removed no earlier than 5.0.0 (YYYY-MM).
 ```
 
-**Publish succeeded and a later step failed.** That version is spent.
-PyPI never accepts a file name twice, even after a delete. Fix forward
-and cut the next patch version.
+For a release candidate, the body only needs the QA result once QA finishes: pass or fail, the
+PIC-SURE version tested, and who ran it.
 
-## Publishing the docs
+## Hotfix releases
 
-`docs.yml` builds the site with `uv run mkdocs build --strict` on
-every pull request and every branch push, and **deploys** only from a
-published release or a push to the repository's default branch. The
-guard compares against `github.event.repository.default_branch`
-rather than a hard-coded name, so it cannot go stale if the default
-branch is renamed. It also means the deploy follows whatever
-GitHub says the default branch is, not whichever branch the team
-treats as mainline.
+A hotfix fixes a released version without shipping whatever has merged to `main` since. It is
+always a patch release.
 
-Three practical notes:
-
-- A docs-only change needs no version bump: a push to the default
-  branch republishes.
-- Because `docs.yml` runs `mkdocs build --strict`, a broken link
-  fails the check on the PR that introduces it. Fix relative paths
-  before merging; don't expect to fix them after.
-- The deploy writes the `gh-pages` branch via
-  `peaceiris/actions-gh-pages`, but GitHub Pages is **not currently
-  enabled for this repository** (`has_pages` is false), so nothing is
-  served from it yet. `mkdocs.yml` sets no `site_url`. Enabling Pages
-  and pointing it at `gh-pages` is a repository-settings change.
-
-## Post-release
-
-1. **Reopen `[Unreleased]` in CHANGELOG.md.** Drop a fresh
-   `## [Unreleased]` block above the just-released version, with
-   empty `### Added` / `### Changed` / `### Removed` / `### Fixed`
-   subsections — easier than adding them ad-hoc later.
-2. **Nothing to bump.** `hatch-vcs` already derives a dev version
-   from the distance past the tag: N commits after `vX.Y.Z` build as
-   `X.Y.(Z+1).devN+g<sha>`, the next patch version, without anyone
-   editing a file.
-3. **Verify the install.** `pip install picsure==X.Y.Z` from a fresh
-   virtualenv and run the quickstart. Any import-time regression
-   (missing dependency, wrong wheel platform, py.typed-related
-   issues) shows up here and is hard to find later.
+1. Branch from the release tag being fixed: `git switch -c hotfix/v4.0.1 v4.0.0`, then push the
+   branch.
+2. Open the fix as a PR into `hotfix/v4.0.1`, with the usual one approving review. Add a
+   `## [4.0.1]` CHANGELOG entry in the same PR.
+3. Tag `v4.0.1rc1` on the hotfix branch as a prerelease and QA the fix. QA covers the fix and the
+   notebooks it touches, not the full checklist.
+4. Tag `v4.0.1` on the same commit. This is the one case where a release tag is not on `main`.
+5. The same day, open a second PR that brings the fix and the CHANGELOG entry into `main`, so the
+   next release keeps them.
+6. Tell the R adapter owner. R follows with a patch release that only moves its pin to `v4.0.1`.
