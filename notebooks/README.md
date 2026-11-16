@@ -22,10 +22,20 @@ know that step, but together they're the recommended on-ramp:
 | `8_Remove_and_Replace_Query_Functions.ipynb`| `replaceClause()` / `removeSubQuery()` — edit a query in place.         |
 | `9_Save_Query_By_Name.ipynb`                | `saveQueryByName()` — persist a query under a name on an auth platform. |
 | `10_Genomic_Filtering.ipynb`                | `buildGenomicFilter()` — filter by gene, consequence, frequency, and severity using `GenomicFilterKey` / `VariantSeverity`; variant result types. |
+| `11_Check_PFB_Export_Fixes.ipynb`           | Checks a PFB export for filled data dictionary columns (ALS-13635) and DRS URIs (ALS-13611). |
 
-All eleven notebooks read your PIC-SURE access token from `notebooks/token.txt`
-(one line, no trailing newline required). The file is gitignored by
-the repo-wide `*.token` / `token.txt` rules — don't commit it.
+Of the twelve notebooks, eight connect to an authorized platform and read
+your PIC-SURE access token from `notebooks/token.txt` (one line, no trailing
+newline required): `0`, `1`, `2`, `5`, `6`, `7`, `9` and `10`. The file is
+gitignored by the repo-wide `*.token` / `token.txt` rules. Don't commit it.
+
+`3_Open_Query.ipynb`, `4_Complex_Open_Queries.ipynb` and
+`8_Remove_and_Replace_Query_Functions.ipynb` connect to an open platform and
+need no token.
+
+`11_Check_PFB_Export_Fixes.ipynb` is a check that follows the tour. It reads
+no token file. It takes the stack URL and the token from the `PICSURE_URL` and
+`PICSURE_TOKEN` environment variables and prompts for whichever is unset.
 
 ## Why a dedicated directory?
 
