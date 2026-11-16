@@ -49,7 +49,9 @@ _NEW_TOKEN_ADVICE = (
 
 _SERVER_MESSAGE_MAX_CHARS = 1000
 _ERROR_TYPE_MAX_CHARS = 100
-_UNSAFE_CHARACTER = re.compile(r"[\x00-\x1f\x7f\ud800-\udfff]")
+_UNSAFE_CHARACTER = re.compile(
+    r"[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069\ud800-\udfff]"
+)
 _WHITESPACE_RUN = re.compile(r"\s+")
 
 
@@ -118,20 +120,37 @@ def _server_refusal(status_code: int, body: str) -> _ServerRefusal:
 
 
 def _printable_server_text(value: object, *, max_chars: int) -> str:
-    """Make a decoded JSON string safe to put inside an error message.
+    """Clean a decoded JSON string before it goes into an error message.
 
     Decoding turns the escapes of a JSON string into the characters they
     stand for, so a newline, an ESC or a BEL the raw body showed as
     ``\\n`` or ``\\u001b`` would reach a terminal or a notebook as
-    itself. Every character below U+0020, and U+007F, becomes a space,
-    and each run of whitespace collapses to one space.
+    itself. Each of these characters becomes a space:
 
-    A JSON string may also escape half of a surrogate pair on its own,
+    * the C0 controls, U+0000 to U+001F, and DEL, U+007F;
+    * the C1 controls, U+0080 to U+009F, which include the one-character
+      control sequence introducer U+009B;
+    * the bidirectional controls, which reorder the text shown around
+      them: U+061C, U+200E, U+200F, U+202A to U+202E and U+2066 to
+      U+2069;
+    * a lone surrogate, U+D800 to U+DFFF.
+
+    Each run of whitespace then collapses to one space, a no-break space
+    and the line and paragraph separators included, and the ends are
+    stripped.
+
+    Nothing else is changed. Accented letters, right-to-left letters,
+    CJK and emoji pass through, as do the other invisible format
+    characters, the zero-width joiner that emoji sequences are built
+    with among them. The result is free of the characters listed above;
+    it is not a promise that every character left has a visible glyph.
+
+    A JSON string may escape half of a surrogate pair on its own,
     ``\\ud800``, which decodes to a character no UTF-8 stream can
     carry, so printing the exception would raise ``UnicodeEncodeError``.
-    Each lone surrogate, U+D800 to U+DFFF, becomes a space as well, and
-    the returned text always encodes as UTF-8. A complete escaped pair
-    decodes to the one character it stands for and is kept.
+    With lone surrogates replaced, the returned text always encodes as
+    UTF-8. A complete escaped pair decodes to the one character it
+    stands for and is kept.
 
     Credentials are redacted before the text is cut to ``max_chars``, so
     a token lying across the cut is replaced whole rather than left half

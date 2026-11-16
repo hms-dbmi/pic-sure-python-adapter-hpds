@@ -737,6 +737,89 @@ class TestJsonRefusalBody:
             f"said: {body}"
         )
 
+    def test_c1_controls_become_spaces(self):
+        result = translate_transport_error(
+            TransportValidationError(
+                400,
+                _error_body(
+                    "bad\x9b31mrequest",
+                    "First\x80second\x9b2Jthird\x9d0;title\x9cfourth\x9fend",
+                ),
+            ),
+            operation=OPERATION,
+        )
+        assert str(result) == (
+            "The server rejected the dictionary search (HTTP 400, bad 31mrequest). "
+            "The server said: First second 2Jthird 0;title fourth end"
+        )
+
+    @pytest.mark.parametrize("code_point", range(0x80, 0xA0))
+    def test_every_c1_control_becomes_a_space(self, code_point):
+        result = translate_transport_error(
+            TransportValidationError(
+                400, _error_body("bad_request", f"left{chr(code_point)}right")
+            ),
+            operation=OPERATION,
+        )
+        assert str(result).endswith("The server said: left right")
+
+    @pytest.mark.parametrize(
+        "code_point",
+        [
+            0x061C,
+            0x200E,
+            0x200F,
+            0x202A,
+            0x202B,
+            0x202C,
+            0x202D,
+            0x202E,
+            0x2066,
+            0x2067,
+            0x2068,
+            0x2069,
+        ],
+    )
+    def test_every_bidirectional_control_becomes_a_space(self, code_point):
+        control = chr(code_point)
+        result = translate_transport_error(
+            TransportValidationError(
+                400,
+                _error_body(f"bad{control}request", f"left{control}right"),
+            ),
+            operation=OPERATION,
+        )
+        assert str(result) == (
+            "The server rejected the dictionary search (HTTP 400, bad request). "
+            "The server said: left right"
+        )
+
+    def test_a_message_of_only_bidirectional_and_c1_controls_keeps_the_raw_body(self):
+        body = json.dumps({"message": "\u202e\x9b\u2066\u200f"})
+        result = translate_transport_error(
+            TransportValidationError(400, body), operation=OPERATION
+        )
+        assert str(result) == (
+            f"The server rejected the dictionary search (HTTP 400). The server "
+            f"said: {body}"
+        )
+
+    def test_ordinary_non_ascii_text_is_quoted_unchanged(self):
+        text = (
+            "\u00a1Caf\u00e9 na\u00efve \u00df\u00ff \u0416\u0443\u043a "
+            "\u05e9\u05dc\u05d5\u05dd \u0645\u0631\u062d\u0628\u0627 "
+            "\u67e5\u8be2 \u65e5\u672c\u8a9e \U0001f600 "
+            "\U0001f469\u200d\U0001f4bb"
+        )
+        result = translate_transport_error(
+            TransportValidationError(400, _error_body("requ\u00eate_\u67e5", text)),
+            operation=OPERATION,
+        )
+        assert str(result) == (
+            "The server rejected the dictionary search (HTTP 400, "
+            "requ\u00eate_\u67e5). The server said: " + text
+        )
+
     def test_a_lone_surrogate_in_the_message_leaves_the_text_encodable(self):
         body = '{"errorType":"bad_request","message":"bad \\ud800 thing"}'
         exc = TransportValidationError(400, body)
