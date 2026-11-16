@@ -988,6 +988,16 @@ def _result_not_ready() -> httpx.Response:
     )
 
 
+_UNRECOGNISED_NOT_READY_BODIES = [
+    pytest.param({"errorType": "result_not_ready"}, id="missing-message"),
+    pytest.param({"errorType": "result_not_ready", "message": None}, id="null-message"),
+    pytest.param(
+        {"errorType": "RESULT_NOT_READY", "message": "The result is being prepared"},
+        id="upper-case-error-type",
+    ),
+]
+
+
 class TestResultNotReady:
     """A download the server calls not ready goes back to polling status."""
 
@@ -1068,6 +1078,55 @@ class TestResultNotReady:
             self._run(_make_client(), tmp_path / "out.csv")
 
         assert result.call_count == 1
+        assert sleep_mock.call_count == 0
+
+    @respx.mock
+    @pytest.mark.parametrize("body", _UNRECOGNISED_NOT_READY_BODIES)
+    def test_download_409_the_transport_does_not_recognise_is_not_retried(
+        self, tmp_path, body
+    ):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        status = respx.get(STATUS_URL).mock(return_value=_status("AVAILABLE"))
+        result = respx.get(RESULT_URL).mock(
+            side_effect=[
+                httpx.Response(409, json=body),
+                httpx.Response(200, content=b"x"),
+            ]
+        )
+        target = tmp_path / "out.csv"
+
+        with patch(SLEEP) as sleep_mock, pytest.raises(PicSureError) as info:
+            self._run(_make_client(), target)
+
+        assert type(info.value) is PicSureValidationError
+        assert "the query download" in str(info.value)
+        assert "HTTP 409" in str(info.value)
+        assert status.call_count == 1
+        assert result.call_count == 1
+        assert sleep_mock.call_count == 0
+        assert not target.exists()
+
+    @respx.mock
+    @pytest.mark.parametrize("body", _UNRECOGNISED_NOT_READY_BODIES)
+    def test_status_409_the_transport_does_not_recognise_is_not_polled_again(
+        self, tmp_path, body
+    ):
+        respx.post(SUBMIT_URL).mock(return_value=_submit_ok())
+        status = respx.get(STATUS_URL).mock(
+            side_effect=[httpx.Response(409, json=body), _status("AVAILABLE")]
+        )
+        result = respx.get(RESULT_URL).mock(
+            return_value=httpx.Response(200, content=b"x")
+        )
+
+        with patch(SLEEP) as sleep_mock, pytest.raises(PicSureError) as info:
+            self._run(_make_client(), tmp_path / "out.csv")
+
+        assert type(info.value) is PicSureValidationError
+        assert "the query status check" in str(info.value)
+        assert "HTTP 409" in str(info.value)
+        assert status.call_count == 1
+        assert result.call_count == 0
         assert sleep_mock.call_count == 0
 
     @respx.mock
@@ -1964,6 +2023,82 @@ class TestBuildQueryBodySample:
 
         sent = json.loads(submit.calls[0].request.content)
         assert sent["query"]["sample"] is True
+
+    @respx.mock
+    def test_run_query_sends_sample_with_a_timestamp_submit(self):
+        from picsure._services.query_build import buildQuery
+
+        submit, _, _ = _mock_async_result(b"id,date,val\n1,2024-01-01,120\n")
+
+        q = buildQuery(includeConcepts=["\\bmi\\"], sample=True)
+        run_query(_make_client(), q, "timestamp", backend="auth")
+
+        assert _request_bodies(submit) == [
+            {
+                "query": {
+                    "select": ["\\bmi\\"],
+                    "phenotypicClause": None,
+                    "genomicFilters": [],
+                    "expectedResultType": "DATAFRAME_TIMESERIES",
+                    "picsureId": None,
+                    "id": None,
+                    "sample": True,
+                }
+            }
+        ]
+
+    @respx.mock
+    @pytest.mark.parametrize(
+        ("query_type", "result_type"),
+        [("participant", "DATAFRAME"), ("timestamp", "DATAFRAME_TIMESERIES")],
+    )
+    def test_run_query_without_sample_submits_exactly_the_body_it_always_did(
+        self, query_type, result_type
+    ):
+        from picsure._services.query_build import buildQuery
+
+        submit, _, _ = _mock_async_result(b"id,date,val\n1,2024-01-01,120\n")
+
+        q = buildQuery(phenotypicFilter=_simple_clause(), includeConcepts=["\\bmi\\"])
+        run_query(_make_client(), q, query_type, backend="auth")
+
+        assert submit.call_count == 1
+        assert submit.calls[0].request.content == (
+            b'{"query":{"select":["\\\\bmi\\\\","\\\\phs1\\\\sex\\\\"],'
+            b'"phenotypicClause":{"phenotypicFilterType":"FILTER",'
+            b'"conceptPath":"\\\\phs1\\\\sex\\\\","not":false,"values":["Male"]},'
+            b'"genomicFilters":[],"expectedResultType":"' + result_type.encode() + b'",'
+            b'"picsureId":null,"id":null}}'
+        )
+
+    @respx.mock
+    def test_a_count_without_sample_submits_exactly_the_body_it_always_did(self):
+        from picsure._services.query_build import buildQuery
+
+        sync = respx.post(QUERY_URL).mock(
+            return_value=httpx.Response(200, content=b"42")
+        )
+
+        q = buildQuery(phenotypicFilter=_simple_clause())
+        run_query(_make_client(), q, "count", backend="auth")
+
+        assert _request_bodies(sync) == [
+            {
+                "query": {
+                    "select": ["\\phs1\\sex\\"],
+                    "phenotypicClause": {
+                        "phenotypicFilterType": "FILTER",
+                        "conceptPath": "\\phs1\\sex\\",
+                        "not": False,
+                        "values": ["Male"],
+                    },
+                    "genomicFilters": [],
+                    "expectedResultType": "COUNT",
+                    "picsureId": None,
+                    "id": None,
+                }
+            }
+        ]
 
 
 class TestVariantResultParsing:

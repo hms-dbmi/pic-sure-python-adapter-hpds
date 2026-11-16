@@ -737,6 +737,59 @@ class TestJsonRefusalBody:
             f"said: {body}"
         )
 
+    def test_an_error_type_is_capped_at_100_characters(self):
+        result = translate_transport_error(
+            TransportValidationError(400, _error_body("t" * 5000, "No.")),
+            operation=OPERATION,
+        )
+        assert str(result) == (
+            "The server rejected the dictionary search (HTTP 400, "
+            + "t" * 100
+            + "). The server said: No."
+        )
+
+    def test_an_error_type_of_exactly_100_characters_is_named_whole(self):
+        result = translate_transport_error(
+            TransportValidationError(400, _error_body("t" * 99 + "z", "No.")),
+            operation=OPERATION,
+        )
+        assert f"(HTTP 400, {'t' * 99}z)" in str(result)
+
+    def test_an_error_type_is_cleaned_before_it_is_capped(self):
+        padded = "\x1b" * 60 + " \n\t" + "a" * 60 + "\r\n\x07  " + "b" * 60 + "\x00  "
+        result = translate_transport_error(
+            TransportValidationError(400, _error_body(padded, "No.")),
+            operation=OPERATION,
+        )
+        assert str(result) == (
+            "The server rejected the dictionary search (HTTP 400, "
+            + "a" * 60
+            + " "
+            + "b" * 39
+            + "). The server said: No."
+        )
+
+    def test_a_token_in_the_error_type_is_redacted(self):
+        token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.c2lnbmF0dXJlLXZhbHVl"
+        result = translate_transport_error(
+            TransportValidationError(400, _error_body(f"Bearer {token}", "No.")),
+            operation=OPERATION,
+        )
+        assert token not in str(result)
+        assert token[:10] not in str(result)
+
+    @pytest.mark.parametrize("error_type", [None, 400, ["bad_request"], "", " \x1b\n"])
+    def test_an_error_type_with_no_printable_text_names_the_status_alone(
+        self, error_type
+    ):
+        result = translate_transport_error(
+            TransportValidationError(400, _error_body(error_type, "No.")),
+            operation=OPERATION,
+        )
+        assert str(result) == (
+            "The server rejected the dictionary search (HTTP 400). The server said: No."
+        )
+
     def test_c1_controls_become_spaces(self):
         result = translate_transport_error(
             TransportValidationError(

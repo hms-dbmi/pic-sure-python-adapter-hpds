@@ -373,6 +373,43 @@ class TestLoadQueryHappyPath:
             assert result.sample is False
 
     @respx.mock
+    @pytest.mark.parametrize("stored", ["true", "True", 1, 1.0, [True]])
+    def test_a_stored_sample_that_is_not_json_true_loads_as_a_full_query(self, stored):
+        body = _envelope(
+            {
+                "select": ["\\phs1\\out\\"],
+                "phenotypicClause": _filter_leaf("\\phs1\\sex\\", "Male"),
+                "genomicFilters": [],
+                "expectedResultType": "DATAFRAME",
+                "picsureId": None,
+                "id": None,
+                "sample": stored,
+            }
+        )
+        respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
+        result = load_query(_make_client(), QUERY_ID, backend="auth")
+        assert isinstance(result, Query)
+        assert result.sample is False
+
+    @respx.mock
+    @pytest.mark.parametrize("stored", ["true", 1])
+    def test_a_filter_only_query_with_a_non_true_sample_loads_as_a_clause(self, stored):
+        body = _envelope(
+            {
+                "select": [],
+                "phenotypicClause": _filter_leaf("\\phs1\\sex\\", "Male"),
+                "genomicFilters": [],
+                "expectedResultType": "DATAFRAME",
+                "picsureId": None,
+                "id": None,
+                "sample": stored,
+            }
+        )
+        respx.get(META_URL).mock(return_value=httpx.Response(200, json=body))
+        result = load_query(_make_client(), QUERY_ID, backend="auth")
+        assert isinstance(result, Clause)
+
+    @respx.mock
     def test_filter_only_query_without_sample_still_loads_as_clause(self):
         body = _envelope(
             {
