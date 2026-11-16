@@ -49,7 +49,7 @@ _NEW_TOKEN_ADVICE = (
 
 _SERVER_MESSAGE_MAX_CHARS = 1000
 _ERROR_TYPE_MAX_CHARS = 100
-_CONTROL_CHARACTER = re.compile(r"[\x00-\x1f\x7f]")
+_UNSAFE_CHARACTER = re.compile(r"[\x00-\x1f\x7f\ud800-\udfff]")
 _WHITESPACE_RUN = re.compile(r"\s+")
 
 
@@ -126,6 +126,13 @@ def _printable_server_text(value: object, *, max_chars: int) -> str:
     itself. Every character below U+0020, and U+007F, becomes a space,
     and each run of whitespace collapses to one space.
 
+    A JSON string may also escape half of a surrogate pair on its own,
+    ``\\ud800``, which decodes to a character no UTF-8 stream can
+    carry, so printing the exception would raise ``UnicodeEncodeError``.
+    Each lone surrogate, U+D800 to U+DFFF, becomes a space as well, and
+    the returned text always encodes as UTF-8. A complete escaped pair
+    decodes to the one character it stands for and is kept.
+
     Credentials are redacted before the text is cut to ``max_chars``, so
     a token lying across the cut is replaced whole rather than left half
     shown. The cut can therefore land inside the redaction placeholder,
@@ -141,7 +148,7 @@ def _printable_server_text(value: object, *, max_chars: int) -> str:
     """
     if not isinstance(value, str):
         return ""
-    spaced = _CONTROL_CHARACTER.sub(" ", value)
+    spaced = _UNSAFE_CHARACTER.sub(" ", value)
     collapsed = _WHITESPACE_RUN.sub(" ", spaced).strip()
     return redact_credentials(collapsed)[:max_chars]
 

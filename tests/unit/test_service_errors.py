@@ -737,6 +737,59 @@ class TestJsonRefusalBody:
             f"said: {body}"
         )
 
+    def test_a_lone_surrogate_in_the_message_leaves_the_text_encodable(self):
+        body = '{"errorType":"bad_request","message":"bad \\ud800 thing"}'
+        exc = TransportValidationError(400, body)
+        assert json.loads(exc.body)["message"] == "bad \ud800 thing"
+
+        message = str(translate_transport_error(exc, operation=OPERATION))
+
+        assert message.encode("utf-8").decode("utf-8") == message
+        assert message == (
+            "The server rejected the dictionary search (HTTP 400, bad_request). "
+            "The server said: bad thing"
+        )
+
+    @pytest.mark.parametrize("surrogate", ["\ud800", "\udbff", "\udc00", "\udfff"])
+    def test_every_lone_surrogate_becomes_a_space(self, surrogate):
+        result = translate_transport_error(
+            TransportValidationError(
+                400, _error_body("bad_request", f"left{surrogate}right")
+            ),
+            operation=OPERATION,
+        )
+        str(result).encode("utf-8")
+        assert str(result).endswith("The server said: left right")
+
+    def test_a_lone_surrogate_in_the_error_type_leaves_the_label_encodable(self):
+        result = translate_transport_error(
+            TransportValidationError(400, _error_body("bad\udfffrequest", "No.")),
+            operation=OPERATION,
+        )
+        str(result).encode("utf-8")
+        assert str(result) == (
+            "The server rejected the dictionary search (HTTP 400, bad request). "
+            "The server said: No."
+        )
+
+    def test_a_message_of_only_lone_surrogates_keeps_the_raw_body(self):
+        body = json.dumps({"message": "\ud800\udbff"})
+        result = translate_transport_error(
+            TransportValidationError(400, body), operation=OPERATION
+        )
+        str(result).encode("utf-8")
+        assert str(result) == (
+            f"The server rejected the dictionary search (HTTP 400). The server "
+            f"said: {body}"
+        )
+
+    def test_an_escaped_surrogate_pair_is_kept_as_its_character(self):
+        body = '{"errorType":"bad_request","message":"fine \\ud83d\\ude00 here"}'
+        result = translate_transport_error(
+            TransportValidationError(400, body), operation=OPERATION
+        )
+        assert str(result).endswith("The server said: fine \U0001f600 here")
+
     def test_a_body_nested_too_deeply_to_decode_keeps_the_raw_body(self):
         body = "[" * 100_000 + "]" * 100_000
         result = translate_transport_error(
