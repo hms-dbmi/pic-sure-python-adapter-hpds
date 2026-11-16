@@ -144,7 +144,7 @@ the server refuses a sample query it answers HTTP 400, which raises
 - The server predates the option and does not know `sample`.
 - The server has sampling switched off. The error type in the response is
   `sample_disabled`, and the message says sample datasets are not available
-  at this time.
+  in this PIC-SURE environment.
 - The result type is not a dataframe type. Counts and every other result
   type refuse a sample.
 

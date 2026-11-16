@@ -567,8 +567,9 @@ class TestTranslatorReturnsPublicErrors:
 
 _REQUEST_ID = "0b9c4d0e-6f3a-4f5e-9d55-2f0d6c1c7a11"
 _WRONG_RESULT_TYPE_MESSAGE = (
-    "Sample datasets are only available for the result types DATAFRAME, "
-    "DATAFRAME_PFB and DATAFRAME_TIMESERIES"
+    "Sample datasets are not available for the result type COUNT. They are "
+    "only available for the result types DATAFRAME, DATAFRAME_PFB and "
+    "DATAFRAME_TIMESERIES."
 )
 
 
@@ -594,9 +595,9 @@ class TestJsonRefusalBody:
         assert type(result) is PicSureValidationError
         assert str(result) == (
             "The server rejected the saveQueryByName query submit (HTTP 400, "
-            "bad_request). The server said: Sample datasets are only available "
-            "for the result types DATAFRAME, DATAFRAME_PFB and "
-            "DATAFRAME_TIMESERIES"
+            "bad_request). The server said: Sample datasets are not available "
+            "for the result type COUNT. They are only available for the result "
+            "types DATAFRAME, DATAFRAME_PFB and DATAFRAME_TIMESERIES."
         )
 
     def test_sample_disabled_reads_as_the_server_message(self):
@@ -605,7 +606,9 @@ class TestJsonRefusalBody:
                 400,
                 _error_body(
                     "sample_disabled",
-                    "Sample datasets are not available at this time",
+                    "Sample datasets are not available in this PIC-SURE "
+                    "environment. Remove the sample option to run the full "
+                    "export.",
                 ),
             ),
             operation=self.SAVE,
@@ -613,7 +616,8 @@ class TestJsonRefusalBody:
         assert str(result) == (
             "The server rejected the saveQueryByName query submit (HTTP 400, "
             "sample_disabled). The server said: Sample datasets are not "
-            "available at this time"
+            "available in this PIC-SURE environment. Remove the sample option "
+            "to run the full export."
         )
 
     def test_the_request_id_stays_out_of_the_message(self):

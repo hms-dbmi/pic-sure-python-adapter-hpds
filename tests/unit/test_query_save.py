@@ -744,10 +744,14 @@ class TestSaveQueryByNameTransportErrors:
 
 
 _WRONG_RESULT_TYPE_MESSAGE = (
-    "Sample datasets are only available for the result types DATAFRAME, "
-    "DATAFRAME_PFB and DATAFRAME_TIMESERIES"
+    "Sample datasets are not available for the result type COUNT. They are "
+    "only available for the result types DATAFRAME, DATAFRAME_PFB and "
+    "DATAFRAME_TIMESERIES."
 )
-_SAMPLE_DISABLED_MESSAGE = "Sample datasets are not available at this time"
+_SAMPLE_DISABLED_MESSAGE = (
+    "Sample datasets are not available in this PIC-SURE environment. Remove "
+    "the sample option to run the full export."
+)
 _REQUEST_ID = "0b9c4d0e-6f3a-4f5e-9d55-2f0d6c1c7a11"
 
 
