@@ -150,13 +150,15 @@ From TestPyPI, which tests the exact package that will be uploaded:
 ```bash
 pip download --no-deps --index-url https://test.pypi.org/simple/ -d rc picsure==4.1.0rc1
 pip install rc/picsure-4.1.0rc1-py3-none-any.whl \
-    -c https://raw.githubusercontent.com/hms-dbmi/pic-sure-python-adapter-hpds/v4.1.0rc1/constraints/rc-install.txt
+    -c https://github.com/hms-dbmi/pic-sure-python-adapter-hpds/releases/download/v4.1.0rc1/constraints.txt
 ```
 
 The first command fetches only the picsure wheel from TestPyPI. The second installs that wheel and
-resolves its dependencies from PyPI alone, at the versions in `constraints/rc-install.txt` as of the
-rc tag. That file is exported from `uv.lock`, so QA runs against the dependency versions CI tested.
-Put the rc's own tag in the URL.
+resolves its dependencies from PyPI alone, at the versions in `constraints.txt`. The release
+workflow exports that file from `uv.lock` at the rc tag and attaches it to the rc's prerelease, so
+QA runs against the dependency versions CI tested. Put the rc's own tag in the URL. If the
+prerelease has no `constraints.txt`, the rc was tagged without a GitHub Release. Create the
+prerelease for the tag and rerun the release workflow's `attach-constraints` job.
 
 Do not install with `--index-url https://test.pypi.org/simple/ --extra-index-url
 https://pypi.org/simple/`. Anyone can upload any package name to TestPyPI, and pip takes the highest
