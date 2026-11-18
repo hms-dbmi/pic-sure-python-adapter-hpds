@@ -148,12 +148,17 @@ release workflow. The prerelease tick keeps the rc from showing as the latest re
 From TestPyPI, which tests the exact package that will be uploaded:
 
 ```bash
-pip install --index-url https://test.pypi.org/simple/ \
-    --extra-index-url https://pypi.org/simple/ picsure==4.1.0rc1
+pip download --no-deps --index-url https://test.pypi.org/simple/ -d rc picsure==4.1.0rc1
+pip install rc/picsure-4.1.0rc1-py3-none-any.whl
 ```
 
-The `--extra-index-url` lets pip find the dependencies (pandas, httpx, fastavro), which are not on
-TestPyPI.
+The first command fetches only the picsure wheel from TestPyPI. The second installs that wheel and
+resolves its dependencies from PyPI alone.
+
+Do not install with `--index-url https://test.pypi.org/simple/ --extra-index-url
+https://pypi.org/simple/`. Anyone can upload any package name to TestPyPI, and pip takes the highest
+version across both indexes for every dependency, not just picsure. That pulled in a
+python-dateutil 3.9.0 that exists only on TestPyPI.
 
 ### QA checklist
 
@@ -162,7 +167,7 @@ QA runs the notebooks researchers use most: the `release_2026` branch of
 
 1. **Change the install cells by hand.** The Python notebooks install the adapter from `main`
    (`pip install git+https://github.com/hms-dbmi/pic-sure-python-adapter-hpds.git@main`). Before
-   running each one, replace that line with the TestPyPI install above. Nothing in the notebooks
+   running each one, replace that line with the two install commands above. Nothing in the notebooks
    does this for you, and a notebook left on `main` tests the wrong code.
 2. **Use a server that already runs the target PIC-SURE version.** The notebooks connect to
    `Platform.BDC_AUTHORIZED`, which is production. If production has not been upgraded yet, point
