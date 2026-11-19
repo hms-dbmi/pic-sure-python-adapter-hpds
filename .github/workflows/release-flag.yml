@@ -1,0 +1,41 @@
+name: Release flag
+
+on:
+  release:
+    types: [published, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  match-prerelease-to-tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Set the pre-release flag from the tag name
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          IS_DRAFT: ${{ github.event.release.draft }}
+        run: |
+          if [[ "$IS_DRAFT" == "true" ]]; then
+            echo "Draft release for $TAG, nothing to check."
+            exit 0
+          fi
+          if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(a|b|rc)[0-9]*$ ]]; then
+            want=true
+          elif [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            want=false
+          else
+            echo "::warning::Tag '$TAG' is not vMAJOR.MINOR.PATCH or a pre-release, leaving its flag alone."
+            exit 0
+          fi
+          if [[ "$IS_PRERELEASE" == "$want" ]]; then
+            echo "$TAG already has prerelease=$want."
+            exit 0
+          fi
+          gh release edit "$TAG" --repo "$REPO" --prerelease="$want"
+          echo "::warning::$TAG was published with prerelease=$IS_PRERELEASE. Set it to $want to match the tag."
