@@ -49,8 +49,8 @@ A breaking change waits out a six-month deprecation window:
 
 1. Ship the replacement in a minor release. In the same release, make the old behavior warn every
    time it runs: `warnings.warn("...", FutureWarning, stacklevel=2)`. Use `FutureWarning`, not
-   `DeprecationWarning`, because Python hides `DeprecationWarning` from library code by default,
-   and notebook users would never see it.
+   `DeprecationWarning`, because Python shows a `DeprecationWarning` only when the calling code is
+   `__main__`. A user whose call sits inside their own module or pipeline would never see it.
 2. The warning text and the CHANGELOG entry both name the replacement and the earliest release that
    removes the old behavior.
 3. Remove it only in a major release, and only once six months have passed since the warning
@@ -110,7 +110,9 @@ owns every step.
    guide.
    - Owner: to be assigned
 4. **Open the release PR.** Move the `[Unreleased]` entries under a `## [X.Y.Z] - YYYY-MM-DD`
-   heading and update the compatibility table. Run `uv run mkdocs build --strict` locally. Merge it
+   heading and update the compatibility table. The first release under this guide also splits the
+   existing `[Unreleased]` entries into the `[3.0.0]`, `[4.0.0]` and `[4.0.9]` headings they shipped
+   in. Run `uv run mkdocs build --strict` locally. Merge it
    after review, with the `CI` and `Docs` workflows green.
    - Owner: to be assigned
 5. **Tag the release candidate.** Create a GitHub Release for tag `vX.Y.Zrc1` on the tip of `main`,
@@ -119,8 +121,9 @@ owns every step.
 6. **QA the release candidate.** Run the QA checklist below. If anything fails, merge the fix by PR
    and tag `vX.Y.Zrc2`, and so on.
    - Owner: to be assigned
-7. **Start the R release candidate.** Hand the passing rc tag to the R adapter release (its guide
-   covers the pin).
+7. **Start the R release candidate.** Hand the rc tag to the R adapter release as soon as it is
+   published, so R QA runs alongside Python QA. A later rc after a QA failure is handed over the
+   same way. The R guide covers the pin.
    - Owner: to be assigned
 8. **Wait for the environment releases.** The adapter ships right after BDC and NHANES production
    are upgraded to the PIC-SURE version it needs.
@@ -129,8 +132,8 @@ owns every step.
    passing rc. CI publishes it to PyPI.
    - Owner: to be assigned
 10. **Verify and hand off.** Install the release in a clean virtualenv
-    (`pip install picsure==X.Y.Z`), check that `pip show picsure` reports it, and run the
-    quickstart. Tell the R adapter owner to cut the final R release.
+    (`pip install picsure==X.Y.Z`), check that `pip show picsure` reports `Version: vX.Y.Z`, and
+    run the quickstart. Tell the R adapter owner to cut the final R release.
     - Owner: to be assigned
 
 ## Release candidates and QA
@@ -167,17 +170,23 @@ python-dateutil 3.9.0 that exists only on TestPyPI.
 
 ### QA checklist
 
-QA runs the notebooks researchers use most: the `release_2026` branch of
+QA runs the notebooks researchers use most: the Python notebooks in `NHLBI_BioData_Catalyst/python/`
+on the `release_2026` branch of
 [Access-to-Data-using-PIC-SURE-API](https://github.com/hms-dbmi/Access-to-Data-using-PIC-SURE-API/tree/release_2026).
+The Python notebooks in the other folders use older client libraries and are not part of this
+checklist.
 
-1. **Change the install cells by hand.** The Python notebooks install the adapter from `main`
-   (`pip install git+https://github.com/hms-dbmi/pic-sure-python-adapter-hpds.git@main`). Before
-   running each one, replace that line with the two install commands above. Nothing in the notebooks
-   does this for you, and a notebook left on `main` tests the wrong code.
+1. **Change the install cells by hand.** Most notebooks install the adapter from `main`
+   (`!{sys.executable} -m pip install --upgrade --force-reinstall git+https://github.com/hms-dbmi/pic-sure-python-adapter-hpds.git@main`).
+   `0_Open_Access_Data_Dictionary_Search.ipynb` installs the released package
+   (`pip install picsure --upgrade`). Before running each one, replace that line with the two
+   commands under "Installing the release candidate" above, each prefixed with
+   `!{sys.executable} -m`. Nothing in the notebooks does this for you, and a notebook left as it is
+   tests the wrong code.
 2. **Use a server that already runs the target PIC-SURE version.** The notebooks connect to
-   `Platform.BDC_AUTHORIZED`, which is production. If production has not been upgraded yet, point
-   them at an environment that has.
-3. **Run every Python notebook end to end** and note any failure or changed output.
+   `Platform.BDC_AUTHORIZED` or `Platform.BDC_OPEN`, which are production. If production has not
+   been upgraded yet, point them at an environment that has.
+3. **Run every notebook in that folder end to end** and note any failure or changed output.
 4. **Try each change in the CHANGELOG entry** for this version, including every deprecation warning
    it adds.
 5. **Record the result** on the rc's GitHub Release: pass or fail, the PIC-SURE version tested
@@ -200,7 +209,8 @@ unticked and tick **Set as the latest release**. Write the notes (next section),
 2. Classify the tag. `vX.Y.Z` goes to PyPI. `vX.Y.Z` followed by `a`, `b` or `rc` and a number goes
    to TestPyPI. Any other tag fails the run.
 3. Build the package. The version comes from the tag itself, so tag `v4.1.0` builds
-   `picsure-4.1.0`.
+   `picsure-4.1.0`. The published metadata currently keeps the tag's `v` prefix
+   (`pip show picsure` prints `Version: v4.1.0`), which a workflow change will remove.
 4. Upload through [trusted publishing](https://docs.pypi.org/trusted-publishers/), from the `PyPi`
    or `TestPyPi` GitHub environment. No API tokens are stored in the repo. Do not create a
    `PYPI_TOKEN`.
@@ -210,20 +220,21 @@ Two things to know:
 - **Only tag commits that contain the current workflow.** A tag runs the `release.yml` of the
   commit it points at. Before 4.0.0 the workflow took the version from the nearest older tag, which
   is how `picsure 3.0.4rc0` reached production PyPI. An old commit would bring that behavior back.
+  A hotfix branch starts from an older tag, so its fix PR copies in the current workflow first (see
+  "Hotfix releases").
 - **Only members of the developers team can push `v*` tags.** A tag ruleset enforces this.
   *Pending: the ruleset does not exist yet.*
 
 ### If something goes wrong
 
 - **The workflow failed before upload:** open the run in the Actions tab and re-run the failed
-  jobs. If the fix needs a new commit, land it on `main`, then move the tag and push it again.
-  Nothing was uploaded, so the version is still free:
+  jobs. Nothing was uploaded, so the version is still free. If the fix needs a new commit, do not
+  move the tag. Land the fix on `main` and tag the next rc on it. If the tag that failed was the
+  final one, delete its Release and tag first, then QA the new rc and publish the final on that
+  rc's commit:
 
   ```bash
-  git tag -d vX.Y.Z
-  git push origin :refs/tags/vX.Y.Z
-  git tag -a vX.Y.Z -m "Release X.Y.Z"
-  git push origin vX.Y.Z
+  gh release delete vX.Y.Z --cleanup-tag --yes
   ```
 
 - **A wrong build reached PyPI:** yank that version on PyPI (Manage > Releases > Options > Yank) and
@@ -258,13 +269,14 @@ PIC-SURE version tested, and who ran it.
 A hotfix fixes a released version without shipping whatever has merged to `main` since. It is
 always a patch release.
 
-1. Branch from the release tag being fixed: `git switch -c hotfix/v4.0.1 v4.0.0`, then push the
-   branch.
-2. Open the fix as a PR into `hotfix/v4.0.1`, with the usual one approving review. Add a
-   `## [4.0.1]` CHANGELOG entry in the same PR.
-3. Tag `v4.0.1rc1` on the hotfix branch as a prerelease and QA the fix. QA covers the fix and the
+1. Branch from the release tag being fixed: `git switch -c hotfix/v4.0.10 v4.0.9`, then push the
+   branch. A tag runs the `release.yml` of its own commit, so if the workflow has changed on `main`
+   since that tag, copy the current `.github/workflows/release.yml` into the fix PR.
+2. Open the fix as a PR into `hotfix/v4.0.10`, with the usual one approving review. Add a
+   `## [4.0.10] - YYYY-MM-DD` CHANGELOG entry in the same PR.
+3. Tag `v4.0.10rc1` on the hotfix branch as a prerelease and QA the fix. QA covers the fix and the
    notebooks it touches, not the full checklist.
-4. Tag `v4.0.1` on the same commit. This is the one case where a release tag is not on `main`.
+4. Tag `v4.0.10` on the same commit. This is the one case where a release tag is not on `main`.
 5. The same day, open a second PR that brings the fix and the CHANGELOG entry into `main`, so the
    next release keeps them.
-6. Tell the R adapter owner. R follows with a patch release that only moves its pin to `v4.0.1`.
+6. Tell the R adapter owner. R follows with a patch release that only moves its pin to `v4.0.10`.
