@@ -95,46 +95,45 @@ the "Last PIC-SURE tested" column.
 
 ## Release steps
 
-Each step has an owner. Owners are not assigned yet. Until they are, the person cutting the release
-owns every step.
+Each step names the role that owns it.
 
 1. **Merge the work.** Every change reaches `main` through a reviewed PR, and every user-visible
    change adds a line under `## [Unreleased]` in `CHANGELOG.md`.
-   - Owner: to be assigned
+   - Owner: Software Developer
 2. **Freeze and choose the version.** Announce the code freeze. Nothing else merges to `main` until
    the release ships, so the commit QA tests is the commit that ships. Choose the version from the
    versioning table.
-   - Owner: to be assigned
+   - Owner: Software Developer & Product Owner
 3. **Pass the server gate.** Confirm every route this release calls is served by BDC and NHANES
    production, or will be once their scheduled upgrade lands. Update the compatibility table in this
    guide.
-   - Owner: to be assigned
+   - Owner: Quality Assurance
 4. **Open the release PR.** Move the `[Unreleased]` entries under a `## [X.Y.Z] - YYYY-MM-DD`
    heading and update the compatibility table. The first release under this guide also splits the
    existing `[Unreleased]` entries into the `[3.0.0]`, `[4.0.0]` and `[4.0.9]` headings they shipped
    in. Run `uv run mkdocs build --strict` locally. Merge it
    after review, with the `CI` and `Docs` workflows green.
-   - Owner: to be assigned
+   - Owner: Developer
 5. **Tag the release candidate.** Create a GitHub Release for tag `vX.Y.Zrc1` on the tip of `main`,
    marked as a prerelease. CI publishes it to TestPyPI.
-   - Owner: to be assigned
+   - Owner: Developer
 6. **QA the release candidate.** Run the QA checklist below. If anything fails, merge the fix by PR
    and tag `vX.Y.Zrc2`, and so on.
-   - Owner: to be assigned
+   - Owner: Quality Assurance
 7. **Start the R release candidate.** Hand the rc tag to the R adapter release as soon as it is
    published, so R QA runs alongside Python QA. A later rc after a QA failure is handed over the
    same way. The R guide covers the pin.
-   - Owner: to be assigned
+   - Owner: Developer
 8. **Wait for the environment releases.** The adapter ships right after BDC and NHANES production
    are upgraded to the PIC-SURE version it needs.
-   - Owner: to be assigned
+   - Owner: Developer
 9. **Publish the final release.** Create a GitHub Release for tag `vX.Y.Z` on the same commit as the
    passing rc. CI publishes it to PyPI.
-   - Owner: to be assigned
+   - Owner: Developer
 10. **Verify and hand off.** Install the release in a clean virtualenv
     (`pip install picsure==X.Y.Z`), check that `pip show picsure` reports `Version: vX.Y.Z`, and
     run the quickstart. Tell the R adapter owner to cut the final R release.
-    - Owner: to be assigned
+    - Owner: Developer
 
 ## Release candidates and QA
 
