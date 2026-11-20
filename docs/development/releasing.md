@@ -113,27 +113,27 @@ Each step names the role that owns it.
    existing `[Unreleased]` entries into the `[3.0.0]`, `[4.0.0]` and `[4.0.9]` headings they shipped
    in. Run `uv run mkdocs build --strict` locally. Merge it
    after review, with the `CI` and `Docs` workflows green.
-   - Owner: Developer
+   - Owner: Software Developer
 5. **Tag the release candidate.** Create a GitHub Release for tag `vX.Y.Zrc1` on the tip of `main`,
    marked as a prerelease. CI publishes it to TestPyPI.
-   - Owner: Developer
+   - Owner: Software Developer
 6. **QA the release candidate.** Run the QA checklist below. If anything fails, merge the fix by PR
    and tag `vX.Y.Zrc2`, and so on.
    - Owner: Quality Assurance
 7. **Start the R release candidate.** Hand the rc tag to the R adapter release as soon as it is
    published, so R QA runs alongside Python QA. A later rc after a QA failure is handed over the
    same way. The R guide covers the pin.
-   - Owner: Developer
+   - Owner: Software Developer
 8. **Wait for the environment releases.** The adapter ships right after BDC and NHANES production
    are upgraded to the PIC-SURE version it needs.
-   - Owner: Developer
+   - Owner: Software Developer
 9. **Publish the final release.** Create a GitHub Release for tag `vX.Y.Z` on the same commit as the
    passing rc. CI publishes it to PyPI.
-   - Owner: Developer
+   - Owner: Software Developer
 10. **Verify and hand off.** Install the release in a clean virtualenv
     (`pip install picsure==X.Y.Z`), check that `pip show picsure` reports `Version: vX.Y.Z`, and
     run the quickstart. Tell the R adapter owner to cut the final R release.
-    - Owner: Developer
+    - Owner: Software Developer
 
 ## Release candidates and QA
 
