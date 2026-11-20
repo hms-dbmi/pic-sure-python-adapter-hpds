@@ -10,7 +10,8 @@ from picsure._models.query import Query
 from picsure.errors import PicSureValidationError
 
 # Re-attaches the result of an edit to its original container shape (identity
-# for a bare filter, or back into a Query preserving includeConcepts).
+# for a bare filter, or back into a Query preserving includeConcepts,
+# genomicFilters and sample).
 _Rewrap: TypeAlias = Callable[[Clause | ClauseGroup], "Query | Clause | ClauseGroup"]
 
 
@@ -26,7 +27,8 @@ def removeSubQuery(  # noqa: N802
     emptied by removals, the parent is dropped too.
 
     When ``query`` is a :class:`Query`, the edit applies to its
-    ``phenotypicFilter`` tree and the ``includeConcepts`` are preserved.
+    ``phenotypicFilter`` tree, and its ``includeConcepts``,
+    ``genomicFilters`` and ``sample`` are preserved.
 
     Raises:
         PicSureValidationError: if ``target`` does not occur in ``query``,
@@ -64,7 +66,8 @@ def replaceClause(  # noqa: N802
     ``replacement``. Matching is structural (frozen-dataclass equality).
 
     When ``query`` is a :class:`Query`, the edit applies to its
-    ``phenotypicFilter`` tree and the ``includeConcepts`` are preserved.
+    ``phenotypicFilter`` tree, and its ``includeConcepts``,
+    ``genomicFilters`` and ``sample`` are preserved.
 
     Raises:
         PicSureValidationError: if ``target`` does not occur in ``query``,
@@ -87,8 +90,10 @@ def _unwrap(
     """Return the editable filter tree and a function to re-wrap the result.
 
     For a bare ``Clause`` / ``ClauseGroup`` the re-wrap is the identity. For a
-    ``Query`` it re-attaches the original ``includeConcepts``. An include-only
-    ``Query`` (``phenotypicFilter is None``) has no editable tree and raises.
+    ``Query`` it replaces only the ``phenotypicFilter``, so the original
+    ``includeConcepts``, ``genomicFilters`` and ``sample`` carry over. An
+    include-only ``Query`` (``phenotypicFilter is None``) has no editable tree
+    and raises.
     """
     if isinstance(query, Query):
         if query.phenotypicFilter is None:

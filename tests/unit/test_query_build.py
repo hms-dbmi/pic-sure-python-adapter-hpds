@@ -374,6 +374,18 @@ class TestBuildQuery:
         with pytest.raises((AttributeError, TypeError)):
             q.includeConcepts = ("\\x\\",)  # type: ignore[misc]
 
+    def test_build_query_carries_sample(self):
+        q = buildQuery(includeConcepts="\\bmi\\", sample=True)
+        assert q.sample is True
+
+    def test_build_query_sample_defaults_false(self):
+        q = buildQuery(includeConcepts="\\bmi\\")
+        assert q.sample is False
+
+    def test_build_query_rejects_non_bool_sample(self):
+        with pytest.raises(PicSureValidationError, match="sample must be True or"):
+            buildQuery(includeConcepts="\\bmi\\", sample="yes")  # type: ignore[arg-type]
+
 
 class TestBuildGenomicFilter:
     def test_categorical(self):

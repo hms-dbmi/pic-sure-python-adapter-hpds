@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from picsure._models.clause import Clause
 from picsure._models.clause_group import ClauseGroup
 from picsure._models.query import Query
+from picsure._models.query_type import QueryType
 from picsure._services._errors import (
     bodiless_response_succeeded,
     translate_transport_error,
@@ -17,7 +18,7 @@ from picsure._services._hpds_paths import (
     query_id_from_submit_response,
     query_submit_path,
 )
-from picsure._services.query_run import build_query_body
+from picsure._services.query_run import build_query_body, result_type_for_save
 from picsure._transport.client import json_object
 from picsure._transport.errors import TransportError
 from picsure.errors import (
@@ -45,11 +46,23 @@ def save_query_by_name(
     *,
     backend: str,
     overwrite: bool = False,
+    query_type: QueryType | str = "count",
 ) -> str:
     """Submit a query, then save it to the user's profile under ``name``.
 
     Returns the PIC-SURE-generated query ID in canonical UUID form, the
     same id that :func:`load_saved_query` can re-fetch.
+
+    The query is submitted as ``query_type``, a count by default. The
+    submit is the server's ordinary one, so saving as ``"participant"``,
+    ``"timestamp"`` or ``"pfb"`` starts that export on the server. This
+    function never polls its status and never downloads its result.
+
+    Nothing about the query is refused here on the server's behalf. A
+    query the server will not take as ``query_type``, a sample query
+    saved as anything but a dataframe type among them, is sent, and the
+    server's 400 is raised as :class:`PicSureValidationError` quoting the
+    server's message. No named record is written in that case.
 
     If a NamedDataset already exists for this user with ``name``:
         * ``overwrite=False`` (default) → raise :class:`PicSureValidationError`.
@@ -61,6 +74,27 @@ def save_query_by_name(
     Open-access deployments are not supported: the
     ``/picsure/operations/dataset/named`` endpoint requires an
     authenticated principal.
+
+    Args:
+        client: Authenticated HTTP client.
+        query: A Query, Clause, or ClauseGroup.
+        name: The name to store the record under.
+        backend: ``"auth"`` or ``"open"``.
+        overwrite: Whether a record already saved under ``name`` is
+            repointed at the new query instead of refusing the call.
+        query_type: The result type to save the query as: anything
+            :func:`~picsure._services.query_run.run_query` accepts, or
+            ``"pfb"``.
+
+    Raises:
+        PicSureValidationError: If the backend is open access, ``name``
+            or ``query_type`` is invalid, the name is taken and
+            ``overwrite`` is ``False``, or the server rejects a request
+            with a 4xx other than 401, 403, 404 and 429.
+        PicSureQueryError: If the submit carries no usable query id, or
+            the record to overwrite has no identifier.
+        PicSureError: Whatever :func:`translate_transport_error` maps a
+            transport failure to.
     """
     if backend == "open":
         raise PicSureValidationError(
@@ -69,6 +103,7 @@ def save_query_by_name(
             "and a valid token to save named queries."
         )
     _validate_name(name)
+    expected_result_type = result_type_for_save(query_type)
 
     existing = _find_existing_by_name(client, name)
     if existing is not None and not overwrite:
@@ -77,7 +112,7 @@ def save_query_by_name(
             "Pass overwrite=True to repoint it at the new query."
         )
 
-    body = build_query_body(query, "COUNT")
+    body = build_query_body(query, expected_result_type)
     query_id = _submit_and_extract_id(client, query_submit_path(backend), body)
 
     if existing is None:

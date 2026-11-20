@@ -621,7 +621,9 @@ class TestSessionExport:
             *,
             backend,
             overwrite,
+            query_type,
         ):
+            captured["query_type"] = query_type
             captured["client"] = client
             captured["query"] = query
             captured["name"] = name
@@ -643,6 +645,11 @@ class TestSessionExport:
         assert captured["name"] == "Cohort A"
         assert captured["backend"] == "auth"
         assert captured["overwrite"] is True
+        assert captured["query_type"] == "count"
+
+        session.saveQueryByName(clause, "Cohort A", type="pfb")
+        assert captured["query_type"] == "pfb"
+        assert captured["overwrite"] is False
         # Silence unused-import warning from ruff for the imported alias.
         assert session_module.Session is Session
 
@@ -881,6 +888,76 @@ class TestSessionRunQueryByID:
 
         with pytest.raises(PicSureValidationError, match=message):
             session.runQueryByID(_SAVED_QUERY_ID)
+
+    @respx.mock
+    @pytest.mark.parametrize(
+        ("run_type", "saved_type", "sent_type"),
+        [
+            (None, "DATAFRAME", "DATAFRAME"),
+            (None, "DATAFRAME_TIMESERIES", "DATAFRAME_TIMESERIES"),
+            ("participant", "DATAFRAME", "DATAFRAME"),
+            ("timestamp", "DATAFRAME", "DATAFRAME_TIMESERIES"),
+        ],
+    )
+    def test_run_query_by_id_on_a_stored_sample_query_submits_sample(
+        self, participant_response, run_type, saved_type, sent_type
+    ):
+        session = _session_on_backend(_client())
+        envelope = _metadata_envelope(
+            select=["\\phs1\\age\\"], phenotypic=None, result_type=saved_type
+        )
+        envelope["resultMetadata"]["queryJson"]["query"]["sample"] = True
+        respx.get(_meta_url(_SAVED_QUERY_ID)).mock(
+            return_value=httpx.Response(200, json=envelope)
+        )
+        submit = _mock_auth_job(participant_response)
+
+        if run_type is None:
+            df = session.runQueryByID(_SAVED_QUERY_ID)
+        else:
+            df = session.runQueryByID(_SAVED_QUERY_ID, type=run_type)
+
+        assert isinstance(df, pd.DataFrame)
+        assert submit.call_count == 1
+        assert json.loads(submit.calls.last.request.content) == {
+            "query": {
+                "select": ["\\phs1\\age\\"],
+                "phenotypicClause": None,
+                "genomicFilters": [],
+                "expectedResultType": sent_type,
+                "picsureId": None,
+                "id": None,
+                "sample": True,
+            }
+        }
+
+    @respx.mock
+    @pytest.mark.parametrize("stored", [None, False, "true", 1])
+    def test_run_query_by_id_submits_no_sample_unless_the_stored_value_is_true(
+        self, participant_response, stored
+    ):
+        session = _session_on_backend(_client())
+        envelope = _metadata_envelope(
+            select=["\\phs1\\age\\"], phenotypic=None, result_type="DATAFRAME"
+        )
+        envelope["resultMetadata"]["queryJson"]["query"]["sample"] = stored
+        respx.get(_meta_url(_SAVED_QUERY_ID)).mock(
+            return_value=httpx.Response(200, json=envelope)
+        )
+        submit = _mock_auth_job(participant_response)
+
+        session.runQueryByID(_SAVED_QUERY_ID)
+
+        assert json.loads(submit.calls.last.request.content) == {
+            "query": {
+                "select": ["\\phs1\\age\\"],
+                "phenotypicClause": None,
+                "genomicFilters": [],
+                "expectedResultType": "DATAFRAME",
+                "picsureId": None,
+                "id": None,
+            }
+        }
 
     def test_run_query_by_id_rejects_blank_id(self):
         from picsure.errors import PicSureValidationError

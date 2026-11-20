@@ -111,9 +111,10 @@ class _TransportStructuredError(TransportError):
 
     The stored ``body`` and ``server_message`` are both redacted.
 
-    This is where the two error trees stop being parallel. Both
-    subclasses hang here, directly under :class:`TransportError`, while
-    each public counterpart hangs under the class for its status:
+    This is where the two error trees stop being parallel. Every
+    subclass hangs here, directly under :class:`TransportError`, while
+    the public counterpart of each consent class hangs under the class
+    for its status:
 
     * :class:`TransportConsentLookupError` is a sibling of
       :class:`TransportServerError`, so ``except TransportServerError``
@@ -156,6 +157,21 @@ class TransportConsentDeniedError(_TransportStructuredError):
 
 class TransportConsentLookupError(_TransportStructuredError):
     """The server could not resolve the caller's consent permissions."""
+
+
+class TransportResultNotReadyError(_TransportStructuredError):
+    """The result of a query job cannot be downloaded yet.
+
+    The server answers the result route with a 409 carrying
+    ``result_not_ready`` when the job is still queued or running, when
+    the result was lost to a server restart, and when it is being run
+    again after the caller's access changed. In every case the server
+    has a run in flight, so the caller goes back to polling status
+    rather than failing. It is not a
+    :class:`TransportValidationError`, which is what any other 409
+    becomes, and it has no public counterpart of its own: one that
+    outlives the wait is translated to ``PicSureConnectionError``.
+    """
 
 
 class TransportConnectionError(TransportError):

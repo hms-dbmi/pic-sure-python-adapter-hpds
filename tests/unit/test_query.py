@@ -1,4 +1,5 @@
 import httpx
+import pytest
 import respx
 
 from picsure._models.clause import Clause, PhenotypicFilterType
@@ -8,6 +9,7 @@ from picsure._models.session import Session
 from picsure._services._hpds_paths import query_prefix
 from picsure._services.query_run import run_query
 from picsure._transport.client import PicSureClient
+from picsure.errors import PicSureValidationError
 
 BASE_URL = "https://test.example.com"
 QUERY_URL = f"{BASE_URL}{query_prefix('auth')}/query/sync"
@@ -120,3 +122,30 @@ def test_query_genomic_filters_defaults_empty():
     from picsure import Query
 
     assert Query().genomicFilters == ()
+
+
+@pytest.mark.parametrize("not_a_bool", ["yes", "true", 1, 0, None])
+def test_query_rejects_a_sample_that_is_not_a_bool(not_a_bool):
+    with pytest.raises(PicSureValidationError, match="sample must be True or False"):
+        Query(phenotypicFilter=_clause(), sample=not_a_bool)
+
+
+def test_query_names_the_module_of_a_sample_type_that_is_not_builtin():
+    numpy_bool = type("bool", (), {"__module__": "numpy"})
+
+    with pytest.raises(PicSureValidationError) as info:
+        Query(phenotypicFilter=_clause(), sample=numpy_bool())
+
+    assert str(info.value) == "sample must be True or False, got numpy.bool."
+
+
+def test_query_names_a_builtin_sample_type_without_its_module():
+    with pytest.raises(PicSureValidationError) as info:
+        Query(phenotypicFilter=_clause(), sample=1)
+
+    assert str(info.value) == "sample must be True or False, got int."
+
+
+def test_query_accepts_a_bool_sample():
+    assert Query(phenotypicFilter=_clause(), sample=True).sample is True
+    assert Query(phenotypicFilter=_clause(), sample=False).sample is False
